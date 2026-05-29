@@ -1,13 +1,12 @@
 WHITESPACE = _{ " " | "\t" | "\n" }
 entry = _{ SOI ~ expr ~ EOI }
 
-expr = { expr_object | const_int | const_float }
+expr = { object | const_int }
 
-expr_object = { "{" ~ (assignment ~ ";")* ~ "}" }
+object = { "{" ~ (assignment ~ ";")* ~ "}" }
 
 assignment = { ident ~ "=" ~ expr }
 
 
 ident = { 'a'..'z' ~ ('a'..'z' | '0'..'9' | "_")* }
-const_float = @{ const_int ~ ("." ~ ASCII_DIGIT*)? ~ (^"e" ~ const_int)? }
 const_int = { ("+" | "-")? ~ ASCII_DIGIT+ }

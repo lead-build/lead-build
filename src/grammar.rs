@@ -1,65 +1,91 @@
-use crate::error::Result;
-use pest::{Parser, iterators::Pair};
+use crate::{ast::AstValue, error::Result};
+use pest::{
+    Parser,
+    iterators::{Pair, Pairs},
+};
 use std::{collections::BTreeMap, fs, path::PathBuf};
 
-mod parser {
-    use pest_derive::Parser;
-    #[derive(Parser)]
-    #[grammar = "grammar.pest"]
-    pub struct Grammar;
-}
-pub type Error = pest::error::Error<parser::Rule>;
+use pest_derive::Parser;
+#[derive(Parser)]
+#[grammar = "grammar.pest"]
+pub struct Grammar;
 
-pub fn parse_file(path: PathBuf) -> Result<DnjExpr> {
+macro_rules! visit {
+    ( $rule:ident : $func:ident @ $var:ident -> $result:ty $code:block ) => {
+        fn $func(node: Pair<Rule>) -> Result<$result> {
+            assert!(node.as_rule() == Rule::$rule);
+            #[allow(unused_mut)]
+            let mut $var: Pairs<Rule> = node.into_inner();
+            $code
+        }
+    };
+    ( $rule:ident : $func:ident @ $var:ident -> $result:ty $code:block $( $tail:tt )+ ) => {
+        visit! {$rule : $func @ $var -> $result $code}
+        visit! { $( $tail )+ }
+    }
+}
+
+macro_rules! terminals {
+    ( $rule:ident : $func:ident ($content:ident) -> $result:ty $code:block ) => {
+        fn $func(node: Pair<Rule>) -> Result<$result> {
+            assert!(node.as_rule() == Rule::$rule);
+            let $content = node.as_str();
+            $code
+        }
+    };
+    ( $rule:ident : $func:ident ($content:ident) -> $result:ty $code:block $($tail:tt)+ ) => {
+        terminals! { $rule: $func ($content) -> $result $code }
+        terminals! { $( $tail )* }
+    };
+}
+
+macro_rules! next {
+    ( $var:ident ) => {
+        $var.next().unwrap() as Pair<Rule>
+    };
+}
+
+pub type Error = pest::error::Error<Rule>;
+
+pub fn parse_file(path: PathBuf) -> Result<AstValue> {
     let content = fs::read_to_string(path)?;
-    let parse_tree = parser::Grammar::parse(parser::Rule::entry, &content)?
-        .next()
-        .unwrap();
-    let ast = DnjExpr::generate(parse_tree)?;
+    let parse_tree = Grammar::parse(Rule::entry, &content)?.next().unwrap();
+    let ast = visit_expr(parse_tree)?;
     Ok(ast)
 }
 
-#[derive(Debug)]
-pub enum DnjExpr {
-    Object { fields: BTreeMap<String, DnjExpr> },
-    ConstInt { value: i64 },
-    ConstFloat { value: f64 },
-}
-
-impl DnjExpr {
-    fn generate(node: Pair<parser::Rule>) -> Result<DnjExpr> {
-        assert!(node.as_rule() == parser::Rule::expr);
-
-        let inner = node.into_inner().next().unwrap();
-        match inner.as_rule() {
-            parser::Rule::expr_object => Self::generate_object(inner),
-            parser::Rule::const_int => Self::generate_const_int(inner),
-            parser::Rule::const_float => Self::generate_const_float(inner),
+visit! {
+    expr: visit_expr @node -> AstValue {
+        let next = next!(node);
+        match next.as_rule() {
+            Rule::object => Ok(AstValue::Object(visit_object(next)?)),
+            Rule::const_int => Ok(AstValue::ConstInt(visit_const_int(next)?)),
             err_rule => panic!("Internal parse error, got {:?}", err_rule),
         }
     }
 
-    fn generate_object(node: Pair<parser::Rule>) -> Result<DnjExpr> {
+    object: visit_object @node -> BTreeMap<String, AstValue> {
         let mut fields = BTreeMap::new();
-        for assign in node.into_inner() {
-            assert!(assign.as_rule() == parser::Rule::assignment);
-            let mut inner = assign.into_inner();
-            let ident = inner.next().unwrap().as_str().into();
-            let value = DnjExpr::generate(inner.next().unwrap())?;
-            fields.insert(ident, value);
+        for assign in node {
+            let (name, value) = visit_assignment(assign)?;
+            fields.insert(name, value);
         }
-        Ok(DnjExpr::Object { fields })
+        Ok(fields)
     }
 
-    fn generate_const_int(node: Pair<parser::Rule>) -> Result<DnjExpr> {
-        Ok(DnjExpr::ConstInt {
-            value: node.as_str().parse().expect("Internal parse int error"),
-        })
+    assignment: visit_assignment @node -> (String, AstValue) {
+        let name = visit_ident(next!(node))?;
+        let value = visit_expr(next!(node))?;
+        Ok((name, value))
+    }
+}
+
+terminals! {
+    ident: visit_ident(content) -> String {
+        Ok(content.into())
     }
 
-    fn generate_const_float(node: Pair<parser::Rule>) -> Result<DnjExpr> {
-        Ok(DnjExpr::ConstFloat {
-            value: node.as_str().parse().expect("Internal parse int error"),
-        })
+    const_int: visit_const_int(content) -> i64 {
+        Ok(content.parse().expect("Internal parse int error"))
     }
 }
