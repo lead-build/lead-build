@@ -1,5 +1,5 @@
 WHITESPACE = _{ " " | "\t" | "\n" }
-entry = _{ SOI ~ expr ~ EOI }
+entry = { SOI ~ expr ~ EOI }
 
 expr = { object | const_int }
 

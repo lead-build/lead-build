@@ -5,6 +5,7 @@ pub mod ast;
 use clap::Parser;
 use error::Result;
 use std::{path::PathBuf, process::exit};
+use grammar::DnjParser;
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
@@ -15,7 +16,7 @@ struct Args {
 }
 
 fn run(args: Args) -> Result<()> {
-    let ast = grammar::parse_file(args.input)?;
+    let ast = DnjParser::parse_file(args.input)?;
     println!("Done: {:#?}", ast);
     Ok(())
 }
@@ -27,6 +28,7 @@ fn main() {
         }
         Err(err) => {
             println!("{}", err);
+            println!("{:#?}", err);
             exit(1);
         }
     }
