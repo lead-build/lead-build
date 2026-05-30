@@ -1,4 +1,3 @@
-use crate::ast::AstValue;
 use pest_consume::{Parser, match_nodes};
 use std::{collections::BTreeMap, fs, num::ParseIntError, path::PathBuf};
 
@@ -10,59 +9,264 @@ pub type Error = pest_consume::Error<Rule>;
 pub type Result<T> = std::result::Result<T, Error>;
 type Node<'i> = pest_consume::Node<'i, Rule, ()>;
 
+impl DnjParser {
+    pub fn parse_file(path: PathBuf) -> Result<AstNode> {
+        let input_str = fs::read_to_string(path).unwrap();
+        Self::parse_str(&input_str)
+    }
+    pub fn parse_str(input_str: &str) -> Result<AstNode> {
+        let parse_tree = DnjParser::parse(Rule::entry, input_str)?;
+        let input = parse_tree.single()?;
+        DnjParser::entry(input)
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum AstNode {
+    Object(Box<BTreeMap<String, AstNode>>),
+    Int(i64),
+    String(String),
+    FuncCall(String, Box<AstNode>),
+    FuncDefIdent(String, Box<AstNode>),
+    FuncDefPattern(Vec<String>, Box<AstNode>),
+}
+
 #[pest_consume::parser]
 impl DnjParser {
     fn EOI(_input: Node) -> Result<()> {
         Ok(())
     }
 
-    fn entry(input: Node) -> Result<AstValue> {
+    fn entry(input: Node) -> Result<AstNode> {
         Ok(match_nodes! {input.into_children();
             [expr(e), EOI(_)] => e,
         })
     }
 
-    fn expr(input: Node) -> Result<AstValue> {
+    /*
+     * Expression
+     */
+
+    fn expr(input: Node) -> Result<AstNode> {
         Ok(match_nodes! {input.into_children();
-            [object(o)] => AstValue::Object(o),
-            [const_int(i)] => AstValue::ConstInt(i),
+            [object(x)] => x,
+            [const_int(x)] => x,
+            [const_str(x)] => x,
+            [func_call(x)] => x,
+            [func_def(x)] => x,
         })
     }
 
-    fn object(input: Node) -> Result<BTreeMap<String, AstValue>> {
+    /*
+     * Primitives
+     */
+
+    fn object(input: Node) -> Result<AstNode> {
         let assignments = match_nodes! {input.into_children();
-            [assignment(a)..] => a
+            [object_assignment(a)..] => a
         };
         let mut fields = BTreeMap::new();
         for (name, value) in assignments {
             fields.insert(name, value);
         }
-        Ok(fields)
+        Ok(AstNode::Object(fields.into()))
     }
 
-    fn assignment(input: Node) -> Result<(String, AstValue)> {
+    fn object_assignment(input: Node) -> Result<(String, AstNode)> {
         Ok(match_nodes! {input.into_children();
             [ident(ident), expr(val)] => (ident, val),
         })
     }
 
+    fn func_call(input: Node) -> Result<AstNode> {
+        Ok(match_nodes! {input.into_children();
+            [ident(ident), expr(val)] => AstNode::FuncCall(ident, val.into()),
+        })
+    }
+
+    /*
+     * Function definition
+     */
+
+    fn func_def(input: Node) -> Result<AstNode> {
+        Ok(match_nodes! {input.into_children();
+            [ident(ident), expr(val)] => AstNode::FuncDefIdent(ident, val.into()),
+            [func_args_pattern(pat), expr(val)] => AstNode::FuncDefPattern(pat, val.into()),
+        })
+    }
+
+    fn func_args_pattern(input: Node) -> Result<Vec<String>> {
+        Ok(match_nodes! {input.into_children();
+            [ident(ident)..] => ident,
+        }
+        .collect())
+    }
+
+    /*
+     * Literals
+     */
+
     fn ident(input: Node) -> Result<String> {
         Ok(input.as_str().into())
     }
 
-    fn const_int(input: Node) -> Result<i64> {
-        Ok(input
+    fn const_int(input: Node) -> Result<AstNode> {
+        let value = input
             .as_str()
             .parse()
-            .map_err(|e: ParseIntError| input.error(e.to_string()))?)
+            .map_err(|e: ParseIntError| input.error(e.to_string()))?;
+        Ok(AstNode::Int(value))
+    }
+
+    fn const_str(input: Node) -> Result<AstNode> {
+        Ok(AstNode::String(
+            match_nodes! {input.into_children();
+                [const_str_sym(c)..] => c,
+            }
+            .collect(),
+        ))
+    }
+
+    fn const_str_sym(input: Node) -> Result<char> {
+        Ok(match_nodes! {input.into_children();
+            [const_str_char(c)] => c,
+            [const_str_esc(c)] => c,
+            [const_str_hex(c)] => c,
+        })
+    }
+
+    fn const_str_char(input: Node) -> Result<char> {
+        Ok(input.as_str().chars().next().unwrap())
+    }
+
+    fn const_str_esc(input: Node) -> Result<char> {
+        let chr = input.as_str().chars().next().unwrap();
+        Ok(match chr {
+            'n' => '\n',
+            'r' => '\r',
+            't' => '\t',
+            c => c,
+        })
+    }
+
+    fn const_str_hex(input: Node) -> Result<char> {
+        let str = input.as_str();
+        let val = u32::from_str_radix(str, 16).unwrap();
+        Ok(char::from_u32(val).unwrap())
     }
 }
 
-impl DnjParser {
-    pub fn parse_file(path: PathBuf) -> Result<AstValue> {
-        let content = fs::read_to_string(path).unwrap();
-        let parse_tree = DnjParser::parse(Rule::entry, &content)?;
-        let input = parse_tree.single()?;
-        DnjParser::entry(input)
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_int() {
+        let tree = DnjParser::parse_str("1231").unwrap();
+        assert_eq!(AstNode::Int(1231), tree);
+    }
+
+    #[test]
+    fn test_parse_obj() {
+        let code = r#"
+            {
+                boll = 123;
+                hej = 323;
+            }
+        "#;
+        let tree = DnjParser::parse_str(code).unwrap();
+        assert_eq!(
+            AstNode::Object(
+                BTreeMap::from([
+                    ("boll".into(), AstNode::Int(123)),
+                    ("hej".into(), AstNode::Int(323))
+                ])
+                .into()
+            ),
+            tree
+        );
+    }
+
+    #[test]
+    fn test_parse_obj_in_obj() {
+        let code = r#"
+            {
+                boll = 123;
+                hej = { a=2; b=3; };
+            }
+        "#;
+        let tree = DnjParser::parse_str(code).unwrap();
+        assert_eq!(
+            AstNode::Object(
+                BTreeMap::from([
+                    ("boll".into(), AstNode::Int(123)),
+                    (
+                        "hej".into(),
+                        AstNode::Object(
+                            BTreeMap::from([
+                                ("a".into(), AstNode::Int(2)),
+                                ("b".into(), AstNode::Int(3)),
+                            ])
+                            .into()
+                        )
+                    )
+                ])
+                .into()
+            ),
+            tree
+        );
+    }
+
+    #[test]
+    fn test_parse_str() {
+        let code = "\"boll\\\"hej\\u0041\"";
+        let tree = DnjParser::parse_str(code).unwrap();
+        assert_eq!(AstNode::String("boll\"hejA".into()), tree);
+    }
+
+    #[test]
+    fn test_parse_func_call() {
+        let code = "hej 12";
+        let tree = DnjParser::parse_str(code).unwrap();
+        assert_eq!(
+            AstNode::FuncCall("hej".into(), AstNode::Int(12).into()),
+            tree
+        );
+    }
+
+    #[test]
+    fn test_parse_func_def_ident() {
+        let code = "hej: 12";
+        let tree = DnjParser::parse_str(code).unwrap();
+        assert_eq!(
+            AstNode::FuncDefIdent("hej".into(), AstNode::Int(12).into()),
+            tree
+        );
+    }
+
+    #[test]
+    fn test_parse_func_def_pattern1() {
+        let code = "{ hej, hopp, svej }: 12";
+        let tree = DnjParser::parse_str(code).unwrap();
+        assert_eq!(
+            AstNode::FuncDefPattern(
+                vec!["hej".into(), "hopp".into(), "svej".into()],
+                AstNode::Int(12).into()
+            ),
+            tree
+        );
+    }
+
+    #[test]
+    fn test_parse_func_def_pattern2() {
+        let code = "{ hej, hopp, svej, }: 12";
+        let tree = DnjParser::parse_str(code).unwrap();
+        assert_eq!(
+            AstNode::FuncDefPattern(
+                vec!["hej".into(), "hopp".into(), "svej".into()],
+                AstNode::Int(12).into()
+            ),
+            tree
+        );
     }
 }

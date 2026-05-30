@@ -1,8 +1,5 @@
 {
-    boll = 12;
-    hej = {
-        hopp = 1212;
-        pelle = 1;
+    app = build {
+        target = "app.elf";
     };
-    kaka = {};
 }

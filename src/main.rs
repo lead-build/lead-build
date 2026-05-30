@@ -1,6 +1,5 @@
 pub mod error;
 mod grammar;
-pub mod ast;
 
 use clap::Parser;
 use error::Result;

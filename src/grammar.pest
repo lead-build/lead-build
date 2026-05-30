@@ -1,12 +1,43 @@
 WHITESPACE = _{ " " | "\t" | "\n" }
-entry = { SOI ~ expr ~ EOI }
+entry      =  { SOI ~ expr ~ EOI }
 
-expr = { object | const_int }
+////////////////////////////////////////////////////////////////////////////////
+// Expressions
 
-object = { "{" ~ (assignment ~ ";")* ~ "}" }
+expr = {
+    object |
+    const_int |
+    const_str |
+    func_call |
+    func_def
+}
 
-assignment = { ident ~ "=" ~ expr }
+////////////////////////////////////////////////////////////////////////////////
+// Primitives
 
+object = { "{" ~ (object_assignment ~ ";")* ~ "}" }
+object_assignment = { ident ~ "=" ~ expr }
 
-ident = { 'a'..'z' ~ ('a'..'z' | '0'..'9' | "_")* }
-const_int = { ("+" | "-")? ~ ASCII_DIGIT+ }
+func_call = { ident ~ expr }
+
+////////////////////////////////////////////////////////////////////////////////
+// Function definition
+
+func_def = { ( func_args_ident | func_args_pattern ) ~ ":" ~ expr }
+
+func_args_ident = _{ ident }
+func_args_pattern = { "{" ~ (ident ~ (&"}" | ","))* ~ "}" }
+
+////////////////////////////////////////////////////////////////////////////////
+// Literals
+
+ident          = @{ 'a'..'z' ~ ('a'..'z' | '0'..'9' | "_")* }
+const_int      = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
+const_str      = ${ "\"" ~ const_str_sym* ~ "\"" }
+const_str_sym  = ${
+    const_str_char |
+    ("\\" ~ (const_str_esc | ("u" ~ const_str_hex)))
+}
+const_str_char = @{ !("\"" | "\\") ~ ANY }
+const_str_esc   = @{ "\"" | "\\" | "/" | "n" | "r" | "t" }
+const_str_hex   = @{ ASCII_HEX_DIGIT{4} }
