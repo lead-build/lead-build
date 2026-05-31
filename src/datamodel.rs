@@ -1,9 +1,20 @@
-use std::{rc::Rc};
-use crate::immap::ImMap;
+use clap::builder::FalseyValueParser;
 
-#[derive(Debug)]
+use crate::{datamodel::Error::ResolvError, immap::ImMap};
+use std::rc::Rc;
+
+#[derive(Debug, PartialEq)]
 pub enum Error {
     ResolvError(String),
+    DupKey(String),
+}
+
+impl From<crate::immap::Error> for Error {
+    fn from(value: crate::immap::Error) -> Self {
+        match value {
+            crate::immap::Error::DupKey(key) => Error::DupKey(key),
+        }
+    }
 }
 
 type Result<T> = std::result::Result<T, Error>;
@@ -36,31 +47,66 @@ impl PartialEq for Scope {
 
 impl Default for Scope {
     fn default() -> Self {
-        Self {
-            vars: ImMap::new(),
-        }
+        Self { vars: ImMap::new() }
     }
 }
 
 impl Scope {
-    pub fn resolve(&self, expr: Rc<Expr>) -> Result<Rc<Expr>> {
+    fn resolve_once(&self, expr: Rc<Expr>) -> Result<Rc<Expr>> {
         match expr.as_ref() {
-            Expr::Let(fields, expr) => {
-                todo!()
+            Expr::Let(fields, target_expr) => {
+                let mut vars: ImMap<Rc<Expr>> = self.vars.clone();
+                for (field_name, field_expr) in fields {
+                    vars = vars.set_inplace(field_name.clone(), field_expr.clone())?;
+                }
+                Ok(Expr::BoundExpr(Scope { vars }, target_expr.clone()).into())
             }
-            _ => Ok(expr),
+            Expr::BoundExpr(scope, subexpr) => match subexpr.as_ref() {
+                Expr::Object(im_map) => todo!(),
+                Expr::Var(name) => Ok(scope.vars.get(name).unwrap()),
+                Expr::FuncDefIdent(_, expr) => todo!(),
+                Expr::FuncDefPattern(items, expr) => todo!(),
+                Expr::Let(items, expr) => todo!(),
+                Expr::FuncCall(_, expr) => todo!(),
+                Expr::BoundExpr(scope, expr) => todo!(),
+                _ => Ok(subexpr.clone()),
+            },
+            Expr::Var(name) => match self.vars.get(name) {
+                Some(value) => Ok(value),
+                None => Err(Error::ResolvError("Unknown variable".into())),
+            },
+            _ => Err(ResolvError("Resolving invalid type".into())),
+        }
+    }
+
+    pub fn resolve(&self, expr: Rc<Expr>) -> Result<Rc<Expr>> {
+        if match expr.as_ref() {
+            Expr::Object(im_map) => false,
+            Expr::Int(_) => false,
+            Expr::String(_) => false,
+            Expr::Var(_) => true,
+            Expr::FuncDefIdent(_, expr) => false,
+            Expr::FuncDefPattern(items, expr) => false,
+            Expr::Let(items, expr) => true,
+            Expr::FuncCall(_, expr) => true,
+            Expr::BoundExpr(scope, expr) => true,
+        } {
+            self.resolve(self.resolve_once(expr)?)
+        } else {
+            Ok(expr)
         }
     }
 
     pub fn get_item(&self, expr: Rc<Expr>, item: &str) -> Result<Rc<Expr>> {
-        let resolved = self.resolve(expr)?;
-        match resolved.as_ref() {
+        match expr.as_ref() {
             Expr::Object(fields) => {
                 let field = fields
                     .get(item)
                     .ok_or_else(|| Error::ResolvError("field not found".into()))?;
                 Ok(field.clone())
             }
+            Expr::Let(_, _) => self.get_item(self.resolve_once(expr)?, item),
+            Expr::BoundExpr(_, _) => self.get_item(self.resolve_once(expr)?, item),
             _ => Err(Error::ResolvError("get_item resolving".into())),
         }
     }
@@ -92,7 +138,8 @@ mod tests {
                     something = "hej";
                 }
             "#,
-        ).unwrap();
+        )
+        .unwrap();
         let scope = Scope::default();
         let value = scope.get_item(expr, "stuff").unwrap();
         assert_eq!(*value, Expr::String("hello".into()));
@@ -120,7 +167,6 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "not yet implemented")]
     fn test_let() {
         let expr = DnjParser::parse_str(
             r#"
@@ -128,15 +174,25 @@ mod tests {
                     a = 12;
                     b = "hello";
                 in
-                {
-                    refered_a = a;
-                    stuff = b;
-                }
+                b
             "#,
         )
         .unwrap();
         let scope = Scope::default();
-        let value = scope.get_item(expr, "stuff").unwrap();
+        let value = scope.resolve(expr).unwrap();
         assert_eq!(*value, Expr::String("hello".into()));
+    }
+
+    #[test]
+    fn test_invalid_var() {
+        let expr = DnjParser::parse_str(
+            r#"
+                invalid_var
+            "#,
+        )
+        .unwrap();
+        let scope = Scope::default();
+        let value = scope.resolve(expr).unwrap_err();
+        assert_eq!(value, Error::ResolvError("Unknown variable".into()));
     }
 }

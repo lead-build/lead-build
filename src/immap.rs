@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ImMap<T: Clone + PartialEq>(BTreeMap<String, T>);
 
 #[derive(Debug)]
