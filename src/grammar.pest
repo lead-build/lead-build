@@ -29,7 +29,9 @@ variable = { ident }
 func_def = { ( func_args_ident | func_args_pattern ) ~ ":" ~ expr }
 
 func_args_ident = _{ ident }
-func_args_pattern = { "{" ~ (ident ~ (&"}" | ","))* ~ "}" }
+// For now, interpreter only supports variadic function calls. Therefore, add
+// it to grammar too, so it's possible to add non-variadic functions later
+func_args_pattern = { "{" ~ (ident ~ (&"}" | ","))* ~ "..." ~ "}" }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Let blocks

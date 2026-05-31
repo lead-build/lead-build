@@ -192,6 +192,8 @@ impl DnjParser {
 
 #[cfg(test)]
 mod tests {
+    use pest::error::ErrorVariant::ParsingError;
+
     use super::*;
 
     #[test]
@@ -286,8 +288,8 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_func_def_pattern1() {
-        let code = "{ hej, hopp, svej }: 12";
+    fn test_parse_func_def_pattern_variadic() {
+        let code = "{ hej, hopp, svej, ... }: 12";
         let tree = DnjParser::parse_str(code).unwrap();
         assert_eq!(
             Expr::FuncDefPattern(
@@ -299,16 +301,19 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_func_def_pattern2() {
+    fn test_parse_func_def_pattern_non_var_1() {
+        let code = "{ hej, hopp, svej }: 12";
+
+        // Should be an error, try to unwrap it. Panic otherwise
+        let _ = DnjParser::parse_str(code).unwrap_err();
+    }
+
+    #[test]
+    fn test_parse_func_def_pattern_non_var_2() {
         let code = "{ hej, hopp, svej, }: 12";
-        let tree = DnjParser::parse_str(code).unwrap();
-        assert_eq!(
-            Expr::FuncDefPattern(
-                vec!["hej".into(), "hopp".into(), "svej".into()],
-                Expr::Int(12).into()
-            ),
-            *tree
-        );
+
+        // Should be an error, try to unwrap it. Panic otherwise
+        let _ = DnjParser::parse_str(code).unwrap_err();
     }
 
     #[test]

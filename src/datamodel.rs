@@ -378,7 +378,7 @@ mod tests {
                 let
                     a = 12;
                     b = 13;
-                    func = { a, b }: {
+                    func = { a, b, ... }: {
                         var = b;
                     };
                 in
