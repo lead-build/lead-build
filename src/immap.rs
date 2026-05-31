@@ -61,4 +61,12 @@ where
     pub fn get(&self, key: &str) -> Option<T> {
         self.0.get(key).cloned()
     }
+
+    pub fn map<B, F>(&self, f: F) -> ImMap<B>
+    where
+        F: Fn(&T) -> B,
+        B: Clone + PartialEq,
+    {
+        ImMap::from(self.0.iter().map(|(name, value)| (name.clone(), f(value)))).unwrap()
+    }
 }

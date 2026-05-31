@@ -32,7 +32,7 @@ pub enum Expr {
     BoundExpr(Scope, Rc<Expr>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Scope {
     vars: ImMap<Rc<Expr>>,
 }
@@ -62,7 +62,10 @@ impl Scope {
                 Ok(Expr::BoundExpr(Scope { vars }, target_expr.clone()).into())
             }
             Expr::BoundExpr(scope, subexpr) => match subexpr.as_ref() {
-                Expr::Object(im_map) => todo!(),
+                Expr::Object(im_map) => Ok(Expr::Object(
+                    im_map.map(|val| Expr::BoundExpr(scope.clone(), val.clone()).into()),
+                )
+                .into()),
                 Expr::Var(name) => Ok(scope.vars.get(name).unwrap()),
                 Expr::FuncDefIdent(_, expr) => todo!(),
                 Expr::FuncDefPattern(items, expr) => todo!(),
@@ -194,5 +197,23 @@ mod tests {
         let scope = Scope::default();
         let value = scope.resolve(expr).unwrap_err();
         assert_eq!(value, Error::ResolvError("Unknown variable".into()));
+    }
+
+    #[test]
+    fn test_x() {
+        let expr = DnjParser::parse_str(
+            r#"
+                let
+                    a = 12;
+                in
+                {
+                    stuff = a;
+                }
+            "#,
+        )
+        .unwrap();
+        let scope = Scope::default();
+        let value = scope.resolve(scope.get_item(expr, "stuff").unwrap()).unwrap();
+        assert_eq!(*value, Expr::Int(12));
     }
 }
