@@ -1,6 +1,8 @@
 use crate::datamodel::Expr;
+use crate::immap::ImMap;
+use pest::{Span, error::ErrorVariant};
 use pest_consume::{Parser, match_nodes};
-use std::{collections::BTreeMap, fs, num::ParseIntError, path::PathBuf, rc::Rc};
+use std::{fs, num::ParseIntError, path::PathBuf, rc::Rc};
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
@@ -58,16 +60,24 @@ impl DnjParser {
         let assignments = match_nodes! {input.into_children();
             [object_assignment(a)..] => a
         };
-        let mut fields = BTreeMap::new();
-        for (name, value) in assignments {
-            fields.insert(name, value);
+        let mut map: ImMap<Rc<Expr>> = ImMap::new();
+        for (key, value, span) in assignments {
+            map = map.set_inplace(key, value).map_err(|err| {
+                Error::new_from_span(
+                    ErrorVariant::CustomError {
+                        message: err.to_string(),
+                    },
+                    span,
+                )
+            })?;
         }
-        Ok(Expr::Object(fields).into())
+        Ok(Expr::Object(map).into())
     }
 
-    fn object_assignment(input: Node) -> Result<(String, Rc<Expr>)> {
+    fn object_assignment(input: Node) -> Result<(String, Rc<Expr>, Span)> {
+        let span = input.as_span();
         Ok(match_nodes! {input.into_children();
-            [ident(ident), expr(val)] => (ident, val),
+            [ident(ident), expr(val)] => (ident, val, span),
         })
     }
 
@@ -200,10 +210,16 @@ mod tests {
         "#;
         let tree = DnjParser::parse_str(code).unwrap();
         assert_eq!(
-            Expr::Object(BTreeMap::from([
-                ("boll".into(), Expr::Int(123).into()),
-                ("hej".into(), Expr::Int(323).into())
-            ])),
+            Expr::Object(
+                ImMap::from(
+                    [
+                        ("boll".into(), Expr::Int(123).into()),
+                        ("hej".into(), Expr::Int(323).into())
+                    ]
+                    .into_iter()
+                )
+                .unwrap()
+            ),
             *tree
         );
     }
@@ -218,17 +234,29 @@ mod tests {
         "#;
         let tree = DnjParser::parse_str(code).unwrap();
         assert_eq!(
-            Expr::Object(BTreeMap::from([
-                ("boll".into(), Expr::Int(123).into()),
-                (
-                    "hej".into(),
-                    Expr::Object(BTreeMap::from([
-                        ("a".into(), Expr::Int(2).into()),
-                        ("b".into(), Expr::Int(3).into()),
-                    ]))
-                    .into()
+            Expr::Object(
+                ImMap::from(
+                    [
+                        ("boll".into(), Expr::Int(123).into()),
+                        (
+                            "hej".into(),
+                            Expr::Object(
+                                ImMap::from(
+                                    [
+                                        ("a".into(), Expr::Int(2).into()),
+                                        ("b".into(), Expr::Int(3).into()),
+                                    ]
+                                    .into_iter()
+                                )
+                                .unwrap()
+                            )
+                            .into()
+                        )
+                    ]
+                    .into_iter()
                 )
-            ])),
+                .unwrap()
+            ),
             *tree
         );
     }

@@ -1,4 +1,5 @@
-use std::{collections::BTreeMap, rc::Rc};
+use std::{rc::Rc};
+use crate::immap::ImMap;
 
 #[derive(Debug)]
 pub enum Error {
@@ -9,7 +10,7 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, PartialEq)]
 pub enum Expr {
-    Object(BTreeMap<String, Rc<Expr>>),
+    Object(ImMap<Rc<Expr>>),
     Int(i64),
     String(String),
     Var(String),
@@ -22,7 +23,7 @@ pub enum Expr {
 
 #[derive(Debug)]
 pub struct Scope {
-    vars: BTreeMap<String, Rc<Expr>>,
+    vars: ImMap<Rc<Expr>>,
 }
 
 impl PartialEq for Scope {
@@ -36,7 +37,7 @@ impl PartialEq for Scope {
 impl Default for Scope {
     fn default() -> Self {
         Self {
-            vars: BTreeMap::new(),
+            vars: ImMap::new(),
         }
     }
 }
@@ -91,8 +92,7 @@ mod tests {
                     something = "hej";
                 }
             "#,
-        )
-        .unwrap();
+        ).unwrap();
         let scope = Scope::default();
         let value = scope.get_item(expr, "stuff").unwrap();
         assert_eq!(*value, Expr::String("hello".into()));

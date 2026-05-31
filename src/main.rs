@@ -1,6 +1,7 @@
 pub(crate) mod datamodel;
 pub mod error;
 mod grammar;
+pub(crate) mod immap;
 
 use clap::Parser;
 use error::Result;
