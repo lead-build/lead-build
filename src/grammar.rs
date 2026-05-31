@@ -1,3 +1,4 @@
+use crate::datamodel::Expr;
 use pest_consume::{Parser, match_nodes};
 use std::{collections::BTreeMap, fs, num::ParseIntError, path::PathBuf};
 
@@ -10,25 +11,15 @@ pub type Result<T> = std::result::Result<T, Error>;
 type Node<'i> = pest_consume::Node<'i, Rule, ()>;
 
 impl DnjParser {
-    pub fn parse_file(path: PathBuf) -> Result<AstNode> {
+    pub fn parse_file(path: PathBuf) -> Result<Expr> {
         let input_str = fs::read_to_string(path).unwrap();
         Self::parse_str(&input_str)
     }
-    pub fn parse_str(input_str: &str) -> Result<AstNode> {
+    pub fn parse_str(input_str: &str) -> Result<Expr> {
         let parse_tree = DnjParser::parse(Rule::entry, input_str)?;
         let input = parse_tree.single()?;
         DnjParser::entry(input)
     }
-}
-
-#[derive(Debug, PartialEq)]
-pub enum AstNode {
-    Object(Box<BTreeMap<String, AstNode>>),
-    Int(i64),
-    String(String),
-    FuncCall(String, Box<AstNode>),
-    FuncDefIdent(String, Box<AstNode>),
-    FuncDefPattern(Vec<String>, Box<AstNode>),
 }
 
 #[pest_consume::parser]
@@ -37,7 +28,7 @@ impl DnjParser {
         Ok(())
     }
 
-    fn entry(input: Node) -> Result<AstNode> {
+    fn entry(input: Node) -> Result<Expr> {
         Ok(match_nodes! {input.into_children();
             [expr(e), EOI(_)] => e,
         })
@@ -47,7 +38,7 @@ impl DnjParser {
      * Expression
      */
 
-    fn expr(input: Node) -> Result<AstNode> {
+    fn expr(input: Node) -> Result<Expr> {
         Ok(match_nodes! {input.into_children();
             [object(x)] => x,
             [const_int(x)] => x,
@@ -61,7 +52,7 @@ impl DnjParser {
      * Primitives
      */
 
-    fn object(input: Node) -> Result<AstNode> {
+    fn object(input: Node) -> Result<Expr> {
         let assignments = match_nodes! {input.into_children();
             [object_assignment(a)..] => a
         };
@@ -69,18 +60,18 @@ impl DnjParser {
         for (name, value) in assignments {
             fields.insert(name, value);
         }
-        Ok(AstNode::Object(fields.into()))
+        Ok(Expr::Object(fields.into()))
     }
 
-    fn object_assignment(input: Node) -> Result<(String, AstNode)> {
+    fn object_assignment(input: Node) -> Result<(String, Expr)> {
         Ok(match_nodes! {input.into_children();
             [ident(ident), expr(val)] => (ident, val),
         })
     }
 
-    fn func_call(input: Node) -> Result<AstNode> {
+    fn func_call(input: Node) -> Result<Expr> {
         Ok(match_nodes! {input.into_children();
-            [ident(ident), expr(val)] => AstNode::FuncCall(ident, val.into()),
+            [ident(ident), expr(val)] => Expr::FuncCall(ident, val.into()),
         })
     }
 
@@ -88,10 +79,10 @@ impl DnjParser {
      * Function definition
      */
 
-    fn func_def(input: Node) -> Result<AstNode> {
+    fn func_def(input: Node) -> Result<Expr> {
         Ok(match_nodes! {input.into_children();
-            [ident(ident), expr(val)] => AstNode::FuncDefIdent(ident, val.into()),
-            [func_args_pattern(pat), expr(val)] => AstNode::FuncDefPattern(pat, val.into()),
+            [ident(ident), expr(val)] => Expr::FuncDefIdent(ident, val.into()),
+            [func_args_pattern(pat), expr(val)] => Expr::FuncDefPattern(pat, val.into()),
         })
     }
 
@@ -110,16 +101,16 @@ impl DnjParser {
         Ok(input.as_str().into())
     }
 
-    fn const_int(input: Node) -> Result<AstNode> {
+    fn const_int(input: Node) -> Result<Expr> {
         let value = input
             .as_str()
             .parse()
             .map_err(|e: ParseIntError| input.error(e.to_string()))?;
-        Ok(AstNode::Int(value))
+        Ok(Expr::Int(value))
     }
 
-    fn const_str(input: Node) -> Result<AstNode> {
-        Ok(AstNode::String(
+    fn const_str(input: Node) -> Result<Expr> {
+        Ok(Expr::String(
             match_nodes! {input.into_children();
                 [const_str_sym(c)..] => c,
             }
@@ -163,7 +154,7 @@ mod tests {
     #[test]
     fn test_parse_int() {
         let tree = DnjParser::parse_str("1231").unwrap();
-        assert_eq!(AstNode::Int(1231), tree);
+        assert_eq!(Expr::Int(1231), tree);
     }
 
     #[test]
@@ -176,10 +167,10 @@ mod tests {
         "#;
         let tree = DnjParser::parse_str(code).unwrap();
         assert_eq!(
-            AstNode::Object(
+            Expr::Object(
                 BTreeMap::from([
-                    ("boll".into(), AstNode::Int(123)),
-                    ("hej".into(), AstNode::Int(323))
+                    ("boll".into(), Expr::Int(123)),
+                    ("hej".into(), Expr::Int(323))
                 ])
                 .into()
             ),
@@ -197,15 +188,15 @@ mod tests {
         "#;
         let tree = DnjParser::parse_str(code).unwrap();
         assert_eq!(
-            AstNode::Object(
+            Expr::Object(
                 BTreeMap::from([
-                    ("boll".into(), AstNode::Int(123)),
+                    ("boll".into(), Expr::Int(123)),
                     (
                         "hej".into(),
-                        AstNode::Object(
+                        Expr::Object(
                             BTreeMap::from([
-                                ("a".into(), AstNode::Int(2)),
-                                ("b".into(), AstNode::Int(3)),
+                                ("a".into(), Expr::Int(2)),
+                                ("b".into(), Expr::Int(3)),
                             ])
                             .into()
                         )
@@ -221,27 +212,21 @@ mod tests {
     fn test_parse_str() {
         let code = "\"boll\\\"hej\\u0041\"";
         let tree = DnjParser::parse_str(code).unwrap();
-        assert_eq!(AstNode::String("boll\"hejA".into()), tree);
+        assert_eq!(Expr::String("boll\"hejA".into()), tree);
     }
 
     #[test]
     fn test_parse_func_call() {
         let code = "hej 12";
         let tree = DnjParser::parse_str(code).unwrap();
-        assert_eq!(
-            AstNode::FuncCall("hej".into(), AstNode::Int(12).into()),
-            tree
-        );
+        assert_eq!(Expr::FuncCall("hej".into(), Expr::Int(12).into()), tree);
     }
 
     #[test]
     fn test_parse_func_def_ident() {
         let code = "hej: 12";
         let tree = DnjParser::parse_str(code).unwrap();
-        assert_eq!(
-            AstNode::FuncDefIdent("hej".into(), AstNode::Int(12).into()),
-            tree
-        );
+        assert_eq!(Expr::FuncDefIdent("hej".into(), Expr::Int(12).into()), tree);
     }
 
     #[test]
@@ -249,9 +234,9 @@ mod tests {
         let code = "{ hej, hopp, svej }: 12";
         let tree = DnjParser::parse_str(code).unwrap();
         assert_eq!(
-            AstNode::FuncDefPattern(
+            Expr::FuncDefPattern(
                 vec!["hej".into(), "hopp".into(), "svej".into()],
-                AstNode::Int(12).into()
+                Expr::Int(12).into()
             ),
             tree
         );
@@ -262,9 +247,9 @@ mod tests {
         let code = "{ hej, hopp, svej, }: 12";
         let tree = DnjParser::parse_str(code).unwrap();
         assert_eq!(
-            AstNode::FuncDefPattern(
+            Expr::FuncDefPattern(
                 vec!["hej".into(), "hopp".into(), "svej".into()],
-                AstNode::Int(12).into()
+                Expr::Int(12).into()
             ),
             tree
         );

@@ -1,10 +1,11 @@
+pub(crate) mod datamodel;
 pub mod error;
 mod grammar;
 
 use clap::Parser;
 use error::Result;
-use std::{path::PathBuf, process::exit};
 use grammar::DnjParser;
+use std::{path::PathBuf, process::exit};
 
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
