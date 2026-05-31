@@ -45,6 +45,7 @@ impl DnjParser {
             [const_str(x)] => x,
             [func_call(x)] => x,
             [func_def(x)] => x,
+            [let_def(x)] => x,
         })
     }
 
@@ -91,6 +92,30 @@ impl DnjParser {
             [ident(ident)..] => ident,
         }
         .collect())
+    }
+
+    /*
+     * Let blocks
+     */
+
+    fn let_def(input: Node) -> Result<Expr> {
+        let (bl, ex) = match_nodes! {input.into_children();
+            [let_block(bl), expr(ex)] => (bl, ex)
+        };
+        Ok(Expr::Let(bl, ex.into()))
+    }
+
+    fn let_block(input: Node) -> Result<Vec<(String, Box<Expr>)>> {
+        Ok(match_nodes! {input.into_children();
+            [let_stmt(stmt)..] => stmt,
+        }
+        .collect())
+    }
+
+    fn let_stmt(input: Node) -> Result<(String, Box<Expr>)> {
+        Ok(match_nodes! {input.into_children();
+            [ident(ident), expr(val)] => (ident, val.into()),
+        })
     }
 
     /*
@@ -250,6 +275,22 @@ mod tests {
             Expr::FuncDefPattern(
                 vec!["hej".into(), "hopp".into(), "svej".into()],
                 Expr::Int(12).into()
+            ),
+            tree
+        );
+    }
+
+    #[test]
+    fn test_parse_let() {
+        let code = "let a = 21; b = 33; in 434";
+        let tree = DnjParser::parse_str(code).unwrap();
+        assert_eq!(
+            Expr::Let(
+                vec![
+                    ("a".into(), Expr::Int(21).into()),
+                    ("b".into(), Expr::Int(33).into()),
+                ],
+                Expr::Int(434).into(),
             ),
             tree
         );

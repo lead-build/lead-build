@@ -9,14 +9,15 @@ expr = {
     const_int |
     const_str |
     func_call |
-    func_def
+    func_def |
+    let_def
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Primitives
 
-object = { "{" ~ (object_assignment ~ ";")* ~ "}" }
-object_assignment = { ident ~ "=" ~ expr }
+object = { "{" ~ object_assignment* ~ "}" }
+object_assignment = { ident ~ "=" ~ expr ~ ";" }
 
 func_call = { ident ~ expr }
 
@@ -27,6 +28,14 @@ func_def = { ( func_args_ident | func_args_pattern ) ~ ":" ~ expr }
 
 func_args_ident = _{ ident }
 func_args_pattern = { "{" ~ (ident ~ (&"}" | ","))* ~ "}" }
+
+////////////////////////////////////////////////////////////////////////////////
+// Let blocks
+
+let_def = { "let" ~ let_block ~ "in" ~ expr }
+
+let_block = { let_stmt* }
+let_stmt = { ident ~ "=" ~ expr ~ ";" }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Literals
