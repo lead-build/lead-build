@@ -10,7 +10,8 @@ expr = {
     const_str |
     func_call |
     func_def |
-    let_def
+    let_def |
+    variable
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -20,6 +21,7 @@ object = { "{" ~ object_assignment* ~ "}" }
 object_assignment = { ident ~ "=" ~ expr ~ ";" }
 
 func_call = { ident ~ expr }
+variable = { ident }
 
 ////////////////////////////////////////////////////////////////////////////////
 // Function definition
@@ -40,7 +42,18 @@ let_stmt = { ident ~ "=" ~ expr ~ ";" }
 ////////////////////////////////////////////////////////////////////////////////
 // Literals
 
-ident          = @{ 'a'..'z' ~ ('a'..'z' | '0'..'9' | "_")* }
+ident          = @{
+    !(ident_reserved ~ !ident_char)
+    ~ ident_prefix
+    ~ ident_char*
+}
+ident_prefix   = @{ 'a'..'z' }
+ident_char     = @{ ('a'..'z' | '0'..'9' | "_") }
+ident_reserved = @{
+    "let" |
+    "in"
+}
+
 const_int      = @{ ("+" | "-")? ~ ASCII_DIGIT+ }
 const_str      = ${ "\"" ~ const_str_sym* ~ "\"" }
 const_str_sym  = ${

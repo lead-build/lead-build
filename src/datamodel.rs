@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, rc::Rc};
 
 #[derive(Debug)]
 pub enum Error {
@@ -9,19 +9,28 @@ type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, PartialEq)]
 pub enum Expr {
-    Object(Box<BTreeMap<String, Expr>>),
+    Object(BTreeMap<String, Rc<Expr>>),
     Int(i64),
     String(String),
-    FuncDefIdent(String, Box<Expr>),
-    FuncDefPattern(Vec<String>, Box<Expr>),
-
-    Let(Vec<(String, Box<Expr>)>, Box<Expr>),
-    FuncCall(String, Box<Expr>),
+    Var(String),
+    FuncDefIdent(String, Rc<Expr>),
+    FuncDefPattern(Vec<String>, Rc<Expr>),
+    Let(Vec<(String, Rc<Expr>)>, Rc<Expr>),
+    FuncCall(String, Rc<Expr>),
+    BoundExpr(Scope, Rc<Expr>),
 }
 
 #[derive(Debug)]
 pub struct Scope {
-    vars: BTreeMap<String, Expr>,
+    vars: BTreeMap<String, Rc<Expr>>,
+}
+
+impl PartialEq for Scope {
+    // PartialEq for scope should never be called. It needs to be avaialble for
+    // PartialEq for Expr to be availble, which is only needed for tests
+    fn eq(&self, _other: &Self) -> bool {
+        unimplemented!("PartialEq for Scope should not be called")
+    }
 }
 
 impl Default for Scope {
@@ -32,30 +41,37 @@ impl Default for Scope {
     }
 }
 
-impl Expr {
-    fn resolve(&self) -> Result<&Expr> {
-        match self {
-            Expr::Let(_items, expr) => Ok(expr),
-            Expr::FuncCall(_name, _expr) => todo!(),
-            primitive => Ok(primitive)
+impl Scope {
+    pub fn resolve(&self, expr: Rc<Expr>) -> Result<Rc<Expr>> {
+        match expr.as_ref() {
+            Expr::Let(fields, expr) => {
+                todo!()
+            }
+            _ => Ok(expr),
         }
     }
 
-    pub fn get_item(&self, item: &str) -> Result<&Expr> {
-        let resolved = self.resolve()?;
-        match resolved {
-            Expr::Object(fields) => fields
-                .get(item)
-                .ok_or_else(|| Error::ResolvError("field not found".into())),
+    pub fn get_item(&self, expr: Rc<Expr>, item: &str) -> Result<Rc<Expr>> {
+        let resolved = self.resolve(expr)?;
+        match resolved.as_ref() {
+            Expr::Object(fields) => {
+                let field = fields
+                    .get(item)
+                    .ok_or_else(|| Error::ResolvError("field not found".into()))?;
+                Ok(field.clone())
+            }
             _ => Err(Error::ResolvError("get_item resolving".into())),
         }
     }
 
-    pub fn get_path<'a>(&self, path: impl Iterator<Item = &'a str>) -> Result<&Expr> {
-        let mut cur = self;
+    pub fn get_path<'a>(
+        &self,
+        expr: Rc<Expr>,
+        path: impl Iterator<Item = &'a str>,
+    ) -> Result<Rc<Expr>> {
+        let mut cur = expr;
         for item in path {
-            let cur_resolved = cur.resolve()?;
-            cur = cur_resolved.get_item(item)?;
+            cur = self.get_item(cur, item)?;
         }
         Ok(cur)
     }
@@ -68,7 +84,7 @@ mod tests {
 
     #[test]
     fn test_eval() {
-        let expr: Expr = DnjParser::parse_str(
+        let expr = DnjParser::parse_str(
             r#"
                 {
                     stuff = "hello";
@@ -77,13 +93,15 @@ mod tests {
             "#,
         )
         .unwrap();
-        let value: &Expr = expr.get_item("stuff").unwrap();
-        assert_eq!(value, &Expr::String("hello".into()));
+        let scope = Scope::default();
+        let value = scope.get_item(expr, "stuff").unwrap();
+        assert_eq!(*value, Expr::String("hello".into()));
     }
 
     #[test]
     fn test_eval_deep() {
-        let expr: Expr = DnjParser::parse_str(
+        // This also tests "inner" as prefixed for reserved keyword "in" is ok
+        let expr = DnjParser::parse_str(
             r#"
                 {
                     stuff = "hello";
@@ -94,28 +112,31 @@ mod tests {
             "#,
         )
         .unwrap();
-        let value: &Expr = expr
-            .get_path(vec!["something", "inner"].into_iter())
+        let scope = Scope::default();
+        let value = scope
+            .get_path(expr, vec!["something", "inner"].into_iter())
             .unwrap();
-        assert_eq!(value, &Expr::String("deep".into()));
+        assert_eq!(*value, Expr::String("deep".into()));
     }
 
     #[test]
-    fn test_let_noref() {
-        let expr: Expr = DnjParser::parse_str(
+    #[should_panic(expected = "not yet implemented")]
+    fn test_let() {
+        let expr = DnjParser::parse_str(
             r#"
                 let
                     a = 12;
-                    b = 13;
+                    b = "hello";
                 in
                 {
-                    stuff = "hello";
-                    something = "hej";
+                    refered_a = a;
+                    stuff = b;
                 }
             "#,
         )
         .unwrap();
-        let value: &Expr = expr.get_item("stuff").unwrap();
-        assert_eq!(value, &Expr::String("hello".into()));
+        let scope = Scope::default();
+        let value = scope.get_item(expr, "stuff").unwrap();
+        assert_eq!(*value, Expr::String("hello".into()));
     }
 }

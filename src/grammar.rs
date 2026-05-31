@@ -1,6 +1,6 @@
 use crate::datamodel::Expr;
 use pest_consume::{Parser, match_nodes};
-use std::{collections::BTreeMap, fs, num::ParseIntError, path::PathBuf};
+use std::{collections::BTreeMap, fs, num::ParseIntError, path::PathBuf, rc::Rc};
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
@@ -11,11 +11,11 @@ pub type Result<T> = std::result::Result<T, Error>;
 type Node<'i> = pest_consume::Node<'i, Rule, ()>;
 
 impl DnjParser {
-    pub fn parse_file(path: PathBuf) -> Result<Expr> {
+    pub fn parse_file(path: PathBuf) -> Result<Rc<Expr>> {
         let input_str = fs::read_to_string(path).unwrap();
         Self::parse_str(&input_str)
     }
-    pub fn parse_str(input_str: &str) -> Result<Expr> {
+    pub fn parse_str(input_str: &str) -> Result<Rc<Expr>> {
         let parse_tree = DnjParser::parse(Rule::entry, input_str)?;
         let input = parse_tree.single()?;
         DnjParser::entry(input)
@@ -28,7 +28,7 @@ impl DnjParser {
         Ok(())
     }
 
-    fn entry(input: Node) -> Result<Expr> {
+    fn entry(input: Node) -> Result<Rc<Expr>> {
         Ok(match_nodes! {input.into_children();
             [expr(e), EOI(_)] => e,
         })
@@ -38,7 +38,7 @@ impl DnjParser {
      * Expression
      */
 
-    fn expr(input: Node) -> Result<Expr> {
+    fn expr(input: Node) -> Result<Rc<Expr>> {
         Ok(match_nodes! {input.into_children();
             [object(x)] => x,
             [const_int(x)] => x,
@@ -46,6 +46,7 @@ impl DnjParser {
             [func_call(x)] => x,
             [func_def(x)] => x,
             [let_def(x)] => x,
+            [variable(x)] => x,
         })
     }
 
@@ -53,7 +54,7 @@ impl DnjParser {
      * Primitives
      */
 
-    fn object(input: Node) -> Result<Expr> {
+    fn object(input: Node) -> Result<Rc<Expr>> {
         let assignments = match_nodes! {input.into_children();
             [object_assignment(a)..] => a
         };
@@ -61,18 +62,24 @@ impl DnjParser {
         for (name, value) in assignments {
             fields.insert(name, value);
         }
-        Ok(Expr::Object(fields.into()))
+        Ok(Expr::Object(fields).into())
     }
 
-    fn object_assignment(input: Node) -> Result<(String, Expr)> {
+    fn object_assignment(input: Node) -> Result<(String, Rc<Expr>)> {
         Ok(match_nodes! {input.into_children();
             [ident(ident), expr(val)] => (ident, val),
         })
     }
 
-    fn func_call(input: Node) -> Result<Expr> {
+    fn func_call(input: Node) -> Result<Rc<Expr>> {
         Ok(match_nodes! {input.into_children();
-            [ident(ident), expr(val)] => Expr::FuncCall(ident, val.into()),
+            [ident(ident), expr(val)] => Expr::FuncCall(ident, val).into(),
+        })
+    }
+
+    fn variable(input: Node) -> Result<Rc<Expr>> {
+        Ok(match_nodes! {input.into_children();
+            [ident(ident)] => Expr::Var(ident).into(),
         })
     }
 
@@ -80,10 +87,10 @@ impl DnjParser {
      * Function definition
      */
 
-    fn func_def(input: Node) -> Result<Expr> {
+    fn func_def(input: Node) -> Result<Rc<Expr>> {
         Ok(match_nodes! {input.into_children();
-            [ident(ident), expr(val)] => Expr::FuncDefIdent(ident, val.into()),
-            [func_args_pattern(pat), expr(val)] => Expr::FuncDefPattern(pat, val.into()),
+            [ident(ident), expr(val)] => Expr::FuncDefIdent(ident, val.into()).into(),
+            [func_args_pattern(pat), expr(val)] => Expr::FuncDefPattern(pat, val.into()).into(),
         })
     }
 
@@ -98,21 +105,21 @@ impl DnjParser {
      * Let blocks
      */
 
-    fn let_def(input: Node) -> Result<Expr> {
+    fn let_def(input: Node) -> Result<Rc<Expr>> {
         let (bl, ex) = match_nodes! {input.into_children();
             [let_block(bl), expr(ex)] => (bl, ex)
         };
-        Ok(Expr::Let(bl, ex.into()))
+        Ok(Expr::Let(bl, ex.into()).into())
     }
 
-    fn let_block(input: Node) -> Result<Vec<(String, Box<Expr>)>> {
+    fn let_block(input: Node) -> Result<Vec<(String, Rc<Expr>)>> {
         Ok(match_nodes! {input.into_children();
             [let_stmt(stmt)..] => stmt,
         }
         .collect())
     }
 
-    fn let_stmt(input: Node) -> Result<(String, Box<Expr>)> {
+    fn let_stmt(input: Node) -> Result<(String, Rc<Expr>)> {
         Ok(match_nodes! {input.into_children();
             [ident(ident), expr(val)] => (ident, val.into()),
         })
@@ -126,21 +133,22 @@ impl DnjParser {
         Ok(input.as_str().into())
     }
 
-    fn const_int(input: Node) -> Result<Expr> {
+    fn const_int(input: Node) -> Result<Rc<Expr>> {
         let value = input
             .as_str()
             .parse()
             .map_err(|e: ParseIntError| input.error(e.to_string()))?;
-        Ok(Expr::Int(value))
+        Ok(Expr::Int(value).into())
     }
 
-    fn const_str(input: Node) -> Result<Expr> {
+    fn const_str(input: Node) -> Result<Rc<Expr>> {
         Ok(Expr::String(
             match_nodes! {input.into_children();
                 [const_str_sym(c)..] => c,
             }
             .collect(),
-        ))
+        )
+        .into())
     }
 
     fn const_str_sym(input: Node) -> Result<char> {
@@ -179,7 +187,7 @@ mod tests {
     #[test]
     fn test_parse_int() {
         let tree = DnjParser::parse_str("1231").unwrap();
-        assert_eq!(Expr::Int(1231), tree);
+        assert_eq!(Expr::Int(1231), *tree);
     }
 
     #[test]
@@ -192,14 +200,11 @@ mod tests {
         "#;
         let tree = DnjParser::parse_str(code).unwrap();
         assert_eq!(
-            Expr::Object(
-                BTreeMap::from([
-                    ("boll".into(), Expr::Int(123)),
-                    ("hej".into(), Expr::Int(323))
-                ])
-                .into()
-            ),
-            tree
+            Expr::Object(BTreeMap::from([
+                ("boll".into(), Expr::Int(123).into()),
+                ("hej".into(), Expr::Int(323).into())
+            ])),
+            *tree
         );
     }
 
@@ -213,23 +218,18 @@ mod tests {
         "#;
         let tree = DnjParser::parse_str(code).unwrap();
         assert_eq!(
-            Expr::Object(
-                BTreeMap::from([
-                    ("boll".into(), Expr::Int(123)),
-                    (
-                        "hej".into(),
-                        Expr::Object(
-                            BTreeMap::from([
-                                ("a".into(), Expr::Int(2)),
-                                ("b".into(), Expr::Int(3)),
-                            ])
-                            .into()
-                        )
-                    )
-                ])
-                .into()
-            ),
-            tree
+            Expr::Object(BTreeMap::from([
+                ("boll".into(), Expr::Int(123).into()),
+                (
+                    "hej".into(),
+                    Expr::Object(BTreeMap::from([
+                        ("a".into(), Expr::Int(2).into()),
+                        ("b".into(), Expr::Int(3).into()),
+                    ]))
+                    .into()
+                )
+            ])),
+            *tree
         );
     }
 
@@ -237,21 +237,24 @@ mod tests {
     fn test_parse_str() {
         let code = "\"boll\\\"hej\\u0041\"";
         let tree = DnjParser::parse_str(code).unwrap();
-        assert_eq!(Expr::String("boll\"hejA".into()), tree);
+        assert_eq!(Expr::String("boll\"hejA".into()), *tree);
     }
 
     #[test]
     fn test_parse_func_call() {
         let code = "hej 12";
         let tree = DnjParser::parse_str(code).unwrap();
-        assert_eq!(Expr::FuncCall("hej".into(), Expr::Int(12).into()), tree);
+        assert_eq!(Expr::FuncCall("hej".into(), Expr::Int(12).into()), *tree);
     }
 
     #[test]
     fn test_parse_func_def_ident() {
         let code = "hej: 12";
         let tree = DnjParser::parse_str(code).unwrap();
-        assert_eq!(Expr::FuncDefIdent("hej".into(), Expr::Int(12).into()), tree);
+        assert_eq!(
+            Expr::FuncDefIdent("hej".into(), Expr::Int(12).into()),
+            *tree
+        );
     }
 
     #[test]
@@ -263,7 +266,7 @@ mod tests {
                 vec!["hej".into(), "hopp".into(), "svej".into()],
                 Expr::Int(12).into()
             ),
-            tree
+            *tree
         );
     }
 
@@ -276,7 +279,7 @@ mod tests {
                 vec!["hej".into(), "hopp".into(), "svej".into()],
                 Expr::Int(12).into()
             ),
-            tree
+            *tree
         );
     }
 
@@ -292,7 +295,7 @@ mod tests {
                 ],
                 Expr::Int(434).into(),
             ),
-            tree
+            *tree
         );
     }
 }
