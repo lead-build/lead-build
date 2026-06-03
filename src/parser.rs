@@ -1,5 +1,5 @@
-use crate::error::{Result, DnjError};
-use crate::expr::{Expr, ExprSet, ExprType};
+use crate::error::{DnjError, Result};
+use crate::expr::{Expr, ExprBinOp, ExprSet, ExprType, ExprUnOp};
 use crate::value::Value;
 use std::fs;
 use std::path::PathBuf;
@@ -61,6 +61,10 @@ fn unpack_str(input: &str) -> Ex {
 
 fn unpack_int(input: &str) -> Ex {
     Ex::from(Value::parse_int(input).unwrap())
+}
+
+fn unpack_bool(input: bool) -> Ex {
+    Ex::from(Value::Bool(input))
 }
 
 #[cfg(test)]
@@ -203,6 +207,44 @@ mod tests {
                     ("b".into(), ExprType::Value(Value::Int(33)).into()),
                 ],
                 ExprType::Value(Value::Int(434)).into(),
+            )),
+            tree
+        );
+    }
+
+    #[test]
+    fn test_parse_add_mul_prio() {
+        let code = "2 * 3 + 4 * 5";
+        let tree = parse_str(code).unwrap();
+        assert_eq!(
+            Expr::from(ExprType::BinOp(
+                ExprBinOp::Add,
+                ExprType::BinOp(
+                    ExprBinOp::Mult,
+                    ExprType::Value(Value::Int(2)).into(),
+                    ExprType::Value(Value::Int(3)).into()
+                )
+                .into(),
+                ExprType::BinOp(
+                    ExprBinOp::Mult,
+                    ExprType::Value(Value::Int(4)).into(),
+                    ExprType::Value(Value::Int(5)).into()
+                )
+                .into()
+            )),
+            tree
+        );
+    }
+
+    #[test]
+    fn test_bool_op() {
+        let code = "false || true";
+        let tree = parse_str(code).unwrap();
+        assert_eq!(
+            Expr::from(ExprType::BinOp(
+                ExprBinOp::LogOr,
+                ExprType::Value(Value::Bool(false)).into(),
+                ExprType::Value(Value::Bool(true)).into(),
             )),
             tree
         );

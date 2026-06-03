@@ -5,24 +5,63 @@ use std::{
 
 use crate::immap::ImMap;
 
+pub mod ops {
+    pub trait ExprOps: Sized {
+        fn op_add(lhs: &Self, rhs: &Self) -> Result<Self>;
+        fn op_sub(lhs: &Self, rhs: &Self) -> Result<Self>;
+        fn op_mult(lhs: &Self, rhs: &Self) -> Result<Self>;
+        fn op_div(lhs: &Self, rhs: &Self) -> Result<Self>;
+        fn op_lt(lhs: &Self, rhs: &Self) -> Result<Self>;
+        fn op_le(lhs: &Self, rhs: &Self) -> Result<Self>;
+        fn op_gt(lhs: &Self, rhs: &Self) -> Result<Self>;
+        fn op_ge(lhs: &Self, rhs: &Self) -> Result<Self>;
+        fn op_eq(lhs: &Self, rhs: &Self) -> Result<Self>;
+        fn op_neq(lhs: &Self, rhs: &Self) -> Result<Self>;
+        fn op_neg(&self) -> Result<Self>;
+        fn op_not(&self) -> Result<Self>;
+        fn as_bool(&self) -> Result<bool>;
+        fn from_bool(&self, value: bool) -> Self;
+    }
+
+    pub enum Error {
+        Type(String),
+    }
+
+    pub type Result<T> = std::result::Result<T, Error>;
+}
+
+use ops::ExprOps;
+
 /*
  * Error
  */
 
 #[derive(Debug, PartialEq)]
-pub enum Error<T: Clone + PartialEq + Display> {
+pub enum Error<T: Clone + PartialEq + Display + ExprOps> {
     ScopeError(String, ExprSet<T>),
     EvalError(String),
+    TypeError(String),
     DupKey(String),
 }
 
 impl<T> From<crate::immap::Error> for Error<T>
 where
-    T: Clone + PartialEq + Display,
+    T: Clone + PartialEq + Display + ExprOps,
 {
     fn from(value: crate::immap::Error) -> Self {
         match value {
             crate::immap::Error::DupKey(key) => Error::DupKey(key),
+        }
+    }
+}
+
+impl<T> From<ops::Error> for Error<T>
+where
+    T: Clone + PartialEq + Display + ExprOps,
+{
+    fn from(value: ops::Error) -> Self {
+        match value {
+            ops::Error::Type(msg) => Error::TypeError(msg),
         }
     }
 }
@@ -35,14 +74,76 @@ type Result<RT, ET> = std::result::Result<RT, Error<ET>>;
 
 pub type ExprSet<T> = ImMap<Expr<T>>;
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum ExprBinOp {
+    AttrSel,
+    HasAttr,
+    ListConcat,
+    Mult,
+    Div,
+    Sub,
+    Add,
+    Update,
+    Lt,
+    Le,
+    Gt,
+    Ge,
+    Eq,
+    Neq,
+    LogAnd,
+    LogOr,
+    LogImpl,
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum ExprUnOp {
+    Neg,
+    Not,
+}
+
+impl Display for ExprBinOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExprBinOp::AttrSel => write!(f, "."),
+            ExprBinOp::HasAttr => write!(f, "?"),
+            ExprBinOp::ListConcat => write!(f, "++"),
+            ExprBinOp::Mult => write!(f, "*"),
+            ExprBinOp::Div => write!(f, "/"),
+            ExprBinOp::Sub => write!(f, "-"),
+            ExprBinOp::Add => write!(f, "+"),
+            ExprBinOp::Update => write!(f, "//"),
+            ExprBinOp::Lt => write!(f, "<"),
+            ExprBinOp::Le => write!(f, "<="),
+            ExprBinOp::Gt => write!(f, ">"),
+            ExprBinOp::Ge => write!(f, ">="),
+            ExprBinOp::Eq => write!(f, "=="),
+            ExprBinOp::Neq => write!(f, "!="),
+            ExprBinOp::LogAnd => write!(f, "&&"),
+            ExprBinOp::LogOr => write!(f, "||"),
+            ExprBinOp::LogImpl => write!(f, "->"),
+        }
+    }
+}
+
+impl Display for ExprUnOp {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ExprUnOp::Neg => write!(f, "-"),
+            ExprUnOp::Not => write!(f, "!"),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum ExprType<T>
 where
-    T: Clone + PartialEq + Display,
+    T: Clone + PartialEq + Display + ExprOps,
 {
     Object(ExprSet<T>),
     Value(T),
     Var(String),
+    UnOp(ExprUnOp, Expr<T>),
+    BinOp(ExprBinOp, Expr<T>, Expr<T>),
     FuncDefIdent(String, Expr<T>),
     FuncDefPattern(Vec<String>, Expr<T>),
     Let(Vec<(String, Expr<T>)>, Expr<T>),
@@ -53,11 +154,11 @@ where
 #[derive(Debug, PartialEq, Clone)]
 pub struct Expr<T>(Rc<ExprType<T>>)
 where
-    T: Clone + PartialEq + Display;
+    T: Clone + PartialEq + Display + ExprOps;
 
 impl<T> From<ExprType<T>> for Expr<T>
 where
-    T: Clone + PartialEq + Display,
+    T: Clone + PartialEq + Display + ExprOps,
 {
     fn from(value: ExprType<T>) -> Self {
         Expr(value.into())
@@ -66,7 +167,7 @@ where
 
 impl<T> From<T> for Expr<T>
 where
-    T: Clone + PartialEq + Display,
+    T: Clone + PartialEq + Display + ExprOps,
 {
     fn from(value: T) -> Self {
         Expr(ExprType::Value(value).into())
@@ -75,13 +176,19 @@ where
 
 impl<T> Display for ExprType<T>
 where
-    T: Clone + PartialEq + Display,
+    T: Clone + PartialEq + Display + ExprOps,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ExprType::Object(im_map) => im_map.fmt(f),
             ExprType::Value(val) => val.fmt(f),
             ExprType::Var(val) => Display::fmt(&val, f),
+            ExprType::UnOp(op, expr) => {
+                write!(f, "{}({})", op, expr)
+            }
+            ExprType::BinOp(op, lhs, rhs) => {
+                write!(f, "({}){}({})", lhs, op, rhs)
+            }
             ExprType::FuncDefIdent(name, expr) => write!(f, "{}: {}", name, expr),
             ExprType::FuncDefPattern(items, expr) => {
                 f.write_str("{")?;
@@ -113,7 +220,7 @@ where
 
 impl<T> Display for Expr<T>
 where
-    T: Clone + PartialEq + Display,
+    T: Clone + PartialEq + Display + ExprOps,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.0.fmt(f)
@@ -122,7 +229,7 @@ where
 
 impl<T> Expr<T>
 where
-    T: Clone + PartialEq + Display + Debug,
+    T: Clone + PartialEq + Display + ExprOps + Debug,
 {
     pub fn get_item(&self, item: &str) -> Option<Expr<T>> {
         match self.0.as_ref() {
@@ -175,6 +282,15 @@ where
                         varspace.clone(),
                     )),
                 },
+                ExprType::UnOp(op, expr) => {
+                    Ok(ExprType::UnOp(*op, expr.clone().bind(varspace.clone())).into())
+                }
+                ExprType::BinOp(op, lhs, rhs) => Ok(ExprType::BinOp(
+                    *op,
+                    lhs.clone().bind(varspace.clone()),
+                    rhs.clone().bind(varspace.clone()),
+                )
+                .into()),
                 ExprType::FuncCall(func_name, arg_expr) => match varspace.get(func_name) {
                     Some(func) => {
                         let func = func.resolve()?; // TODO: wrong scope
@@ -206,7 +322,7 @@ where
                                 Ok((new_vars, func_expr))
                             }
                             _ => Err(Error::ScopeError(
-                                format!("called {}, which is a {}", func_name, func.to_string()),
+                                format!("called {}, which is a {}", func_name, func),
                                 varspace.clone(),
                             )),
                         }?;
@@ -219,7 +335,7 @@ where
                                 inner_expr.clone(),
                             )
                             .into()),
-                            _ => Ok(ExprType::BoundExpr(args.into(), func_expr.clone()).into()),
+                            _ => Ok(ExprType::BoundExpr(args, func_expr.clone()).into()),
                         }
                     }
                     None => Err(Error::ScopeError(
@@ -228,12 +344,88 @@ where
                     )),
                 },
                 ExprType::Value(..) => Ok(bound_expr.clone()),
-                ExprType::BoundExpr(_inner_vars, _expr) => todo!(),
+                ExprType::BoundExpr(inner_vars, inner_expr) => Ok(ExprType::BoundExpr(
+                    varspace.clone().merge(inner_vars),
+                    inner_expr.clone(),
+                )
+                .into()),
             },
-            _ => Err(Error::EvalError(format!(
-                "Resolving unresolvable type {}",
-                self.to_string()
-            ))),
+            ExprType::UnOp(op, expr) => match op {
+                ExprUnOp::Neg => match expr.resolve()?.0.as_ref() {
+                    ExprType::Value(value) => Ok(value.op_neg()?.into()),
+                    _ => Err(Error::EvalError(format!("negating non-value: {}", expr))),
+                },
+                ExprUnOp::Not => match expr.resolve()?.0.as_ref() {
+                    ExprType::Value(value) => Ok(value.op_not()?.into()),
+                    _ => Err(Error::EvalError(format!("negating non-value: {}", expr))),
+                },
+            },
+            ExprType::BinOp(op, lhs, rhs) => match lhs.resolve()?.0.as_ref() {
+                ExprType::Object(_lhs_obj) => todo!(),
+                ExprType::Value(lhs_val) => match op {
+                    ExprBinOp::LogAnd => match lhs_val.as_bool()? {
+                        true => Ok(rhs.clone()),
+                        false => Ok(lhs_val.from_bool(false).into()),
+                    },
+                    ExprBinOp::LogOr => match lhs_val.as_bool()? {
+                        true => Ok(lhs_val.from_bool(true).into()),
+                        false => Ok(rhs.clone()),
+                    },
+                    ExprBinOp::LogImpl => match lhs_val.as_bool()? {
+                        false => Ok(lhs_val.from_bool(true).into()),
+                        true => Ok(rhs.clone()),
+                    },
+                    _ => match rhs.resolve()?.0.as_ref() {
+                        ExprType::Object(_rhs_obj) => todo!(),
+                        ExprType::Value(rhs_val) => match op {
+                            ExprBinOp::AttrSel => todo!(),
+                            ExprBinOp::HasAttr => todo!(),
+                            ExprBinOp::ListConcat => todo!(),
+                            ExprBinOp::Mult => {
+                                Ok(ExprType::Value(T::op_mult(lhs_val, rhs_val)?).into())
+                            }
+                            ExprBinOp::Div => {
+                                Ok(ExprType::Value(T::op_div(lhs_val, rhs_val)?).into())
+                            }
+                            ExprBinOp::Sub => {
+                                Ok(ExprType::Value(T::op_sub(lhs_val, rhs_val)?).into())
+                            }
+                            ExprBinOp::Add => {
+                                Ok(ExprType::Value(T::op_add(lhs_val, rhs_val)?).into())
+                            }
+                            ExprBinOp::Update => todo!(),
+                            ExprBinOp::Lt => {
+                                Ok(ExprType::Value(T::op_lt(lhs_val, rhs_val)?).into())
+                            }
+                            ExprBinOp::Le => {
+                                Ok(ExprType::Value(T::op_le(lhs_val, rhs_val)?).into())
+                            }
+                            ExprBinOp::Gt => {
+                                Ok(ExprType::Value(T::op_gt(lhs_val, rhs_val)?).into())
+                            }
+                            ExprBinOp::Ge => {
+                                Ok(ExprType::Value(T::op_ge(lhs_val, rhs_val)?).into())
+                            }
+                            ExprBinOp::Eq => {
+                                Ok(ExprType::Value(T::op_eq(lhs_val, rhs_val)?).into())
+                            }
+                            ExprBinOp::Neq => {
+                                Ok(ExprType::Value(T::op_neq(lhs_val, rhs_val)?).into())
+                            }
+                            _ => unreachable!(),
+                        },
+                        typ => Err(Error::EvalError(format!(
+                            "Resolving unresolvable type {}",
+                            typ
+                        ))),
+                    },
+                },
+                typ => Err(Error::EvalError(format!(
+                    "Resolving unresolvable type {}",
+                    typ
+                ))),
+            },
+            _ => unreachable!(),
         }
     }
 
@@ -243,6 +435,8 @@ where
             ExprType::Object(..) => false,
             ExprType::Value(..) => false,
             ExprType::Var(..) => true,
+            ExprType::UnOp(..) => true,
+            ExprType::BinOp(..) => true,
             ExprType::FuncDefIdent(..) => false,
             ExprType::FuncDefPattern(..) => false,
             ExprType::Let(..) => true,
@@ -500,5 +694,53 @@ mod tests {
             "#),
             eval("{ app = { var = { inner = 43; }; }; }"),
         }
+    }
+
+    #[test]
+    fn test_arith() {
+        assert_eq! {
+            eval("2 * 3 + 4 * 5"),
+            eval("6 + 20"),
+        }
+        assert_eq! {
+            eval("6 + 20"),
+            eval("26"),
+        }
+    }
+
+    #[test]
+    fn test_bool_op() {
+        assert_eq!(eval("false || 12"), eval("12"));
+        assert_eq!(eval("true || 12"), eval("true"));
+        assert_eq!(eval("false && 12"), eval("false"));
+        assert_eq!(eval("true && 12"), eval("12"));
+    }
+
+    #[test]
+    fn test_bool_laziness() {
+        assert_eq!(eval("true || invalid_var"), eval("true"));
+        assert_eq!(eval("false && invalid_var"), eval("false"));
+        assert_eq!(eval("false -> invalid_var"), eval("true"));
+    }
+
+    #[test]
+    fn test_bool_implication() {
+        assert_eq!(eval("false -> false"), eval("true"));
+        assert_eq!(eval("false -> true"), eval("true"));
+        assert_eq!(eval("true -> false"), eval("false"));
+        assert_eq!(eval("true -> true"), eval("true"));
+        assert_eq!(eval("false -> 12"), eval("true"));
+        assert_eq!(eval("true -> 12"), eval("12"));
+    }
+
+    #[test]
+    fn test_bool_not() {
+        assert_eq!(eval("!true"), eval("false"));
+        assert_eq!(eval("!false"), eval("true"));
+    }
+
+    #[test]
+    fn test_bool_neg() {
+        assert_eq!(eval("let a = 5; in (-a) + 3"), eval("-2"));
     }
 }

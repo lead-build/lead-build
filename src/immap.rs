@@ -5,10 +5,10 @@ pub enum Error {
     DupKey(String),
 }
 
-impl ToString for Error {
-    fn to_string(&self) -> String {
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Error::DupKey(key) => format!("Duplicate key: {}", key),
+            Error::DupKey(key) => write!(f, "Duplicate key: {}", key),
         }
     }
 }
