@@ -40,11 +40,10 @@ impl Display for Error {
     }
 }
 
-type Ex = ExprRef<Value>;
+type Ex<'a> = ExprRef<'a, Value>;
 // type ExR = Result<ExprRef<Value>>;
-type ExT = ExprType<Value>;
-type ExSet = ExprSet<Value>;
-
+type ExT<'a> = ExprType<'a, Value>;
+type ExSet<'a> = ExprSet<'a, Value>;
 pub trait ParsableValue
 where
     Self: Sized,
@@ -53,20 +52,29 @@ where
     fn parse_string(value: impl ToString) -> Option<Self>;
 }
 
-pub fn parse_file(path: PathBuf) -> Result<ExprRef<Value>> {
-    let parser: grammar::ExprParser = grammar::ExprParser::new();
-    let code = fs::read_to_string(path).unwrap();
-    let result = parser.parse(&code)?;
-    Ok(result)
+#[derive(Default)]
+pub struct Parser {
+    parser: grammar::ExprParser,
 }
 
-pub fn parse_str(code: &str) -> Result<ExprRef<Value>> {
-    let parser = grammar::ExprParser::new();
-    let result = parser.parse(code)?;
-    Ok(result)
+impl Parser {
+    pub fn new() -> Parser {
+        Default::default()
+    }
+
+    pub fn parse_file<'a>(&'a self, path: PathBuf) -> Result<ExprRef<'a, Value>> {
+        let code = fs::read_to_string(path).unwrap();
+        let result = self.parser.parse(&code)?;
+        Ok(result)
+    }
+
+    pub fn parse_str<'a>(&'a self, code: &str) -> Result<ExprRef<'a, Value>> {
+        let result = self.parser.parse(code)?;
+        Ok(result)
+    }
 }
 
-fn unpack_str(input: &str) -> Ex {
+fn unpack_str<'a>(input: &str) -> Ex<'a> {
     let mut out = String::new();
     let mut chars = input.chars();
 
@@ -92,14 +100,14 @@ fn unpack_str(input: &str) -> Ex {
     }
 }
 
-fn unpack_int(input: &str) -> Ex {
+fn unpack_int<'a>(input: &str) -> Ex<'a> {
     match Value::parse_int(input) {
         Some(value) => value.into(),
         None => panic!("Error parsing int"),
     }
 }
 
-fn unpack_bool(input: bool) -> Ex {
+fn unpack_bool<'a>(input: bool) -> Ex<'a> {
     Value::Bool(input).into()
 }
 
@@ -107,20 +115,22 @@ fn unpack_bool(input: bool) -> Ex {
 mod tests {
     use super::*;
 
-    fn eval(code: &str) -> ExprRef<Value> {
-        parse_str(code).unwrap()
+    fn eval<'a>(p: &'a Parser, code: &str) -> ExprRef<'a, Value> {
+        p.parse_str(code).unwrap()
     }
 
     #[test]
     fn test_parse_int() {
+        let p = Parser::new();
         assert_eq!(
             ExprRef::from(ExprType::Value(Value::Int(1231))),
-            eval("1231")
+            eval(&p, "1231")
         );
     }
 
     #[test]
     fn test_parse_obj() {
+        let p = Parser::new();
         let code = r#"
             {
                 boll = 123;
@@ -135,12 +145,13 @@ mod tests {
                 ])
                 .unwrap()
             )),
-            eval(code)
+            eval(&p, code)
         );
     }
 
     #[test]
     fn test_parse_obj_in_obj() {
+        let p = Parser::new();
         let code = r#"
             {
                 boll = 123;
@@ -165,75 +176,82 @@ mod tests {
                 ])
                 .unwrap()
             )),
-            eval(code)
+            eval(&p, code)
         );
     }
 
     #[test]
     fn test_parse_str() {
+        let p = Parser::new();
         let code = "\"boll\\\"hej\\u0041\"";
         assert_eq!(
             ExprRef::from(ExprType::Value(Value::String("boll\"hejA".into()))),
-            eval(code)
+            eval(&p, code)
         );
     }
 
     #[test]
     fn test_parse_func_call() {
+        let p = Parser::new();
         let code = "hej 12";
         assert_eq!(
             ExprRef::from(ExprType::FuncCall(
                 "hej".into(),
                 ExprType::Value(Value::Int(12)).into()
             )),
-            eval(code)
+            eval(&p, code)
         );
     }
 
     #[test]
     fn test_parse_func_def_ident() {
+        let p = Parser::new();
         let code = "hej: 12";
         assert_eq!(
             ExprRef::from(ExprType::FuncDefIdent(
                 "hej".into(),
                 ExprType::Value(Value::Int(12)).into()
             )),
-            eval(code)
+            eval(&p, code)
         );
     }
 
     #[test]
     fn test_parse_func_def_pattern_variadic() {
+        let p = Parser::new();
         let code = "{ hej, hopp, svej, ... }: 12";
         assert_eq!(
             ExprRef::from(ExprType::FuncDefPattern(
                 vec!["hej".into(), "hopp".into(), "svej".into()],
                 ExprType::Value(Value::Int(12)).into()
             )),
-            eval(code)
+            eval(&p, code)
         );
     }
 
     #[test]
     fn test_parse_func_def_pattern_non_var_1() {
+        let p = Parser::new();
         let code = "{ hej, hopp, svej }: 12";
 
-        let res: Result<ExprRef<Value>> = parse_str(code);
+        let res: Result<ExprRef<Value>> = p.parse_str(code);
         // Should be an error, try to unwrap it. Panic otherwise
         let _ = res.unwrap_err();
     }
 
     #[test]
     fn test_parse_func_def_pattern_non_var_2() {
+        let p = Parser::new();
         let code = "{ hej, hopp, svej, }: 12";
 
-        let res: Result<ExprRef<Value>> = parse_str(code);
+        let res: Result<ExprRef<Value>> = p.parse_str(code);
         // Should be an error, try to unwrap it. Panic otherwise
         let _ = res.unwrap_err();
     }
 
     #[test]
     fn test_parse_let() {
+        let p = Parser::new();
         let code = "let a = 21; b = 33; in 434";
         assert_eq!(
             ExprRef::from(ExprType::Let(
@@ -243,12 +261,13 @@ mod tests {
                 ],
                 ExprType::Value(Value::Int(434)).into(),
             )),
-            eval(code)
+            eval(&p, code)
         );
     }
 
     #[test]
     fn test_parse_add_mul_prio() {
+        let p = Parser::new();
         let code = "2 * 3 + 4 * 5";
         assert_eq!(
             ExprRef::from(ExprType::BinOp(
@@ -266,12 +285,13 @@ mod tests {
                 )
                 .into()
             )),
-            eval(code)
+            eval(&p, code)
         );
     }
 
     #[test]
     fn test_bool_op() {
+        let p = Parser::new();
         let code = "false || true";
         assert_eq!(
             ExprRef::from(ExprType::BinOp(
@@ -279,7 +299,7 @@ mod tests {
                 ExprType::Value(Value::Bool(false)).into(),
                 ExprType::Value(Value::Bool(true)).into(),
             )),
-            eval(code)
+            eval(&p, code)
         );
     }
 }

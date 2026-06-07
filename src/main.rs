@@ -9,12 +9,9 @@ use error::Result;
 use std::{path::PathBuf, process::exit};
 use value::Value;
 
-use crate::{
-    expr::{ExprRef, ExprSet, ExprType},
-    parser::parse_file,
-};
+use crate::expr::{ExprRef, ExprSet, ExprType};
 
-#[derive(Parser, Debug)]
+#[derive(clap::Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
     /// Root description file
@@ -23,7 +20,9 @@ struct Args {
 }
 
 fn run(args: Args) -> Result<()> {
-    let expr: ExprRef<Value> = ExprType::BoundExpr(ExprSet::new(), parse_file(args.input)?).into();
+    let p = parser::Parser::new();
+    let expr: ExprRef<Value> =
+        ExprType::BoundExpr(ExprSet::new(), p.parse_file(args.input)?).into();
     println!("input: {:#}", expr);
     expr.eval()?;
     println!("output: {:#}", expr);

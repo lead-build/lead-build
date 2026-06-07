@@ -83,11 +83,11 @@ type Result<RT> = std::result::Result<RT, Error>;
  */
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ExprRef<T>(Rc<RefCell<Expr<T>>>)
+pub struct ExprRef<'func, T>(Rc<RefCell<Expr<'func, T>>>)
 where
     T: Clone + PartialEq + Display + ExprOps;
 
-pub type ExprSet<T> = ImMap<ExprRef<T>>;
+pub type ExprSet<'func, T> = ImMap<ExprRef<'func, T>>;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum ExprBinOp {
@@ -116,32 +116,62 @@ pub enum ExprUnOp {
     Not,
 }
 
+type ExprBuiltinFn<'func, T> = dyn 'func + Fn(&'_ ExprRef<'func, T>) -> Result<ExprRef<'func, T>>;
+
+#[derive(Clone)]
+pub struct ExprBuiltin<'func, T>(String, Rc<ExprBuiltinFn<'func, T>>)
+where
+    T: Clone + PartialEq + Display + ExprOps;
+
 #[derive(Debug, PartialEq, Clone)]
-pub enum ExprType<T>
+pub enum ExprType<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
-    Object(ExprSet<T>),
+    Object(ExprSet<'func, T>),
     Value(T),
     Var(String),
-    UnOp(ExprUnOp, ExprRef<T>),
-    BinOp(ExprBinOp, ExprRef<T>, ExprRef<T>),
-    FuncDefIdent(String, ExprRef<T>),
-    FuncDefPattern(Vec<String>, ExprRef<T>),
-    Let(Vec<(String, ExprRef<T>)>, ExprRef<T>),
-    FuncCall(String, ExprRef<T>),
-    CalledFunc(ExprRef<T>, ExprRef<T>),
-    BoundExpr(ExprSet<T>, ExprRef<T>),
+    UnOp(ExprUnOp, ExprRef<'func, T>),
+    BinOp(ExprBinOp, ExprRef<'func, T>, ExprRef<'func, T>),
+    FuncDefIdent(String, ExprRef<'func, T>),
+    FuncDefPattern(Vec<String>, ExprRef<'func, T>),
+    FuncDefBuiltin(ExprBuiltin<'func, T>),
+    Let(Vec<(String, ExprRef<'func, T>)>, ExprRef<'func, T>),
+    FuncCall(String, ExprRef<'func, T>),
+    CalledFunc(ExprRef<'func, T>, ExprRef<'func, T>),
+    BoundExpr(ExprSet<'func, T>, ExprRef<'func, T>),
 }
 
 #[derive(Debug, PartialEq)]
-pub struct Expr<T>(ExprType<T>)
+pub struct Expr<'func, T>(ExprType<'func, T>)
 where
     T: Clone + PartialEq + Display + ExprOps;
 
 /* *****************************************************************************
  * Display
  */
+
+impl<'func, T> Display for ExprBuiltin<'func, T>
+where
+    T: Clone + PartialEq + Display + ExprOps,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ExprBuiltin(name, _) = self;
+        write!(f, "<builtin function {}>", name)
+    }
+}
+
+impl<'func, T> Debug for ExprBuiltin<'func, T>
+where
+    T: Clone + PartialEq + Display + ExprOps,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_tuple("ExprBuiltin")
+            .field(&self.0)
+            .field(&"<func>")
+            .finish()
+    }
+}
 
 impl Display for ExprBinOp {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -176,7 +206,7 @@ impl Display for ExprUnOp {
     }
 }
 
-impl<T> Display for ExprRef<T>
+impl<'func, T> Display for ExprRef<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
@@ -185,7 +215,7 @@ where
     }
 }
 
-impl<T> Display for ExprType<T>
+impl<'func, T> Display for ExprType<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
@@ -226,11 +256,12 @@ where
             ExprType::FuncCall(name, expr) => write!(f, "{} {}", name, expr),
             ExprType::CalledFunc(args, expr) => write!(f, "{} => {}", args, expr),
             ExprType::BoundExpr(scope, expr) => write!(f, "[ {} @ {} ]", scope, expr),
+            ExprType::FuncDefBuiltin(ExprBuiltin(name, _)) => write!(f, "<builtin {}>", name),
         }
     }
 }
 
-impl<T> Display for Expr<T>
+impl<'func, T> Display for Expr<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
@@ -244,9 +275,9 @@ where
  */
 
 /*
- * Primitives
+ * Primitives for Expr
  */
-impl<T> From<T> for ExprType<T>
+impl<'func, T> From<T> for ExprType<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
@@ -255,39 +286,39 @@ where
     }
 }
 
-impl<T> From<ExprType<T>> for Expr<T>
+impl<'func, T> From<ExprType<'func, T>> for Expr<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
-    fn from(value: ExprType<T>) -> Self {
+    fn from(value: ExprType<'func, T>) -> Self {
         Expr(value)
     }
 }
 
-impl<T> From<Expr<T>> for ExprRef<T>
+impl<'func, T> From<Expr<'func, T>> for ExprRef<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
-    fn from(value: Expr<T>) -> Self {
+    fn from(value: Expr<'func, T>) -> Self {
         ExprRef(Rc::new(RefCell::new(value)))
     }
 }
 
 /*
- * Shortcuts
+ * Shortcuts for Expr
  */
 
-impl<T> From<ExprType<T>> for ExprRef<T>
+impl<'func, T> From<ExprType<'func, T>> for ExprRef<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
-    fn from(value: ExprType<T>) -> Self {
-        let expr: Expr<T> = value.into();
+    fn from(value: ExprType<'func, T>) -> Self {
+        let expr: Expr<'func, T> = value.into();
         expr.into()
     }
 }
 
-impl<T> From<T> for ExprRef<T>
+impl<'func, T> From<T> for ExprRef<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
@@ -298,14 +329,31 @@ where
 }
 
 /* *****************************************************************************
- * Transform / From
+ * Implementations
  */
 
-impl<T> ExprRef<T>
+impl<'func, T> PartialEq for ExprBuiltin<'func, T>
+where
+    T: Clone + PartialEq + Display + ExprOps,
+{
+    fn eq(&self, other: &Self) -> bool {
+        #[cfg(test)]
+        {
+            self.0 == other.0
+        }
+        #[cfg(not(test))]
+        {
+            let _ = other;
+            unreachable!("== of builtin expressions should not be used")
+        }
+    }
+}
+
+impl<'func, T> ExprRef<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps + Debug,
 {
-    pub fn as_ref(&self) -> Ref<'_, Expr<T>> {
+    pub fn as_ref(&self) -> Ref<'_, Expr<'func, T>> {
         self.0.as_ref().borrow()
     }
 
@@ -324,20 +372,27 @@ where
         Ok(())
     }
 
-    pub fn get_item(&self, name: &str) -> Result<ExprRef<T>> {
+    pub fn get_item(&self, name: &str) -> Result<ExprRef<'func, T>> {
         self.resolve()?;
         match self.as_ref().get_item(name) {
             Some(item) => Ok(item),
             None => Err(Error::NoValue(format!("Invalid item '{}'", name))),
         }
     }
+
+    pub fn new_builtin<F>(name: impl ToString, func: F) -> ExprRef<'func, T>
+    where
+        F: 'func + Fn(&ExprRef<'func, T>) -> Result<ExprRef<'func, T>>,
+    {
+        ExprType::FuncDefBuiltin(ExprBuiltin(name.to_string(), Rc::new(func))).into()
+    }
 }
 
-impl<T> Expr<T>
+impl<'func, T> Expr<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps + Debug,
 {
-    pub fn get_item(&self, item: &str) -> Option<ExprRef<T>> {
+    pub fn get_item(&self, item: &str) -> Option<ExprRef<'func, T>> {
         match &self.0 {
             ExprType::Object(vars) => vars.get(item),
             _ => None,
@@ -380,6 +435,7 @@ where
                         ExprType::BoundExpr(new_scope, expr.clone()).into(),
                     ))
                 }
+                ExprType::FuncDefBuiltin(_expr_builtin) => todo!(),
                 ExprType::Var(name) => match &varspace.get(name) {
                     Some(value) => {
                         value.resolve()?;
@@ -415,17 +471,23 @@ where
                 args_expr.resolve()?;
                 func.resolve()?;
                 let funcref = func.as_ref();
-                let (args, func_expr) = match &funcref.0 {
-                    ExprType::FuncDefIdent(arg_name, func_expr) => {
-                        Ok((ExprSet::single(arg_name, args_expr.clone()), func_expr))
-                    }
+                let (args, func_expr): (ExprSet<'func, T>, ExprRef<'func, T>) = match &funcref.0 {
+                    ExprType::FuncDefIdent(arg_name, func_expr) => Ok((
+                        ExprSet::single(arg_name, args_expr.clone()),
+                        func_expr.clone(),
+                    )),
                     ExprType::FuncDefPattern(arg_names, func_expr) => {
                         let mut new_vars = ExprSet::new();
                         for arg_name in arg_names {
                             let arg_value = args_expr.get_item(arg_name)?;
                             new_vars = new_vars.set(arg_name.clone(), arg_value)?;
                         }
-                        Ok((new_vars, func_expr))
+                        Ok((new_vars, func_expr.clone()))
+                    }
+                    ExprType::FuncDefBuiltin(ExprBuiltin(_, funcrc)) => {
+                        let f = funcrc.as_ref();
+                        let res = f(args_expr)?;
+                        Ok((ExprSet::new(), res))
                     }
                     _ => Err(Error::ScopeError(format!(
                         "called func, but it's a {}",
@@ -551,6 +613,7 @@ where
             ExprType::BinOp(..) => true,
             ExprType::FuncDefIdent(..) => false,
             ExprType::FuncDefPattern(..) => false,
+            ExprType::FuncDefBuiltin(..) => false,
             ExprType::Let(..) => true,
             ExprType::FuncCall(..) => true,
             ExprType::BoundExpr(..) => true,
@@ -565,27 +628,30 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::parse_str;
+    use crate::expr::ExprType::BoundExpr;
+    use crate::parser::Parser;
     use crate::value::Value;
 
-    fn eval(code: &str) -> ExprRef<Value> {
+    fn eval<'a>(p: &'a Parser, code: &str) -> ExprRef<'a, Value> {
         let expr: ExprRef<Value> =
-            ExprType::BoundExpr(ExprSet::new(), parse_str(code).unwrap()).into();
+            ExprType::BoundExpr(ExprSet::new(), p.parse_str(code).unwrap()).into();
         expr.eval().unwrap();
         expr
     }
 
     #[test]
     fn test_resolve() -> Result<()> {
-        let expr = parse_str(
-            r#"
+        let p = Parser::new();
+        let expr = p
+            .parse_str(
+                r#"
                 {
                     stuff = "hello";
                     something = "hej";
                 }
             "#,
-        )
-        .unwrap();
+            )
+            .unwrap();
         let value = expr.get_item("stuff")?;
         assert_eq!(value, ExprRef::from(Value::String("hello".into())));
         Ok(())
@@ -593,9 +659,11 @@ mod tests {
 
     #[test]
     fn test_resolve_deep() -> Result<()> {
+        let p = Parser::new();
         // This also tests "inner" as prefixed for reserved keyword "in" is ok
-        let expr = parse_str(
-            r#"
+        let expr = p
+            .parse_str(
+                r#"
                 {
                     stuff = "hello";
                     something = {
@@ -603,8 +671,8 @@ mod tests {
                     };
                 }
             "#,
-        )
-        .unwrap();
+            )
+            .unwrap();
         let value = expr.get_item("something")?.get_item("inner")?;
         assert_eq!(value, ExprRef::from(Value::Int(55)));
         Ok(())
@@ -612,7 +680,9 @@ mod tests {
 
     #[test]
     fn test_let() {
+        let p = Parser::new();
         let value = eval(
+            &p,
             r#"
                 let
                     a = 12;
@@ -626,8 +696,9 @@ mod tests {
 
     #[test]
     fn test_invalid_var() -> Result<()> {
+        let p = Parser::new();
         let expr: ExprRef<Value> =
-            ExprType::BoundExpr(ExprSet::new(), parse_str("invalid_var").unwrap()).into();
+            ExprType::BoundExpr(ExprSet::new(), p.parse_str("invalid_var").unwrap()).into();
         if let Err(Error::ScopeError(message)) = expr.resolve() {
             assert_eq!(message.as_str(), "Unknown variable invalid_var");
         } else {
@@ -638,8 +709,9 @@ mod tests {
 
     #[test]
     fn test_let_set_var() {
+        let p = Parser::new();
         assert_eq! {
-            eval(r#"
+            eval(&p, r#"
                 let
                     a = 12;
                 in
@@ -647,14 +719,15 @@ mod tests {
                     stuff = a;
                 }
             "#),
-            eval("{ stuff = 12; }"),
+            eval(&p, "{ stuff = 12; }"),
         }
     }
 
     #[test]
     fn test_let_set_var_seq() {
+        let p = Parser::new();
         assert_eq! {
-            eval(r#"
+            eval(&p, r#"
                 let
                     a = 12;
                     b = a;
@@ -663,15 +736,16 @@ mod tests {
                     stuff = b;
                 }
             "#),
-            eval("{ stuff = 12; }"),
+            eval(&p, "{ stuff = 12; }"),
         }
     }
 
     #[test]
     fn test_func_call() {
-        let func_a = parse_str("var: 13").unwrap();
-        let func_b = parse_str("var: 42").unwrap();
-        let call = parse_str("func_b 32").unwrap();
+        let p = Parser::new();
+        let func_a = p.parse_str("var: 13").unwrap();
+        let func_b = p.parse_str("var: 42").unwrap();
+        let call = p.parse_str("func_b 32").unwrap();
         let varscope =
             ExprSet::from(vec![("func_a", func_a.into()), ("func_b", func_b.into())]).unwrap();
         let value: ExprRef<Value> = ExprType::BoundExpr(varscope, call).into();
@@ -681,9 +755,10 @@ mod tests {
 
     #[test]
     fn test_func_call_var_arg() {
-        let func_var = parse_str("var: var").unwrap();
-        let arg_var = parse_str("32").unwrap();
-        let call = parse_str("func arg").unwrap();
+        let p = Parser::new();
+        let func_var = p.parse_str("var: var").unwrap();
+        let arg_var = p.parse_str("32").unwrap();
+        let call = p.parse_str("func arg").unwrap();
         let varscope =
             ExprSet::from(vec![("func", func_var.into()), ("arg", arg_var.into())]).unwrap();
         let value: ExprRef<Value> = ExprType::BoundExpr(varscope, call).into();
@@ -693,8 +768,9 @@ mod tests {
 
     #[test]
     fn test_func_call_resolved() {
+        let p = Parser::new();
         assert_eq! {
-            eval(r#"
+            eval(&p,r#"
                 let
                     a = 12;
                     func = test: {
@@ -705,14 +781,15 @@ mod tests {
                     stuff = func a;
                 }
             "#),
-            eval("{ stuff = { var = 12; }; }"),
+            eval(&p, "{ stuff = { var = 12; }; }"),
         }
     }
 
     #[test]
     fn test_func_call_bound() {
+        let p = Parser::new();
         assert_eq! {
-            eval(r#"
+            eval(&p, r#"
                 let
                     a = 12;
                     func = test: {
@@ -723,14 +800,15 @@ mod tests {
                     stuff = func 77;
                 }
             "#),
-            eval("{ stuff = { var = 12; }; }"),
+            eval(&p, "{ stuff = { var = 12; }; }"),
         }
     }
 
     #[test]
     fn test_func_call_resolved_stacked_let() {
+        let p = Parser::new();
         assert_eq! {
-            eval(r#"
+            eval(&p, r#"
                 let
                     a = 12;
                 in
@@ -743,14 +821,15 @@ mod tests {
                     stuff = func a;
                 }
             "#),
-            eval("{ stuff = { var = 12; }; }"),
+            eval(&p, "{ stuff = { var = 12; }; }"),
         }
     }
 
     #[test]
     fn test_func_call_pattern() {
+        let p = Parser::new();
         assert_eq! {
-            eval(r#"
+            eval(&p, r#"
                 let
                     a = 12;
                     b = 13;
@@ -765,14 +844,15 @@ mod tests {
                     };
                 }
             "#),
-            eval("{ stuff = { var = 74; }; }"),
+            eval(&p, "{ stuff = { var = 74; }; }"),
         }
     }
 
     #[test]
     fn test_eval() {
+        let p = Parser::new();
         assert_eq! {
-            eval(r#"
+            eval(&p, r#"
                 let
                     a = 12;
                     b = { inner = 43; };
@@ -784,60 +864,67 @@ mod tests {
                     };
                 }
             "#),
-            eval("{ app = { var = { inner = 43; }; }; }"),
+            eval(&p, "{ app = { var = { inner = 43; }; }; }"),
         }
     }
 
     #[test]
     fn test_arith() {
+        let p = Parser::new();
         assert_eq! {
-            eval("2 * 3 + 4 * 5"),
-            eval("6 + 20"),
+            eval(&p, "2 * 3 + 4 * 5"),
+            eval(&p, "6 + 20"),
         }
         assert_eq! {
-            eval("6 + 20"),
-            eval("26"),
+            eval(&p, "6 + 20"),
+            eval(&p, "26"),
         }
     }
 
     #[test]
     fn test_bool_op() {
-        assert_eq!(eval("false || 12"), eval("12"));
-        assert_eq!(eval("true || 12"), eval("true"));
-        assert_eq!(eval("false && 12"), eval("false"));
-        assert_eq!(eval("true && 12"), eval("12"));
+        let p = Parser::new();
+        assert_eq!(eval(&p, "false || 12"), eval(&p, "12"));
+        assert_eq!(eval(&p, "true || 12"), eval(&p, "true"));
+        assert_eq!(eval(&p, "false && 12"), eval(&p, "false"));
+        assert_eq!(eval(&p, "true && 12"), eval(&p, "12"));
     }
 
     #[test]
     fn test_bool_laziness() {
-        assert_eq!(eval("true || invalid_var"), eval("true"));
-        assert_eq!(eval("false && invalid_var"), eval("false"));
-        assert_eq!(eval("false -> invalid_var"), eval("true"));
+        let p = Parser::new();
+        assert_eq!(eval(&p, "true || invalid_var"), eval(&p, "true"));
+        assert_eq!(eval(&p, "false && invalid_var"), eval(&p, "false"));
+        assert_eq!(eval(&p, "false -> invalid_var"), eval(&p, "true"));
     }
 
     #[test]
     fn test_bool_implication() {
-        assert_eq!(eval("false -> false"), eval("true"));
-        assert_eq!(eval("false -> true"), eval("true"));
-        assert_eq!(eval("true -> false"), eval("false"));
-        assert_eq!(eval("true -> true"), eval("true"));
-        assert_eq!(eval("false -> 12"), eval("true"));
-        assert_eq!(eval("true -> 12"), eval("12"));
+        let p = Parser::new();
+        assert_eq!(eval(&p, "false -> false"), eval(&p, "true"));
+        assert_eq!(eval(&p, "false -> true"), eval(&p, "true"));
+        assert_eq!(eval(&p, "true -> false"), eval(&p, "false"));
+        assert_eq!(eval(&p, "true -> true"), eval(&p, "true"));
+        assert_eq!(eval(&p, "false -> 12"), eval(&p, "true"));
+        assert_eq!(eval(&p, "true -> 12"), eval(&p, "12"));
     }
 
     #[test]
     fn test_bool_not() {
-        assert_eq!(eval("!true"), eval("false"));
-        assert_eq!(eval("!false"), eval("true"));
+        let p = Parser::new();
+        assert_eq!(eval(&p, "!true"), eval(&p, "false"));
+        assert_eq!(eval(&p, "!false"), eval(&p, "true"));
     }
 
     #[test]
     fn test_bool_neg() {
-        assert_eq!(eval("let a = 5; in (-a) + 3"), eval("-2"));
+        let p = Parser::new();
+        assert_eq!(eval(&p, "let a = 5; in (-a) + 3"), eval(&p, "-2"));
     }
 
     #[test]
     fn test_func_call_laziness() {
+        let p = Parser::new();
         // The code contains an error; myfunc, which is not a function.
         // It is intentional that the func should not be evaluated, since
         // laziness in "false && ...", and therefore not be resolved as an
@@ -846,6 +933,7 @@ mod tests {
         // Test evalutes that eval is successful rather than ethe actual output
         assert_eq!(
             eval(
+                &p,
                 r#"
                 let
                     myfunc = not_a_function;
@@ -854,7 +942,78 @@ mod tests {
                     false && lazy_func_call
                 "#
             ),
-            eval("false")
+            eval(&p, "false")
         );
+    }
+
+    #[test]
+    fn test_builtin_func() {
+        let p = Parser::new();
+        let code = "mybuiltin 10";
+        let builtins = ExprSet::from(vec![(
+            "mybuiltin",
+            ExprRef::new_builtin("mybuiltin", |_| Ok(ExprRef::from(Value::Int(123)))),
+        )])
+        .unwrap();
+        let expr: ExprRef<Value> = BoundExpr(builtins, p.parse_str(code).unwrap()).into();
+        expr.eval().unwrap();
+        assert_eq!(expr, eval(&p, "123"));
+    }
+
+    #[test]
+    fn test_builtin_func_laziness_multiple_calls() {
+        // Invoked in code twice should only be evaluated once
+        let p = Parser::new();
+        let code = r#"
+            let
+                func_call = mybuiltin 10;
+            in
+            {
+                a = func_call;
+                b = func_call;
+            }
+        "#;
+        let call_count = RefCell::new(0);
+        let builtins = ExprSet::from(vec![(
+            "mybuiltin",
+            ExprRef::new_builtin("mybuiltin", |_| {
+                Ok(ExprRef::from(Value::Int({
+                    call_count.replace_with(|&mut old| old + 1);
+                    *call_count.borrow()
+                })))
+            }),
+        )])
+        .unwrap();
+        let expr: ExprRef<Value> = BoundExpr(builtins, p.parse_str(code).unwrap()).into();
+        expr.eval().unwrap();
+        assert_eq!(expr, eval(&p, "{ a = 1; b = 1; }"));
+        assert_eq!(*call_count.borrow(), 1);
+    }
+
+    #[test]
+    fn test_builtin_func_laziness_no_calls() {
+        // Invoked in code twice should only be evaluated once
+        let p = Parser::new();
+        let code = r#"
+            let
+                func_call = mybuiltin 10;
+            in
+            {}
+        "#;
+        let call_count = RefCell::new(0);
+        let builtins = ExprSet::from(vec![(
+            "mybuiltin",
+            ExprRef::new_builtin("mybuiltin", |_| {
+                Ok(ExprRef::from(Value::Int({
+                    call_count.replace_with(|&mut old| old + 1);
+                    *call_count.borrow()
+                })))
+            }),
+        )])
+        .unwrap();
+        let expr: ExprRef<Value> = BoundExpr(builtins, p.parse_str(code).unwrap()).into();
+        expr.eval().unwrap();
+        assert_eq!(expr, eval(&p, "{}"));
+        assert_eq!(*call_count.borrow(), 0);
     }
 }
