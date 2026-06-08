@@ -2,7 +2,7 @@ use std::result;
 
 use thiserror::Error;
 
-use crate::{expr, parser};
+use super::{expr, parser};
 
 pub type Result<T> = result::Result<T, DnjError>;
 

@@ -1,9 +1,8 @@
-use crate::expr::{ExprBinOp, ExprRef, ExprSet, ExprType, ExprUnOp};
-use crate::value::Value;
+use super::expr::{Expr, ExprBinOp, ExprSet, ExprType, ExprUnOp, ops::ExprOps};
 use std::fmt::Display;
 use std::fs;
 use std::path::PathBuf;
-lalrpop_mod!(grammar);
+lalrpop_mod!(grammar, "lang/grammar.rs");
 
 use lalrpop_util::{ParseError, lalrpop_mod};
 
@@ -40,16 +39,13 @@ impl Display for Error {
     }
 }
 
-type Ex<'a> = ExprRef<'a, Value>;
-// type ExR = Result<ExprRef<Value>>;
-type ExT<'a> = ExprType<'a, Value>;
-type ExSet<'a> = ExprSet<'a, Value>;
 pub trait ParsableValue
 where
     Self: Sized,
 {
     fn parse_int(value: impl ToString) -> Option<Self>;
     fn parse_string(value: impl ToString) -> Option<Self>;
+    fn from_bool(value: bool) -> Self;
 }
 
 #[derive(Default)]
@@ -62,19 +58,28 @@ impl Parser {
         Default::default()
     }
 
-    pub fn parse_file<'a>(&'a self, path: PathBuf) -> Result<ExprRef<'a, Value>> {
+    pub fn parse_file<'a, T>(&'a self, path: PathBuf) -> Result<Expr<'a, T>>
+    where
+        T: ParsableValue + Clone + PartialEq + Display + ExprOps,
+    {
         let code = fs::read_to_string(path).unwrap();
-        let result = self.parser.parse(&code)?;
+        let result = self.parser.parse::<T>(&code)?;
         Ok(result)
     }
 
-    pub fn parse_str<'a>(&'a self, code: &str) -> Result<ExprRef<'a, Value>> {
-        let result = self.parser.parse(code)?;
+    pub fn parse_str<'a, T>(&'a self, code: &str) -> Result<Expr<'a, T>>
+    where
+        T: ParsableValue + Clone + PartialEq + Display + ExprOps,
+    {
+        let result = self.parser.parse::<T>(code)?;
         Ok(result)
     }
 }
 
-fn unpack_str<'a>(input: &str) -> Ex<'a> {
+fn unpack_str<'a, T>(input: &str) -> Expr<'a, T>
+where
+    T: ParsableValue + Clone + PartialEq + Display + ExprOps,
+{
     let mut out = String::new();
     let mut chars = input.chars();
 
@@ -94,28 +99,35 @@ fn unpack_str<'a>(input: &str) -> Ex<'a> {
     } {
         out.push(c);
     }
-    match Value::parse_string(out) {
+    match T::parse_string(out) {
         Some(value) => value.into(),
         None => panic!("Error parsing string"),
     }
 }
 
-fn unpack_int<'a>(input: &str) -> Ex<'a> {
-    match Value::parse_int(input) {
+fn unpack_int<'a, T>(input: &str) -> Expr<'a, T>
+where
+    T: ParsableValue + Clone + PartialEq + Display + ExprOps,
+{
+    match T::parse_int(input) {
         Some(value) => value.into(),
         None => panic!("Error parsing int"),
     }
 }
 
-fn unpack_bool<'a>(input: bool) -> Ex<'a> {
-    Value::Bool(input).into()
+fn unpack_bool<'a, T>(input: bool) -> Expr<'a, T>
+where
+    T: ParsableValue + Clone + PartialEq + Display + ExprOps,
+{
+    T::from_bool(input).into()
 }
 
 #[cfg(test)]
 mod tests {
+    use super::super::testvalue::TestValue;
     use super::*;
 
-    fn eval<'a>(p: &'a Parser, code: &str) -> ExprRef<'a, Value> {
+    fn eval<'a>(p: &'a Parser, code: &str) -> Expr<'a, TestValue> {
         p.parse_str(code).unwrap()
     }
 
@@ -123,7 +135,7 @@ mod tests {
     fn test_parse_int() {
         let p = Parser::new();
         assert_eq!(
-            ExprRef::from(ExprType::Value(Value::Int(1231))),
+            Expr::from(ExprType::Value(TestValue::Int(1231))),
             eval(&p, "1231")
         );
     }
@@ -138,10 +150,10 @@ mod tests {
             }
         "#;
         assert_eq!(
-            ExprRef::from(ExprType::Object(
+            Expr::from(ExprType::Object(
                 ExprSet::from([
-                    ("boll", ExprType::Value(Value::Int(123)).into()),
-                    ("hej", ExprType::Value(Value::Int(323)).into())
+                    ("boll", ExprType::Value(TestValue::Int(123)).into()),
+                    ("hej", ExprType::Value(TestValue::Int(323)).into())
                 ])
                 .unwrap()
             )),
@@ -159,15 +171,15 @@ mod tests {
             }
         "#;
         assert_eq!(
-            ExprRef::from(ExprType::Object(
+            Expr::from(ExprType::Object(
                 ExprSet::from([
-                    ("boll", ExprType::Value(Value::Int(123)).into()),
+                    ("boll", ExprType::Value(TestValue::Int(123)).into()),
                     (
                         "hej".into(),
                         ExprType::Object(
                             ExprSet::from([
-                                ("a", ExprType::Value(Value::Int(2)).into()),
-                                ("b", ExprType::Value(Value::Int(3)).into()),
+                                ("a", ExprType::Value(TestValue::Int(2)).into()),
+                                ("b", ExprType::Value(TestValue::Int(3)).into()),
                             ])
                             .unwrap()
                         )
@@ -185,7 +197,7 @@ mod tests {
         let p = Parser::new();
         let code = "\"boll\\\"hej\\u0041\"";
         assert_eq!(
-            ExprRef::from(ExprType::Value(Value::String("boll\"hejA".into()))),
+            Expr::from(ExprType::Value(TestValue::String("boll\"hejA".into()))),
             eval(&p, code)
         );
     }
@@ -195,9 +207,9 @@ mod tests {
         let p = Parser::new();
         let code = "hej 12";
         assert_eq!(
-            ExprRef::from(ExprType::FuncCall(
+            Expr::from(ExprType::FuncCall(
                 "hej".into(),
-                ExprType::Value(Value::Int(12)).into()
+                ExprType::Value(TestValue::Int(12)).into()
             )),
             eval(&p, code)
         );
@@ -208,9 +220,9 @@ mod tests {
         let p = Parser::new();
         let code = "hej: 12";
         assert_eq!(
-            ExprRef::from(ExprType::FuncDefIdent(
+            Expr::from(ExprType::FuncDefIdent(
                 "hej".into(),
-                ExprType::Value(Value::Int(12)).into()
+                ExprType::Value(TestValue::Int(12)).into()
             )),
             eval(&p, code)
         );
@@ -221,9 +233,9 @@ mod tests {
         let p = Parser::new();
         let code = "{ hej, hopp, svej, ... }: 12";
         assert_eq!(
-            ExprRef::from(ExprType::FuncDefPattern(
+            Expr::from(ExprType::FuncDefPattern(
                 vec!["hej".into(), "hopp".into(), "svej".into()],
-                ExprType::Value(Value::Int(12)).into()
+                ExprType::Value(TestValue::Int(12)).into()
             )),
             eval(&p, code)
         );
@@ -234,7 +246,7 @@ mod tests {
         let p = Parser::new();
         let code = "{ hej, hopp, svej }: 12";
 
-        let res: Result<ExprRef<Value>> = p.parse_str(code);
+        let res: Result<Expr<TestValue>> = p.parse_str(code);
         // Should be an error, try to unwrap it. Panic otherwise
         let _ = res.unwrap_err();
     }
@@ -244,7 +256,7 @@ mod tests {
         let p = Parser::new();
         let code = "{ hej, hopp, svej, }: 12";
 
-        let res: Result<ExprRef<Value>> = p.parse_str(code);
+        let res: Result<Expr<TestValue>> = p.parse_str(code);
         // Should be an error, try to unwrap it. Panic otherwise
         let _ = res.unwrap_err();
     }
@@ -254,12 +266,12 @@ mod tests {
         let p = Parser::new();
         let code = "let a = 21; b = 33; in 434";
         assert_eq!(
-            ExprRef::from(ExprType::Let(
+            Expr::from(ExprType::Let(
                 vec![
-                    ("a".into(), ExprType::Value(Value::Int(21)).into()),
-                    ("b".into(), ExprType::Value(Value::Int(33)).into()),
+                    ("a".into(), ExprType::Value(TestValue::Int(21)).into()),
+                    ("b".into(), ExprType::Value(TestValue::Int(33)).into()),
                 ],
-                ExprType::Value(Value::Int(434)).into(),
+                ExprType::Value(TestValue::Int(434)).into(),
             )),
             eval(&p, code)
         );
@@ -270,18 +282,18 @@ mod tests {
         let p = Parser::new();
         let code = "2 * 3 + 4 * 5";
         assert_eq!(
-            ExprRef::from(ExprType::BinOp(
+            Expr::from(ExprType::BinOp(
                 ExprBinOp::Add,
                 ExprType::BinOp(
                     ExprBinOp::Mult,
-                    ExprType::Value(Value::Int(2)).into(),
-                    ExprType::Value(Value::Int(3)).into()
+                    ExprType::Value(TestValue::Int(2)).into(),
+                    ExprType::Value(TestValue::Int(3)).into()
                 )
                 .into(),
                 ExprType::BinOp(
                     ExprBinOp::Mult,
-                    ExprType::Value(Value::Int(4)).into(),
-                    ExprType::Value(Value::Int(5)).into()
+                    ExprType::Value(TestValue::Int(4)).into(),
+                    ExprType::Value(TestValue::Int(5)).into()
                 )
                 .into()
             )),
@@ -294,10 +306,10 @@ mod tests {
         let p = Parser::new();
         let code = "false || true";
         assert_eq!(
-            ExprRef::from(ExprType::BinOp(
+            Expr::from(ExprType::BinOp(
                 ExprBinOp::LogOr,
-                ExprType::Value(Value::Bool(false)).into(),
-                ExprType::Value(Value::Bool(true)).into(),
+                ExprType::Value(TestValue::Bool(false)).into(),
+                ExprType::Value(TestValue::Bool(true)).into(),
             )),
             eval(&p, code)
         );

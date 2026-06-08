@@ -1,17 +1,14 @@
-pub mod error;
-pub mod expr;
-pub mod immap;
-pub mod parser;
+pub mod lang;
 pub mod value;
 
-use clap::Parser;
-use error::Result;
-use std::{path::PathBuf, process::exit};
+use lang::{Expr, ExprSet, ExprType, Parser as DnjParser, Result};
+use std::process::exit;
 use value::Value;
 
-use crate::expr::{ExprRef, ExprSet, ExprType};
+use clap::Parser;
+use std::path::PathBuf;
 
-#[derive(clap::Parser, Debug)]
+#[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
     /// Root description file
@@ -20,9 +17,8 @@ struct Args {
 }
 
 fn run(args: Args) -> Result<()> {
-    let p = parser::Parser::new();
-    let expr: ExprRef<Value> =
-        ExprType::BoundExpr(ExprSet::new(), p.parse_file(args.input)?).into();
+    let p = DnjParser::new();
+    let expr: Expr<Value> = ExprType::BoundExpr(ExprSet::new(), p.parse_file(args.input)?).into();
     println!("input: {:#}", expr);
     expr.eval()?;
     println!("output: {:#}", expr);

@@ -4,7 +4,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::immap::ImMap;
+use super::immap::ImMap;
 
 pub mod ops {
     pub trait ExprOps: Sized {
@@ -60,10 +60,10 @@ impl Display for Error {
     }
 }
 
-impl From<crate::immap::Error> for Error {
-    fn from(value: crate::immap::Error) -> Self {
+impl From<super::immap::Error> for Error {
+    fn from(value: super::immap::Error) -> Self {
         match value {
-            crate::immap::Error::DupKey(key) => Error::DupKey(key),
+            super::immap::Error::DupKey(key) => Error::DupKey(key),
         }
     }
 }
@@ -83,11 +83,11 @@ type Result<RT> = std::result::Result<RT, Error>;
  */
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ExprRef<'func, T>(Rc<RefCell<Expr<'func, T>>>)
+pub struct Expr<'func, T>(Rc<RefCell<ExprType<'func, T>>>)
 where
     T: Clone + PartialEq + Display + ExprOps;
 
-pub type ExprSet<'func, T> = ImMap<ExprRef<'func, T>>;
+pub type ExprSet<'func, T> = ImMap<Expr<'func, T>>;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum ExprBinOp {
@@ -116,7 +116,7 @@ pub enum ExprUnOp {
     Not,
 }
 
-type ExprBuiltinFn<'func, T> = dyn 'func + Fn(&'_ ExprRef<'func, T>) -> Result<ExprRef<'func, T>>;
+type ExprBuiltinFn<'func, T> = dyn 'func + Fn(&'_ Expr<'func, T>) -> Result<Expr<'func, T>>;
 
 #[derive(Clone)]
 pub struct ExprBuiltin<'func, T>(String, Rc<ExprBuiltinFn<'func, T>>)
@@ -131,21 +131,16 @@ where
     Object(ExprSet<'func, T>),
     Value(T),
     Var(String),
-    UnOp(ExprUnOp, ExprRef<'func, T>),
-    BinOp(ExprBinOp, ExprRef<'func, T>, ExprRef<'func, T>),
-    FuncDefIdent(String, ExprRef<'func, T>),
-    FuncDefPattern(Vec<String>, ExprRef<'func, T>),
+    UnOp(ExprUnOp, Expr<'func, T>),
+    BinOp(ExprBinOp, Expr<'func, T>, Expr<'func, T>),
+    FuncDefIdent(String, Expr<'func, T>),
+    FuncDefPattern(Vec<String>, Expr<'func, T>),
     FuncDefBuiltin(ExprBuiltin<'func, T>),
-    Let(Vec<(String, ExprRef<'func, T>)>, ExprRef<'func, T>),
-    FuncCall(String, ExprRef<'func, T>),
-    CalledFunc(ExprRef<'func, T>, ExprRef<'func, T>),
-    BoundExpr(ExprSet<'func, T>, ExprRef<'func, T>),
+    Let(Vec<(String, Expr<'func, T>)>, Expr<'func, T>),
+    FuncCall(String, Expr<'func, T>),
+    CalledFunc(Expr<'func, T>, Expr<'func, T>),
+    BoundExpr(ExprSet<'func, T>, Expr<'func, T>),
 }
-
-#[derive(Debug, PartialEq)]
-pub struct Expr<'func, T>(ExprType<'func, T>)
-where
-    T: Clone + PartialEq + Display + ExprOps;
 
 /* *****************************************************************************
  * Display
@@ -206,7 +201,7 @@ impl Display for ExprUnOp {
     }
 }
 
-impl<'func, T> Display for ExprRef<'func, T>
+impl<'func, T> Display for Expr<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
@@ -261,22 +256,10 @@ where
     }
 }
 
-impl<'func, T> Display for Expr<'func, T>
-where
-    T: Clone + PartialEq + Display + ExprOps,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.0.fmt(f)
-    }
-}
-
 /* *****************************************************************************
  * Transform / From
  */
 
-/*
- * Primitives for Expr
- */
 impl<'func, T> From<T> for ExprType<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
@@ -291,40 +274,16 @@ where
     T: Clone + PartialEq + Display + ExprOps,
 {
     fn from(value: ExprType<'func, T>) -> Self {
-        Expr(value)
+        Expr(Rc::new(RefCell::new(value)))
     }
 }
 
-impl<'func, T> From<Expr<'func, T>> for ExprRef<'func, T>
-where
-    T: Clone + PartialEq + Display + ExprOps,
-{
-    fn from(value: Expr<'func, T>) -> Self {
-        ExprRef(Rc::new(RefCell::new(value)))
-    }
-}
-
-/*
- * Shortcuts for Expr
- */
-
-impl<'func, T> From<ExprType<'func, T>> for ExprRef<'func, T>
-where
-    T: Clone + PartialEq + Display + ExprOps,
-{
-    fn from(value: ExprType<'func, T>) -> Self {
-        let expr: Expr<'func, T> = value.into();
-        expr.into()
-    }
-}
-
-impl<'func, T> From<T> for ExprRef<'func, T>
+impl<'func, T> From<T> for Expr<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
     fn from(value: T) -> Self {
-        let expr: ExprType<T> = value.into();
-        expr.into()
+        Expr::from(ExprType::Value(value))
     }
 }
 
@@ -349,59 +308,72 @@ where
     }
 }
 
-impl<'func, T> ExprRef<'func, T>
+impl<'func, T> Expr<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps + Debug,
 {
-    pub fn as_ref(&self) -> Ref<'_, Expr<'func, T>> {
+    pub fn as_ref(&self) -> Ref<'_, ExprType<'func, T>> {
         self.0.as_ref().borrow()
     }
 
     pub fn resolve(&self) -> Result<()> {
         let mut expr = self.0.as_ref().borrow_mut();
-        expr.resolve()?;
+
+        while match *expr {
+            ExprType::Object(..) => false,
+            ExprType::Value(..) => false,
+            ExprType::Var(..) => true,
+            ExprType::UnOp(..) => true,
+            ExprType::BinOp(..) => true,
+            ExprType::FuncDefIdent(..) => false,
+            ExprType::FuncDefPattern(..) => false,
+            ExprType::FuncDefBuiltin(..) => false,
+            ExprType::Let(..) => true,
+            ExprType::FuncCall(..) => true,
+            ExprType::BoundExpr(..) => true,
+            ExprType::CalledFunc(..) => true,
+        } {
+            *expr = expr.resolve()?;
+        }
+
         Ok(())
     }
 
     pub fn eval(&self) -> Result<()> {
         self.resolve()?;
         let expr = self.as_ref();
-        if let ExprType::Object(fields) = &expr.0 {
+        if let ExprType::Object(fields) = &*expr {
             fields.foreach(|_name, ex| ex.eval())?;
         }
         Ok(())
     }
 
-    pub fn get_item(&self, name: &str) -> Result<ExprRef<'func, T>> {
+    pub fn get_item(&self, name: &str) -> Result<Expr<'func, T>> {
         self.resolve()?;
-        match self.as_ref().get_item(name) {
-            Some(item) => Ok(item),
-            None => Err(Error::NoValue(format!("Invalid item '{}'", name))),
+        let node = self.as_ref();
+        match &*node {
+            ExprType::Object(vars) => Ok(vars
+                .get(name)
+                .ok_or(Error::NoValue(format!("Invalid field '{}'", name)))?),
+            _ => Err(Error::NoValue(format!("Invalid item '{}'", name))),
         }
     }
 
-    pub fn new_builtin<F>(name: impl ToString, func: F) -> ExprRef<'func, T>
+    pub fn new_builtin<F>(name: impl ToString, func: F) -> Expr<'func, T>
     where
-        F: 'func + Fn(&ExprRef<'func, T>) -> Result<ExprRef<'func, T>>,
+        F: 'func + Fn(&Expr<'func, T>) -> Result<Expr<'func, T>>,
     {
         ExprType::FuncDefBuiltin(ExprBuiltin(name.to_string(), Rc::new(func))).into()
     }
 }
 
-impl<'func, T> Expr<'func, T>
+impl<'func, T> ExprType<'func, T>
 where
     T: Clone + PartialEq + Display + ExprOps + Debug,
 {
-    pub fn get_item(&self, item: &str) -> Option<ExprRef<'func, T>> {
-        match &self.0 {
-            ExprType::Object(vars) => vars.get(item),
-            _ => None,
-        }
-    }
-
-    fn resolve_once(&mut self) -> Result<()> {
-        let new_inner: Result<ExprType<T>> = match &self.0 {
-            ExprType::BoundExpr(varspace, bound_expr) => match &bound_expr.as_ref().0 {
+    fn resolve(&self) -> Result<ExprType<'func, T>> {
+        match &self {
+            ExprType::BoundExpr(varspace, bound_expr) => match &*bound_expr.as_ref() {
                 ExprType::Object(fields) => {
                     Ok(ExprType::Object(fields.map(|val| {
                         ExprType::BoundExpr(varspace.clone(), val.clone()).into()
@@ -439,7 +411,7 @@ where
                 ExprType::Var(name) => match &varspace.get(name) {
                     Some(value) => {
                         value.resolve()?;
-                        Ok(value.as_ref().0.clone())
+                        Ok(value.as_ref().clone())
                     }
                     None => Err(Error::ScopeError(format!("Unknown variable {}", name))),
                 },
@@ -471,7 +443,7 @@ where
                 args_expr.resolve()?;
                 func.resolve()?;
                 let funcref = func.as_ref();
-                let (args, func_expr): (ExprSet<'func, T>, ExprRef<'func, T>) = match &funcref.0 {
+                let (args, func_expr): (ExprSet<'func, T>, Expr<'func, T>) = match &*funcref {
                     ExprType::FuncDefIdent(arg_name, func_expr) => Ok((
                         ExprSet::single(arg_name, args_expr.clone()),
                         func_expr.clone(),
@@ -497,7 +469,7 @@ where
 
                 // If function contains a bound scope, it should still apply,
                 // and not overwrite input arguments.
-                match &func_expr.as_ref().0 {
+                match &*func_expr.as_ref() {
                     ExprType::BoundExpr(varspace, inner_expr) => Ok(ExprType::BoundExpr(
                         varspace.clone().merge(&args),
                         inner_expr.clone(),
@@ -508,11 +480,11 @@ where
             ExprType::UnOp(op, expr) => {
                 expr.resolve()?;
                 match op {
-                    ExprUnOp::Neg => match &expr.as_ref().0 {
+                    ExprUnOp::Neg => match &*expr.as_ref() {
                         ExprType::Value(value) => Ok(ExprType::Value(value.op_neg()?)),
                         _ => Err(Error::EvalError(format!("negating non-value: {}", expr))),
                     },
-                    ExprUnOp::Not => match &expr.as_ref().0 {
+                    ExprUnOp::Not => match &*expr.as_ref() {
                         ExprType::Value(value) => Ok(ExprType::Value(value.op_not()?)),
                         _ => Err(Error::EvalError(format!("negating non-value: {}", expr))),
                     },
@@ -520,13 +492,13 @@ where
             }
             ExprType::BinOp(op, lhs, rhs) => {
                 lhs.resolve()?;
-                match &lhs.as_ref().0 {
+                match &*lhs.as_ref() {
                     ExprType::Object(_lhs_obj) => todo!(),
                     ExprType::Value(lhs_val) => match op {
                         ExprBinOp::LogAnd => match lhs_val.as_bool()? {
                             true => {
                                 rhs.resolve()?;
-                                Ok(rhs.as_ref().0.clone())
+                                Ok(rhs.as_ref().clone())
                             }
                             false => Ok(ExprType::Value(lhs_val.new_from_bool(false))),
                         },
@@ -534,19 +506,19 @@ where
                             true => Ok(ExprType::Value(lhs_val.new_from_bool(true))),
                             false => {
                                 rhs.resolve()?;
-                                Ok(rhs.as_ref().0.clone())
+                                Ok(rhs.as_ref().clone())
                             }
                         },
                         ExprBinOp::LogImpl => match lhs_val.as_bool()? {
                             false => Ok(ExprType::Value(lhs_val.new_from_bool(true))),
                             true => {
                                 rhs.resolve()?;
-                                Ok(rhs.as_ref().0.clone())
+                                Ok(rhs.as_ref().clone())
                             }
                         },
                         _ => {
                             rhs.resolve()?;
-                            match &rhs.as_ref().0 {
+                            match &*rhs.as_ref() {
                                 ExprType::Object(_rhs_obj) => todo!(),
                                 ExprType::Value(rhs_val) => match op {
                                     ExprBinOp::AttrSel => todo!(),
@@ -599,41 +571,17 @@ where
                 }
             }
             _ => unreachable!(),
-        };
-        self.0 = new_inner?;
-        Ok(())
-    }
-
-    pub fn resolve(&mut self) -> Result<()> {
-        while match self.0 {
-            ExprType::Object(..) => false,
-            ExprType::Value(..) => false,
-            ExprType::Var(..) => true,
-            ExprType::UnOp(..) => true,
-            ExprType::BinOp(..) => true,
-            ExprType::FuncDefIdent(..) => false,
-            ExprType::FuncDefPattern(..) => false,
-            ExprType::FuncDefBuiltin(..) => false,
-            ExprType::Let(..) => true,
-            ExprType::FuncCall(..) => true,
-            ExprType::BoundExpr(..) => true,
-            ExprType::CalledFunc(..) => true,
-        } {
-            self.resolve_once()?;
         }
-        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::expr::ExprType::BoundExpr;
-    use crate::parser::Parser;
-    use crate::value::Value;
+    use super::{super::parser::Parser, super::testvalue::TestValue, ExprType::BoundExpr};
 
-    fn eval<'a>(p: &'a Parser, code: &str) -> ExprRef<'a, Value> {
-        let expr: ExprRef<Value> =
+    fn eval<'a>(p: &'a Parser, code: &str) -> Expr<'a, TestValue> {
+        let expr: Expr<TestValue> =
             ExprType::BoundExpr(ExprSet::new(), p.parse_str(code).unwrap()).into();
         expr.eval().unwrap();
         expr
@@ -653,7 +601,7 @@ mod tests {
             )
             .unwrap();
         let value = expr.get_item("stuff")?;
-        assert_eq!(value, ExprRef::from(Value::String("hello".into())));
+        assert_eq!(value, Expr::from(TestValue::String("hello".into())));
         Ok(())
     }
 
@@ -674,7 +622,7 @@ mod tests {
             )
             .unwrap();
         let value = expr.get_item("something")?.get_item("inner")?;
-        assert_eq!(value, ExprRef::from(Value::Int(55)));
+        assert_eq!(value, Expr::from(TestValue::Int(55)));
         Ok(())
     }
 
@@ -691,13 +639,13 @@ mod tests {
                 b
             "#,
         );
-        assert_eq!(value, ExprRef::from(Value::Int(75)));
+        assert_eq!(value, Expr::from(TestValue::Int(75)));
     }
 
     #[test]
     fn test_invalid_var() -> Result<()> {
         let p = Parser::new();
-        let expr: ExprRef<Value> =
+        let expr: Expr<TestValue> =
             ExprType::BoundExpr(ExprSet::new(), p.parse_str("invalid_var").unwrap()).into();
         if let Err(Error::ScopeError(message)) = expr.resolve() {
             assert_eq!(message.as_str(), "Unknown variable invalid_var");
@@ -748,9 +696,9 @@ mod tests {
         let call = p.parse_str("func_b 32").unwrap();
         let varscope =
             ExprSet::from(vec![("func_a", func_a.into()), ("func_b", func_b.into())]).unwrap();
-        let value: ExprRef<Value> = ExprType::BoundExpr(varscope, call).into();
+        let value: Expr<TestValue> = ExprType::BoundExpr(varscope, call).into();
         value.resolve().unwrap();
-        assert_eq!(value, ExprRef::from(Value::Int(42)));
+        assert_eq!(value, Expr::from(TestValue::Int(42)));
     }
 
     #[test]
@@ -761,9 +709,9 @@ mod tests {
         let call = p.parse_str("func arg").unwrap();
         let varscope =
             ExprSet::from(vec![("func", func_var.into()), ("arg", arg_var.into())]).unwrap();
-        let value: ExprRef<Value> = ExprType::BoundExpr(varscope, call).into();
+        let value: Expr<TestValue> = ExprType::BoundExpr(varscope, call).into();
         value.resolve().unwrap();
-        assert_eq!(value, ExprRef::from(Value::Int(32)));
+        assert_eq!(value, Expr::from(TestValue::Int(32)));
     }
 
     #[test]
@@ -952,10 +900,10 @@ mod tests {
         let code = "mybuiltin 10";
         let builtins = ExprSet::from(vec![(
             "mybuiltin",
-            ExprRef::new_builtin("mybuiltin", |_| Ok(ExprRef::from(Value::Int(123)))),
+            Expr::new_builtin("mybuiltin", |_| Ok(Expr::from(TestValue::Int(123)))),
         )])
         .unwrap();
-        let expr: ExprRef<Value> = BoundExpr(builtins, p.parse_str(code).unwrap()).into();
+        let expr: Expr<TestValue> = BoundExpr(builtins, p.parse_str(code).unwrap()).into();
         expr.eval().unwrap();
         assert_eq!(expr, eval(&p, "123"));
     }
@@ -976,15 +924,15 @@ mod tests {
         let call_count = RefCell::new(0);
         let builtins = ExprSet::from(vec![(
             "mybuiltin",
-            ExprRef::new_builtin("mybuiltin", |_| {
-                Ok(ExprRef::from(Value::Int({
+            Expr::new_builtin("mybuiltin", |_| {
+                Ok(Expr::from(TestValue::Int({
                     call_count.replace_with(|&mut old| old + 1);
                     *call_count.borrow()
                 })))
             }),
         )])
         .unwrap();
-        let expr: ExprRef<Value> = BoundExpr(builtins, p.parse_str(code).unwrap()).into();
+        let expr: Expr<TestValue> = BoundExpr(builtins, p.parse_str(code).unwrap()).into();
         expr.eval().unwrap();
         assert_eq!(expr, eval(&p, "{ a = 1; b = 1; }"));
         assert_eq!(*call_count.borrow(), 1);
@@ -1003,15 +951,15 @@ mod tests {
         let call_count = RefCell::new(0);
         let builtins = ExprSet::from(vec![(
             "mybuiltin",
-            ExprRef::new_builtin("mybuiltin", |_| {
-                Ok(ExprRef::from(Value::Int({
+            Expr::new_builtin("mybuiltin", |_| {
+                Ok(Expr::from(TestValue::Int({
                     call_count.replace_with(|&mut old| old + 1);
                     *call_count.borrow()
                 })))
             }),
         )])
         .unwrap();
-        let expr: ExprRef<Value> = BoundExpr(builtins, p.parse_str(code).unwrap()).into();
+        let expr: Expr<TestValue> = BoundExpr(builtins, p.parse_str(code).unwrap()).into();
         expr.eval().unwrap();
         assert_eq!(expr, eval(&p, "{}"));
         assert_eq!(*call_count.borrow(), 0);

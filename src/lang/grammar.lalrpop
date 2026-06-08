@@ -1,0 +1,158 @@
+use super::{
+    Expr,
+    ExprType,
+    ExprSet,
+    ExprUnOp,
+    ExprBinOp,
+    ExprOps,
+    ParsableValue,
+    Display,
+    unpack_str,
+    unpack_int,
+    unpack_bool
+};
+
+grammar<'expr, T>
+where
+    T: ParsableValue + Clone + PartialEq + Display + ExprOps;
+
+pub Expr: Expr<'expr, T> = {
+    <Expr14>,
+};
+
+// Nix, for reference:
+
+// Attribute selection            attrset  .   attrpath [ or expr ]   none     1
+// Function application           func expr                           left     2
+// Arithmetic negation                     -   number                 none     3
+// Has attribute                  attrset  ?   attrpath               none     4
+// List concatenation             list     ++  list                   right    5
+// Multiplication                 number   *   number                 left     6
+// Division                       number   /   number                 left     6
+// Subtraction                    number   -   number                 left     7
+// Addition                       number   +   number                 left     7
+// String concatenation           string   +   string                 left     7
+// Path concatenation             path     +   path                   left     7
+// Path and string concatenation  path     +   string                 left     7
+// String and path concatenation  string   +   path                   left     7
+// Logical negation (NOT)                  !   bool                   none     8
+// Update                         attrset  //  attrset                right    9
+// Less than                      expr     <   expr                   none    10
+// Less than or equal to          expr     <=  expr                   none    10
+// Greater than                   expr     >   expr                   none    10
+// Greater than or equal to       expr     >=  expr                   none    10
+// Equality                       expr     ==  expr                   none    11
+// Inequality                     expr     !=  expr                   none    11
+// Logical conjunction (AND)      bool     &&  bool                   left    12
+// Logical disjunction (OR)       bool     ||  bool                   left    13
+// Logical implication            bool     ->  bool                   none    14
+
+
+Expr14: Expr<'expr, T> = {
+    <lhs:Expr13> "->" <rhs:Expr13> => ExprType::BinOp(ExprBinOp::LogImpl, lhs, rhs).into(),
+    <Expr13>,
+};
+
+Expr13: Expr<'expr, T> = {
+    <lhs:Expr12> "||" <rhs:Expr12> => ExprType::BinOp(ExprBinOp::LogOr, lhs, rhs).into(),
+    <Expr12>,
+};
+
+Expr12: Expr<'expr, T> = {
+    <lhs:Expr11> "&&" <rhs:Expr11> => ExprType::BinOp(ExprBinOp::LogAnd, lhs, rhs).into(),
+    <Expr11>,
+};
+
+Expr11: Expr<'expr, T> = {
+    <lhs:Expr10> "==" <rhs:Expr10> => ExprType::BinOp(ExprBinOp::Eq, lhs, rhs).into(),
+    <lhs:Expr10> "!=" <rhs:Expr10> => ExprType::BinOp(ExprBinOp::Neq, lhs, rhs).into(),
+    <Expr10>,
+};
+
+Expr10: Expr<'expr, T> = {
+    <lhs:Expr9> "<" <rhs:Expr9> => ExprType::BinOp(ExprBinOp::Lt, lhs, rhs).into(),
+    <lhs:Expr9> "<=" <rhs:Expr9> => ExprType::BinOp(ExprBinOp::Le, lhs, rhs).into(),
+    <lhs:Expr9> ">" <rhs:Expr9> => ExprType::BinOp(ExprBinOp::Gt, lhs, rhs).into(),
+    <lhs:Expr9> ">=" <rhs:Expr9> => ExprType::BinOp(ExprBinOp::Ge, lhs, rhs).into(),
+    <Expr9>,
+};
+
+Expr9: Expr<'expr, T> = {
+    <lhs:Expr9> "//" <rhs:Expr8> => ExprType::BinOp(ExprBinOp::Lt, lhs, rhs).into(),
+    <Expr8>,
+};
+
+Expr8: Expr<'expr, T> = {
+    "!" <rhs:Expr7> => ExprType::UnOp(ExprUnOp::Not, rhs).into(),
+    <Expr7>,
+};
+
+Expr7: Expr<'expr, T> = {
+    <lhs:Expr6> "-" <rhs:Expr7> => ExprType::BinOp(ExprBinOp::Sub, lhs, rhs).into(),
+    <lhs:Expr6> "+" <rhs:Expr7> => ExprType::BinOp(ExprBinOp::Add, lhs, rhs).into(),
+    <Expr6>,
+};
+
+Expr6: Expr<'expr, T> = {
+    <lhs:Expr5> "*" <rhs:Expr6> => ExprType::BinOp(ExprBinOp::Mult, lhs, rhs).into(),
+    <lhs:Expr5> "/" <rhs:Expr6> => ExprType::BinOp(ExprBinOp::Div, lhs, rhs).into(),
+    <Expr5>,
+};
+
+Expr5: Expr<'expr, T> = {
+    <lhs:Expr5> "++" <rhs:Expr4> => ExprType::BinOp(ExprBinOp::ListConcat, lhs, rhs).into(),
+    <Expr4>,
+};
+
+Expr4: Expr<'expr, T> = {
+    <lhs:Expr3> "?" <rhs:Variable> => ExprType::BinOp(ExprBinOp::HasAttr, lhs, rhs).into(),
+    <Expr3>,
+};
+
+Expr3: Expr<'expr, T> = {
+    "-" <rhs:Expr2> => ExprType::UnOp(ExprUnOp::Neg, rhs).into(),
+    <Expr2>,
+};
+
+Expr2: Expr<'expr, T> = {
+    // TODO: Is this ExprTerm correct here?
+    <i:Ident> <e:ExprTerm> => ExprType::FuncCall(i, e).into(),
+    <Expr1>,
+};
+
+Expr1: Expr<'expr, T> = {
+    <lhs:ExprTerm> "." <rhs:Variable> => ExprType::BinOp(ExprBinOp::AttrSel, lhs, rhs).into(),
+    <ExprTerm>,
+};
+
+ExprTerm: Expr<'expr, T> = {
+    <Object>,
+    <Value>,
+    <FuncDef>,
+    <Let>,
+    <Variable>,
+    "(" <Expr> ")"
+};
+
+Object: Expr<'expr, T> = "{" <s:SetStmt*> "}" => ExprType::Object(ExprSet::from(s).unwrap()).into();
+
+// TODO: Check FuncDef precedence in Expr
+FuncDef: Expr<'expr, T> = {
+    <i:Ident> ":" <e:ExprTerm> => ExprType::FuncDefIdent(i, e).into(),
+    "{" <i:(<Ident> ",")*> "..." "}" ":" <e:ExprTerm> => ExprType::FuncDefPattern(i, e).into(),
+};
+
+Let: Expr<'expr, T> = "let" <s:SetStmt*> "in" <e:ExprTerm> => ExprType::Let(s, e).into();
+SetStmt: (String, Expr<'expr, T>) = <i:Ident> "=" <e:Expr> ";" => (i, e);
+
+Variable: Expr<'expr, T> = <s:Ident> => ExprType::Var(s).into();
+
+Ident: String = <s:r"[a-zA-Z][a-zA-Z0-9_]*"> => s.into();
+Value: Expr<'expr, T> = {
+    "true" => unpack_bool(true),
+    "false" => unpack_bool(false),
+    <s:r"[0-9]+"> => unpack_int(s),
+    // TODO: Escape chars
+    <s:r#""[^"]*""#> => unpack_str(s),
+};
+
