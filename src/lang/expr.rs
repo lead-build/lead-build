@@ -7,6 +7,8 @@ use std::{
 use super::immap::ImMap;
 
 pub mod ops {
+    use super::{Debug, Display, Expr};
+
     pub trait ExprOps: Sized {
         fn op_add(lhs: &Self, rhs: &Self) -> Result<Self>;
         fn op_sub(lhs: &Self, rhs: &Self) -> Result<Self>;
@@ -25,26 +27,42 @@ pub mod ops {
         fn new_from_bool(&self, value: bool) -> Self;
     }
 
+    pub trait ExprBuiltin<T>: Debug
+    where
+        T: Clone + PartialEq + Display + ExprOps,
+    {
+        fn get_name(&self) -> String;
+        fn call(&self, arg: Expr<T>) -> Result<Expr<T>>;
+    }
+
     pub enum Error {
         Type(String),
+        ExprError(super::Error),
+    }
+
+    impl From<super::Error> for Error {
+        fn from(value: super::Error) -> Self {
+            Error::ExprError(value)
+        }
     }
 
     pub type Result<T> = std::result::Result<T, Error>;
 }
 
-use ops::ExprOps;
+use ops::{ExprBuiltin, ExprOps};
 
 /*
  * Error
  */
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Error {
     ScopeError(String),
     EvalError(String),
     TypeError(String),
     DupKey(String),
     NoValue(String),
+    LangError(Box<super::error::DnjError>),
 }
 
 impl std::error::Error for Error {}
@@ -57,6 +75,7 @@ impl Display for Error {
             Error::TypeError(msg) => write!(f, "TypeError: {}", msg),
             Error::DupKey(msg) => write!(f, "DupKey: {}", msg),
             Error::NoValue(msg) => write!(f, "No value: {}", msg),
+            Error::LangError(dnj_error) => Display::fmt(&dnj_error, f),
         }
     }
 }
@@ -73,7 +92,14 @@ impl From<ops::Error> for Error {
     fn from(value: ops::Error) -> Self {
         match value {
             ops::Error::Type(msg) => Error::TypeError(msg),
+            ops::Error::ExprError(err) => err,
         }
+    }
+}
+
+impl From<super::error::DnjError> for Error {
+    fn from(value: super::error::DnjError) -> Self {
+        Error::LangError(value.into())
     }
 }
 
@@ -84,11 +110,11 @@ type Result<RT> = std::result::Result<RT, Error>;
  */
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Expr<'func, T>(Rc<RefCell<ExprType<'func, T>>>)
+pub struct Expr<T>(Rc<RefCell<ExprType<T>>>)
 where
     T: Clone + PartialEq + Display + ExprOps;
 
-pub type ExprSet<'func, T> = ImMap<Expr<'func, T>>;
+pub type ExprSet<T> = ImMap<Expr<T>>;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum ExprBinOp {
@@ -117,55 +143,40 @@ pub enum ExprUnOp {
     Not,
 }
 
-pub type ExprBuiltinFn<'func, T> = dyn 'func + Fn(&'_ Expr<'func, T>) -> Result<Expr<'func, T>>;
-
 #[derive(Clone)]
-pub struct ExprBuiltin<'func, T>(String, Rc<ExprBuiltinFn<'func, T>>)
+pub struct ExprBuiltinWrapper<T>(String, Rc<dyn ExprBuiltin<T>>)
 where
     T: Clone + PartialEq + Display + ExprOps;
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ExprType<'func, T>
+pub enum ExprType<T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
-    Object(ExprSet<'func, T>),
+    Object(ExprSet<T>),
     Value(T),
     Var(String),
-    UnOp(ExprUnOp, Expr<'func, T>),
-    BinOp(ExprBinOp, Expr<'func, T>, Expr<'func, T>),
-    FuncDefIdent(String, Expr<'func, T>),
-    FuncDefPattern(Vec<String>, Expr<'func, T>),
-    FuncDefBuiltin(ExprBuiltin<'func, T>),
-    Let(Vec<(String, Expr<'func, T>)>, Expr<'func, T>),
-    FuncCall(String, Expr<'func, T>),
-    CalledFunc(Expr<'func, T>, Expr<'func, T>),
-    BoundExpr(ExprSet<'func, T>, Expr<'func, T>),
+    UnOp(ExprUnOp, Expr<T>),
+    BinOp(ExprBinOp, Expr<T>, Expr<T>),
+    FuncDefIdent(String, Expr<T>),
+    FuncDefPattern(Vec<String>, Expr<T>),
+    FuncDefBuiltin(ExprBuiltinWrapper<T>),
+    Let(Vec<(String, Expr<T>)>, Expr<T>),
+    FuncCall(String, Expr<T>),
+    CalledFunc(Expr<T>, Expr<T>),
+    BoundExpr(ExprSet<T>, Expr<T>),
 }
 
 /* *****************************************************************************
  * Display
  */
 
-impl<'func, T> Display for ExprBuiltin<'func, T>
+impl<T> Debug for ExprBuiltinWrapper<T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let ExprBuiltin(name, _) = self;
-        write!(f, "<builtin function {}>", name)
-    }
-}
-
-impl<'func, T> Debug for ExprBuiltin<'func, T>
-where
-    T: Clone + PartialEq + Display + ExprOps,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_tuple("ExprBuiltin")
-            .field(&self.0)
-            .field(&"<func>")
-            .finish()
+        f.debug_tuple("ExprBuiltinWrapper").field(&self.0).finish()
     }
 }
 
@@ -202,7 +213,7 @@ impl Display for ExprUnOp {
     }
 }
 
-impl<'func, T> Display for Expr<'func, T>
+impl<T> Display for Expr<T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
@@ -211,7 +222,7 @@ where
     }
 }
 
-impl<'func, T> Display for ExprType<'func, T>
+impl<T> Display for ExprType<T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
@@ -252,7 +263,9 @@ where
             ExprType::FuncCall(name, expr) => write!(f, "{} {}", name, expr),
             ExprType::CalledFunc(args, expr) => write!(f, "{} => {}", args, expr),
             ExprType::BoundExpr(scope, expr) => write!(f, "[ {} @ {} ]", scope, expr),
-            ExprType::FuncDefBuiltin(ExprBuiltin(name, _)) => write!(f, "<builtin {}>", name),
+            ExprType::FuncDefBuiltin(ExprBuiltinWrapper(name, _)) => {
+                write!(f, "<builtin {}>", name)
+            }
         }
     }
 }
@@ -261,7 +274,7 @@ where
  * Transform / From
  */
 
-impl<'func, T> From<T> for ExprType<'func, T>
+impl<T> From<T> for ExprType<T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
@@ -270,16 +283,16 @@ where
     }
 }
 
-impl<'func, T> From<ExprType<'func, T>> for Expr<'func, T>
+impl<T> From<ExprType<T>> for Expr<T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
-    fn from(value: ExprType<'func, T>) -> Self {
+    fn from(value: ExprType<T>) -> Self {
         Expr(Rc::new(RefCell::new(value)))
     }
 }
 
-impl<'func, T> From<T> for Expr<'func, T>
+impl<T> From<T> for Expr<T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
@@ -288,11 +301,11 @@ where
     }
 }
 
-impl<'func, T> From<ExprSet<'func, T>> for Expr<'func, T>
+impl<T> From<ExprSet<T>> for Expr<T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
-    fn from(value: ExprSet<'func, T>) -> Self {
+    fn from(value: ExprSet<T>) -> Self {
         Expr::from(ExprType::Object(value))
     }
 }
@@ -301,7 +314,7 @@ where
  * Implementations
  */
 
-impl<'func, T> PartialEq for ExprBuiltin<'func, T>
+impl<T> PartialEq for ExprBuiltinWrapper<T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
@@ -318,11 +331,11 @@ where
     }
 }
 
-impl<'func, T> Expr<'func, T>
+impl<T> Expr<T>
 where
     T: Clone + PartialEq + Display + ExprOps + Debug,
 {
-    pub fn as_ref(&self) -> Ref<'_, ExprType<'func, T>> {
+    pub fn as_ref(&self) -> Ref<'_, ExprType<T>> {
         self.0.as_ref().borrow()
     }
 
@@ -367,7 +380,7 @@ where
         }
     }
 
-    pub fn get_item(&self, name: &str) -> Result<Expr<'func, T>> {
+    pub fn get_item(&self, name: &str) -> Result<Expr<T>> {
         self.resolve()?;
         let node = self.as_ref();
         match &*node {
@@ -378,19 +391,16 @@ where
         }
     }
 
-    pub fn new_builtin<F>(name: impl ToString, func: F) -> Expr<'func, T>
-    where
-        F: 'func + Fn(&Expr<'func, T>) -> Result<Expr<'func, T>>,
-    {
-        ExprType::FuncDefBuiltin(ExprBuiltin(name.to_string(), Rc::new(func))).into()
+    pub fn new_builtin(func: Rc<dyn ExprBuiltin<T>>) -> Expr<T> {
+        ExprType::FuncDefBuiltin(ExprBuiltinWrapper(func.as_ref().get_name(), func)).into()
     }
 }
 
-impl<'func, T> ExprType<'func, T>
+impl<T> ExprType<T>
 where
     T: Clone + PartialEq + Display + ExprOps + Debug,
 {
-    fn resolve(&self) -> Result<ExprType<'func, T>> {
+    fn resolve(&self) -> Result<ExprType<T>> {
         match &self {
             ExprType::BoundExpr(varspace, bound_expr) => match &*bound_expr.as_ref() {
                 ExprType::Object(fields) => {
@@ -462,7 +472,7 @@ where
                 args_expr.resolve()?;
                 func.resolve()?;
                 let funcref = func.as_ref();
-                let (args, func_expr): (ExprSet<'func, T>, Expr<'func, T>) = match &*funcref {
+                let (args, func_expr): (ExprSet<T>, Expr<T>) = match &*funcref {
                     ExprType::FuncDefIdent(arg_name, func_expr) => Ok((
                         ExprSet::single(arg_name, args_expr.clone()),
                         func_expr.clone(),
@@ -475,9 +485,8 @@ where
                         }
                         Ok((new_vars, func_expr.clone()))
                     }
-                    ExprType::FuncDefBuiltin(ExprBuiltin(_, funcrc)) => {
-                        let f = funcrc.as_ref();
-                        let res = f(args_expr)?;
+                    ExprType::FuncDefBuiltin(ExprBuiltinWrapper(_, funcrc)) => {
+                        let res = funcrc.as_ref().call(args_expr.clone())?;
                         Ok((ExprSet::new(), res))
                     }
                     _ => Err(Error::ScopeError(format!(
@@ -599,7 +608,7 @@ mod tests {
     use super::*;
     use super::{super::parser::parse_str, super::testvalue::TestValue, ExprType::BoundExpr};
 
-    fn eval<'a>(code: &str) -> Expr<'a, TestValue> {
+    fn eval(code: &str) -> Expr<TestValue> {
         let expr: Expr<TestValue> =
             ExprType::BoundExpr(ExprSet::new(), parse_str(code).unwrap()).into();
         expr.eval().unwrap();
@@ -889,71 +898,80 @@ mod tests {
         );
     }
 
+    #[derive(Debug)]
+    struct CountingBuiltin(RefCell<i32>);
+    impl CountingBuiltin {
+        fn new() -> CountingBuiltin {
+            CountingBuiltin(RefCell::new(0i32))
+        }
+
+        fn get(&self) -> i32 {
+            *self.0.borrow()
+        }
+    }
+
+    impl ExprBuiltin<TestValue> for CountingBuiltin {
+        fn get_name(&self) -> String {
+            "mybuiltin".into()
+        }
+
+        fn call(&self, arg: Expr<TestValue>) -> ops::Result<Expr<TestValue>> {
+            let mut counter = self.0.borrow_mut();
+            *counter += 1;
+            Ok(arg)
+        }
+    }
+
     #[test]
     fn test_builtin_func() {
         let code = "mybuiltin 10";
+
         let builtins = ExprSet::from(vec![(
             "mybuiltin",
-            Expr::new_builtin("mybuiltin", |_| Ok(Expr::from(TestValue::Int(123)))),
+            Expr::new_builtin(Rc::new(CountingBuiltin::new())),
         )])
         .unwrap();
         let expr: Expr<TestValue> = BoundExpr(builtins, parse_str(code).unwrap()).into();
         expr.eval().unwrap();
-        assert_eq!(expr, eval("123"));
+        assert_eq!(expr, eval("10"));
     }
 
     #[test]
     fn test_builtin_func_laziness_multiple_calls() {
         // Invoked in code twice should only be evaluated once
         let code = r#"
-            let
-                func_call = mybuiltin 10;
-            in
-            {
-                a = func_call;
-                b = func_call;
-            }
-        "#;
-        let call_count = RefCell::new(0);
-        let builtins = ExprSet::from(vec![(
-            "mybuiltin",
-            Expr::new_builtin("mybuiltin", |_| {
-                Ok(Expr::from(TestValue::Int({
-                    call_count.replace_with(|&mut old| old + 1);
-                    *call_count.borrow()
-                })))
-            }),
-        )])
-        .unwrap();
+                let
+                    func_call = mybuiltin 10;
+                in
+                {
+                    a = func_call;
+                    b = func_call;
+                }
+            "#;
+        let counter = Rc::new(CountingBuiltin::new());
+        let builtins =
+            ExprSet::from(vec![("mybuiltin", Expr::new_builtin(counter.clone()))]).unwrap();
         let expr: Expr<TestValue> = BoundExpr(builtins, parse_str(code).unwrap()).into();
         expr.eval().unwrap();
-        assert_eq!(expr, eval("{ a = 1; b = 1; }"));
-        assert_eq!(*call_count.borrow(), 1);
+        assert_eq!(expr, eval("{ a = 10; b = 10; }"));
+        assert_eq!(counter.get(), 1);
     }
 
     #[test]
     fn test_builtin_func_laziness_no_calls() {
         // Invoked in code twice should only be evaluated once
         let code = r#"
-            let
-                func_call = mybuiltin 10;
-            in
-            {}
-        "#;
-        let call_count = RefCell::new(0);
-        let builtins = ExprSet::from(vec![(
-            "mybuiltin",
-            Expr::new_builtin("mybuiltin", |_| {
-                Ok(Expr::from(TestValue::Int({
-                    call_count.replace_with(|&mut old| old + 1);
-                    *call_count.borrow()
-                })))
-            }),
-        )])
-        .unwrap();
+                let
+                    func_call = mybuiltin 10;
+                in
+                {}
+            "#;
+        let counter = Rc::new(CountingBuiltin::new());
+        let builtins =
+            ExprSet::from(vec![("mybuiltin", Expr::new_builtin(counter.clone()))]).unwrap();
         let expr: Expr<TestValue> = BoundExpr(builtins, parse_str(code).unwrap()).into();
         expr.eval().unwrap();
         assert_eq!(expr, eval("{}"));
-        assert_eq!(*call_count.borrow(), 0);
+        assert_eq!(counter.get(), 0);
     }
 }

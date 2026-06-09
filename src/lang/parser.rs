@@ -47,7 +47,7 @@ where
     fn from_bool(value: bool) -> Self;
 }
 
-pub fn parse_str<'a, T>(code: &str) -> Result<Expr<'a, T>>
+pub fn parse_str<T>(code: &str) -> Result<Expr<T>>
 where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps,
 {
@@ -56,7 +56,7 @@ where
     Ok(result)
 }
 
-fn unpack_str<'a, T>(input: &str) -> Expr<'a, T>
+fn unpack_str<T>(input: &str) -> Expr<T>
 where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps,
 {
@@ -94,9 +94,9 @@ where
     }
 
     let parts = string_decode(out.as_str()).unwrap();
-    let mut out_expr: Option<Expr<'a, T>> = None;
+    let mut out_expr: Option<Expr<T>> = None;
     for part in parts {
-        let part_expr: Expr<'a, T> = match part {
+        let part_expr: Expr<T> = match part {
             StringType::Str(s) => T::parse_string(s).unwrap().into(),
             StringType::Expr(code) => parse_str(&code).unwrap(),
         };
@@ -109,7 +109,7 @@ where
     out_expr.unwrap()
 }
 
-fn unpack_int<'a, T>(input: &str) -> Expr<'a, T>
+fn unpack_int<T>(input: &str) -> Expr<T>
 where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps,
 {
@@ -119,7 +119,7 @@ where
     }
 }
 
-fn unpack_bool<'a, T>(input: bool) -> Expr<'a, T>
+fn unpack_bool<T>(input: bool) -> Expr<T>
 where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps,
 {
@@ -131,7 +131,7 @@ mod tests {
     use super::super::testvalue::TestValue;
     use super::*;
 
-    fn eval<'a>(code: &str) -> Expr<'a, TestValue> {
+    fn eval<'a>(code: &str) -> Expr<TestValue> {
         parse_str(code).unwrap()
     }
 
