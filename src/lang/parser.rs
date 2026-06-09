@@ -1,4 +1,5 @@
 use super::expr::{Expr, ExprBinOp, ExprSet, ExprType, ExprUnOp, ops::ExprOps};
+use super::stringdecode::{StringType, string_decode};
 use std::fmt::Display;
 use std::fs;
 use std::path::PathBuf;
@@ -91,6 +92,19 @@ where
             Some('n') => Some('\n'),
             Some('r') => Some('\r'),
             Some('t') => Some('\t'),
+            Some('u') => {
+                let hex: String = [
+                    chars.next().unwrap(),
+                    chars.next().unwrap(),
+                    chars.next().unwrap(),
+                    chars.next().unwrap(),
+                ]
+                .iter()
+                .collect();
+                let u: u32 = u32::from_str_radix(hex.as_str(), 16).unwrap();
+                let c = char::from_u32(u).unwrap();
+                Some(c)
+            }
             Some(c) => Some(c),
             None => panic!("Unmatched escape seq"),
         },
@@ -99,10 +113,22 @@ where
     } {
         out.push(c);
     }
-    match T::parse_string(out) {
-        Some(value) => value.into(),
-        None => panic!("Error parsing string"),
+
+    let parts = string_decode(out.as_str()).unwrap();
+    let mut out_expr: Option<Expr<'a, T>> = None;
+    let sub_parser: grammar::ExprParser = Default::default();
+    for part in parts {
+        let part_expr: Expr<'a, T> = match part {
+            StringType::Str(s) => T::parse_string(s).unwrap().into(),
+            StringType::Expr(code) => sub_parser.parse(&code).unwrap(),
+        };
+        out_expr = match out_expr {
+            Some(prev) => Some(ExprType::BinOp(ExprBinOp::Add, prev, part_expr).into()),
+            None => Some(part_expr),
+        }
     }
+
+    out_expr.unwrap()
 }
 
 fn unpack_int<'a, T>(input: &str) -> Expr<'a, T>
@@ -193,11 +219,73 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_str() {
+    fn test_parse_str_unicode() {
         let p = Parser::new();
         let code = "\"boll\\\"hej\\u0041\"";
         assert_eq!(
             Expr::from(ExprType::Value(TestValue::String("boll\"hejA".into()))),
+            eval(&p, code)
+        );
+    }
+
+    #[test]
+    fn test_parse_str_var() {
+        let p = Parser::new();
+        let code = "\"prefix${myvar}suffix\"";
+        assert_eq!(
+            Expr::from(ExprType::BinOp(
+                ExprBinOp::Add,
+                Expr::from(ExprType::BinOp(
+                    ExprBinOp::Add,
+                    Expr::from(ExprType::Value(TestValue::String("prefix".into()))),
+                    Expr::from(ExprType::Var("myvar".into()))
+                )),
+                Expr::from(ExprType::Value(TestValue::String("suffix".into())))
+            )),
+            eval(&p, code)
+        );
+    }
+
+    #[test]
+    fn test_parse_str_obj() {
+        let p = Parser::new();
+        // An object may be an issue for string concatenation, but it verifies
+        // brackets are interpreted in the correct places.
+        let code = "\"prefix${{a = 12;}}suffix\"";
+        assert_eq!(
+            Expr::from(ExprType::BinOp(
+                ExprBinOp::Add,
+                Expr::from(ExprType::BinOp(
+                    ExprBinOp::Add,
+                    Expr::from(ExprType::Value(TestValue::String("prefix".into()))),
+                    Expr::from(ExprSet::from(vec![("a", Expr::from(TestValue::Int(12)))]).unwrap())
+                )),
+                Expr::from(ExprType::Value(TestValue::String("suffix".into())))
+            )),
+            eval(&p, code)
+        );
+    }
+
+    #[test]
+    fn test_parse_str_obj_expr() {
+        let p = Parser::new();
+        // An object may be an issue for string concatenation, but it verifies
+        // brackets are interpreted in the correct places.
+        let code = "\"prefix${({a = 12;} // {b = 13;}).b}mid${44}\"";
+        assert_eq!(
+            Expr::from(ExprType::BinOp(
+                ExprBinOp::Add,
+                Expr::from(ExprType::BinOp(
+                    ExprBinOp::Add,
+                    Expr::from(ExprType::BinOp(
+                        ExprBinOp::Add,
+                        eval(&p, "\"prefix\""),
+                        eval(&p, "({a = 12;} // {b = 13;}).b")
+                    )),
+                    eval(&p, "\"mid\""),
+                )),
+                eval(&p, "44")
+            )),
             eval(&p, code)
         );
     }

@@ -2,6 +2,7 @@ mod error;
 mod expr;
 mod immap;
 mod parser;
+mod stringdecode;
 
 #[cfg(test)]
 mod testvalue;

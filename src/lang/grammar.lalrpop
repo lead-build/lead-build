@@ -152,7 +152,6 @@ Value: Expr<'expr, T> = {
     "true" => unpack_bool(true),
     "false" => unpack_bool(false),
     <s:r"[0-9]+"> => unpack_int(s),
-    // TODO: Escape chars
-    <s:r#""[^"]*""#> => unpack_str(s),
+    <s:r#""([^"]|\\.)*""#> => unpack_str(s),
 };
 

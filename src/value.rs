@@ -42,6 +42,7 @@ impl ExprOps for Value {
     fn op_add(lhs: &Self, rhs: &Self) -> Result<Self> {
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs + rhs)),
+            (Value::String(lhs), Value::String(rhs)) => Ok(Value::String(lhs.clone() + rhs)),
             _ => Err(Error::Type(format!("can't add {} and {}", lhs, rhs))),
         }
     }

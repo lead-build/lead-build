@@ -287,6 +287,15 @@ where
     }
 }
 
+impl<'func, T> From<ExprSet<'func, T>> for Expr<'func, T>
+where
+    T: Clone + PartialEq + Display + ExprOps,
+{
+    fn from(value: ExprSet<'func, T>) -> Self {
+        Expr::from(ExprType::Object(value))
+    }
+}
+
 /* *****************************************************************************
  * Implementations
  */
