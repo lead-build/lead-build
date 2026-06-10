@@ -392,6 +392,15 @@ where
         Ok(())
     }
 
+    pub fn value(&self) -> Result<T> {
+        // Since we expect a string, we only need to resolve one level.
+        self.resolve()?;
+        match &*self.as_ref() {
+            ExprType::Value(val) => Ok(val.clone()),
+            _ => Err(Error::NoValue(format!("Not a value: {}", self))),
+        }
+    }
+
     pub fn eval_string(&self) -> Result<String> {
         // Since we expect a string, we only need to resolve one level.
         self.resolve()?;
@@ -925,8 +934,23 @@ mod tests {
     }
 
     #[test]
+    fn test_multi_level_obj() {
+        assert_eq!(eval("let a = { b = { c = 3; }; }; in a.b.c"), eval("3"));
+    }
+
+    #[test]
     fn test_list_concat() {
         assert_eq!(eval("[1 3 5 7] + [2 4 6 8]"), eval("[1 3 5 7 2 4 6 8]"));
+    }
+
+    #[test]
+    fn test_div_precedence() {
+        assert_eq!(eval("8 / 2 / 2"), eval("2"));
+    }
+
+    #[test]
+    fn test_sub_precedence() {
+        assert_eq!(eval("8 - 2 - 2"), eval("4"));
     }
 
     #[test]

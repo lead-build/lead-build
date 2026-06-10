@@ -93,14 +93,14 @@ Expr8: Expr<T> = {
 };
 
 Expr7: Expr<T> = {
-    <lhs:Expr6> "-" <rhs:Expr7> => ExprType::BinOp(ExprBinOp::Sub, lhs, rhs).into(),
-    <lhs:Expr6> "+" <rhs:Expr7> => ExprType::BinOp(ExprBinOp::Add, lhs, rhs).into(),
+    <lhs:Expr7> "-" <rhs:Expr6> => ExprType::BinOp(ExprBinOp::Sub, lhs, rhs).into(),
+    <lhs:Expr7> "+" <rhs:Expr6> => ExprType::BinOp(ExprBinOp::Add, lhs, rhs).into(),
     <Expr6>,
 };
 
 Expr6: Expr<T> = {
-    <lhs:Expr5> "*" <rhs:Expr6> => ExprType::BinOp(ExprBinOp::Mult, lhs, rhs).into(),
-    <lhs:Expr5> "/" <rhs:Expr6> => ExprType::BinOp(ExprBinOp::Div, lhs, rhs).into(),
+    <lhs:Expr6> "*" <rhs:Expr5> => ExprType::BinOp(ExprBinOp::Mult, lhs, rhs).into(),
+    <lhs:Expr6> "/" <rhs:Expr5> => ExprType::BinOp(ExprBinOp::Div, lhs, rhs).into(),
     <Expr5>,
 };
 
@@ -125,7 +125,7 @@ Expr2: Expr<T> = {
 };
 
 Expr1: Expr<T> = {
-    <lhs:ExprTerm> "." <rhs:Ident> => ExprType::AttrSel(lhs, rhs).into(),
+    <lhs:Expr1> "." <rhs:Ident> => ExprType::AttrSel(lhs, rhs).into(),
     <ExprTerm>,
 };
 
