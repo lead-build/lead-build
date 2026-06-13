@@ -1,0 +1,13 @@
+{
+    cwd,
+    ...
+}:
+let
+    lib = include (cwd / "subdir" / "proxylib.pbb") { root = cwd; };
+in
+{
+    stuff = lib.lib.add_tnd 12;
+    libdir = lib.lib.dir;
+    proxydir = lib.dir;
+    proxylib = (cwd / "subdir" / "proxylib.pbb");
+}

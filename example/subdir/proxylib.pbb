@@ -7,6 +7,6 @@
     ...
 }:
 {
-    lib = include (root / "lib.dnj");
+    lib = include (root / "lib.pbb");
     dir = cwd;
 }

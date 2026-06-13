@@ -1,7 +1,15 @@
 [package]
-name = "determinja"
-version = "0.1.0"
+name = "lead-build"
+version = "0.0.1"
 edition = "2024"
+license = "GPL-2.0-only"
+keywords = ["build", "ninja"]
+authors = ["Max Sikström <max@pengi.se>"]
+
+[lib]
+
+[[bin]]
+name = "pb"
 
 [build-dependencies]
 lalrpop = "0.23.1"
