@@ -1,13 +1,13 @@
-{
-    cwd,
-    ...
-}:
+{ cwd, ... }:
 let
-    lib = include (cwd / "subdir" / "proxylib.pbb") { root = cwd; };
+    compile_obj = pb.rule (
+        {input, output, ...}:
+        {
+            command = ["gcc" "-c" "-o" output input];
+        }
+    );
 in
-{
-    stuff = lib.lib.add_tnd 12;
-    libdir = lib.lib.dir;
-    proxydir = lib.dir;
-    proxylib = (cwd / "subdir" / "proxylib.pbb");
-}
+(pb.build {
+    output = cwd / "app";
+    rule = compile_obj;
+})

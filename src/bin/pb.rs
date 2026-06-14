@@ -1,5 +1,5 @@
 use clap::Parser;
-use lead_build::{Expr, LangContext, Result, Value};
+use lead_build::{Expr, LangContext, Result, Value, ninjawriter::NinjaFile};
 use std::{path::PathBuf, process::exit};
 
 #[derive(Parser, Debug)]
@@ -14,9 +14,13 @@ fn run(args: Args) -> Result<()> {
     let mut ctx: LangContext = LangContext::new();
     let main_file = ctx.virtualize_path("root", &args.input)?;
     let expr: Expr<Value> = ctx.include(main_file)?;
-    println!("input: {:#}", expr);
-    expr.eval()?;
-    println!("output: {:#}", expr);
+    if let Value::Build(build) = expr.value()? {
+        let mut ninja_file = NinjaFile::new();
+        build.populate_ninja_file(&mut ninja_file);
+        print!("{}", ninja_file);
+    } else {
+        println!("expceted top level to be a build, got {}", expr);
+    }
     Ok(())
 }
 

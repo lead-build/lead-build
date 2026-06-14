@@ -119,6 +119,11 @@ Expr3: Expr<T> = {
     <Expr2>,
 };
 
+// Is this way too low proiority?
+// Might be nice with:
+//    rule = pb.rule {input, output}: {...};
+// instead of:
+//    rule = pb.rule ({input, output}: {...});
 Expr2: Expr<T> = {
     <efunc:Expr2> <earg:Expr1> => ExprType::FuncCall(efunc, earg).into(),
     <Expr1>,

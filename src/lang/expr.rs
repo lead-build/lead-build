@@ -46,6 +46,12 @@ pub mod ops {
         }
     }
 
+    impl From<super::super::immap::Error> for Error {
+        fn from(value: super::super::immap::Error) -> Self {
+            Error::ExprError(value.into())
+        }
+    }
+
     impl From<super::super::error::Error> for Error {
         fn from(value: super::super::error::Error) -> Self {
             Error::ExprError(value.into())
@@ -56,6 +62,7 @@ pub mod ops {
 }
 
 use ops::{ExprBuiltin, ExprOps};
+use strum::EnumTryAs;
 
 /*
  * Error
@@ -155,7 +162,7 @@ where
     T: Clone + PartialEq + Display + ExprOps;
 
 // Clone is needed since ExprType::Var is implemented via cloning of ExprType
-#[derive(Debug, PartialEq, Clone, Default)]
+#[derive(Debug, PartialEq, Clone, Default, EnumTryAs)]
 pub enum ExprType<T>
 where
     T: Clone + PartialEq + Display + ExprOps,
@@ -243,7 +250,7 @@ where
                 for item in items.iter() {
                     write!(f, " {}", item)?;
                 }
-                write!(f, "]")?;
+                write!(f, " ]")?;
                 Ok(())
             }
             ExprType::AttrSel(val, attr) => write!(f, "{}.{}", val, attr),
@@ -453,12 +460,12 @@ where
                     Ok(attr_expr.as_ref().clone())
                 }
                 ExprType::FuncCall(fexpr, fargs) => {
-                    fargs.resolve()?;
                     let (args, func_expr): (ExprSet<T>, Expr<T>) = match &*fexpr.res_type()? {
                         ExprType::FuncDefIdent(arg_name, fimpl) => {
                             Ok((ExprSet::single(arg_name, fargs), fimpl.clone()))
                         }
                         ExprType::FuncDefPattern(arg_names, fimpl) => {
+                            fargs.resolve()?;
                             let mut new_vars = ExprSet::new();
                             for arg_name in arg_names {
                                 let arg_value = fargs.get_item(arg_name)?;
@@ -560,9 +567,16 @@ where
 
     pub fn eval(&self) -> Result<()> {
         self.resolve()?;
-        let expr = self.as_ref();
-        if let ExprType::Object(fields) = &*expr {
-            fields.foreach(|_name, ex| ex.eval())?;
+        match &*self.as_ref() {
+            ExprType::Object(fields) => {
+                fields.foreach(|_name, ex| ex.eval())?;
+            }
+            ExprType::List(fields) => {
+                for ex in fields.iter() {
+                    ex.eval()?
+                }
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -645,6 +659,16 @@ mod tests {
         let value = expr.get_item("stuff")?;
         assert_eq!(value, Expr::from(TestValue::String("hello".into())));
         Ok(())
+    }
+
+    #[test]
+    fn test_eval_obj() {
+        assert_eq!(eval("{ a = (let x = 3; in x); }"), eval("{ a = 3; }"));
+    }
+
+    #[test]
+    fn test_eval_list() {
+        assert_eq!(eval("[ (let x = 3; in x) ]"), eval("[ 3 ]"));
     }
 
     #[test]
@@ -827,6 +851,23 @@ mod tests {
                 }
             "#),
             eval("{ stuff = { var = 74; }; }"),
+        }
+    }
+
+    #[test]
+    fn test_var_through_func_call() {
+        // TODO: "let var = 3 in func var" should work, or give an error...
+        assert_eq! {
+            eval(r#"
+                let
+                    func = (a: a+2);
+                in
+                let
+                    myvar = 13;
+                in
+                (func myvar)
+            "#),
+            eval("15"),
         }
     }
 

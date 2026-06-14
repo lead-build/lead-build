@@ -4,15 +4,21 @@ use std::{collections::BTreeSet, fmt::Display};
  * Model
  */
 
+#[derive(Debug)]
+pub enum NinjaArg {
+    Const(String),
+    Var(String),
+}
+
 #[derive(Default, Debug)]
 struct UniqueNames {
     names: BTreeSet<String>,
 }
 
 #[derive(Debug)]
-struct NinjaVar {
+pub struct NinjaVar {
     name: String,
-    args: Vec<String>,
+    args: Vec<NinjaArg>,
 }
 
 #[derive(Debug, Default)]
@@ -21,7 +27,7 @@ pub struct NinjaRule {
     vars: Vec<NinjaVar>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct NinjaRuleRef(String);
 
 #[derive(Debug, Default)]
@@ -39,6 +45,16 @@ pub struct NinjaFile {
     rule_names: UniqueNames,
     rules: Vec<NinjaRule>,
     builds: Vec<NinjaBuild>,
+}
+
+/*
+ * From
+ */
+
+impl From<&str> for NinjaArg {
+    fn from(value: &str) -> Self {
+        NinjaArg::Const(value.into())
+    }
 }
 
 /*
@@ -75,7 +91,10 @@ impl NinjaVar {
         write!(f, " =")?;
         for arg in self.args.iter() {
             write!(f, " ")?;
-            ninja_esc_string(f, indent + 1, arg)?;
+            match arg {
+                NinjaArg::Const(cnst) => ninja_esc_string(f, indent + 1, cnst),
+                NinjaArg::Var(name) => write!(f, "${{{}}}", name),
+            }?;
         }
         writeln!(f)?;
         Ok(())
@@ -177,7 +196,7 @@ impl NinjaRule {
         }
     }
 
-    pub fn var(&mut self, name: impl ToString, args: Vec<String>) -> &mut Self {
+    pub fn var(&mut self, name: impl ToString, args: Vec<NinjaArg>) -> &mut Self {
         self.vars.push(NinjaVar {
             name: name.to_string(),
             args,
@@ -214,7 +233,7 @@ impl NinjaBuild {
         self
     }
 
-    pub fn var(&mut self, name: impl ToString, args: Vec<String>) -> &mut Self {
+    pub fn var(&mut self, name: impl ToString, args: Vec<NinjaArg>) -> &mut Self {
         self.vars.push(NinjaVar {
             name: name.to_string(),
             args,
@@ -263,13 +282,16 @@ mod tests {
     fn test_write_rule() {
         let mut rule = NinjaRule::new("test");
         rule.var("deps", vec!["boll".into(), "something".into()])
-            .var("something", vec!["stuff".into(), "stuff".into()]);
+            .var(
+                "something",
+                vec!["stuff".into(), "stuff".into(), NinjaArg::Var("in".into())],
+            );
         assert_eq!(
             format!("{}", rule).as_str(),
             lines! {
                 "rule test",
                 "  deps = boll something",
-                "  something = stuff stuff",
+                "  something = stuff stuff ${in}",
                 "",
                 ""
             }

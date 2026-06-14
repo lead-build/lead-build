@@ -129,4 +129,13 @@ where
         )
         .unwrap())
     }
+
+    pub fn into_vec(self) -> Vec<(String, T)> {
+        /* TODO: Make this an iterator */
+        let mut out = vec![];
+        for (name, val) in self.0.into_iter() {
+            out.push((name, val))
+        }
+        out
+    }
 }

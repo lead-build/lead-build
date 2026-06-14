@@ -1,4 +1,4 @@
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
 use strum::EnumTryAs;
 
@@ -8,6 +8,7 @@ use crate::{
         ops::{Error, ExprOps, Result},
     },
     path::VirtPath,
+    pbbuild::{PbBuild, PbBuildRule},
 };
 
 #[derive(Clone, PartialEq, Debug, EnumTryAs)]
@@ -16,15 +17,22 @@ pub enum Value {
     String(String),
     Path(VirtPath),
     Bool(bool),
+
+    Build(Rc<PbBuild>),
+    BuildRule(Rc<PbBuildRule>),
+    BuildVar(String),
 }
 
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Value::Int(v) => v.fmt(f),
-            Value::String(v) => v.fmt(f),
+            Value::String(v) => write!(f, "\"{}\"", v),
             Value::Path(v) => v.fmt(f),
             Value::Bool(v) => v.fmt(f),
+            Value::Build(v) => v.fmt(f),
+            Value::BuildRule(v) => v.fmt(f),
+            Value::BuildVar(v) => write!(f, "${}", v),
         }
     }
 }
@@ -114,21 +122,11 @@ impl ExprOps for Value {
     }
 
     fn op_eq(lhs: &Self, rhs: &Self) -> Result<Self> {
-        match (lhs, rhs) {
-            (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Bool(lhs == rhs)),
-            (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs == rhs)),
-            (Value::Bool(lhs), Value::Bool(rhs)) => Ok(Value::Bool(lhs == rhs)),
-            _ => Ok(Value::Bool(false)),
-        }
+        Ok(Value::Bool(lhs == rhs))
     }
 
     fn op_neq(lhs: &Self, rhs: &Self) -> Result<Self> {
-        match (lhs, rhs) {
-            (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Bool(lhs != rhs)),
-            (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs != rhs)),
-            (Value::Bool(lhs), Value::Bool(rhs)) => Ok(Value::Bool(lhs != rhs)),
-            _ => Ok(Value::Bool(true)),
-        }
+        Ok(Value::Bool(lhs != rhs))
     }
 
     fn op_neg(&self) -> Result<Self> {
