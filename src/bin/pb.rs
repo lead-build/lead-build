@@ -1,5 +1,5 @@
 use clap::Parser;
-use lead_build::{Expr, LangContext, Result, Value, ninjawriter::NinjaFile};
+use lead_build::{Expr, LangContext, Result, Value, ninjawriter::NinjaFile, path::VirtPath};
 use std::{path::PathBuf, process::exit};
 
 #[derive(Parser, Debug)]
@@ -11,8 +11,8 @@ struct Args {
 }
 
 fn run(args: Args) -> Result<()> {
-    let mut ctx: LangContext = LangContext::new();
-    let main_file = ctx.virtualize_path("root", &args.input)?;
+    let ctx: LangContext = LangContext::new();
+    let main_file = VirtPath::virtualize(&args.input, "root");
     let expr: Expr<Value> = ctx.include(main_file)?;
     if let Value::Build(build) = expr.value()? {
         let mut ninja_file = NinjaFile::new();

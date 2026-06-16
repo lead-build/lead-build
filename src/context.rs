@@ -1,10 +1,4 @@
-use std::{
-    collections::BTreeMap,
-    fmt::Debug,
-    fs,
-    path::{Path, PathBuf},
-    rc::Rc,
-};
+use std::{fmt::Debug, fs, path::Path, rc::Rc};
 
 use crate::{
     lang::{Expr, ExprSet, ExprType, Result, ops::ExprBuiltin, parse_str},
@@ -62,7 +56,6 @@ impl ExprBuiltin<Value> for BuiltinLock {
 
 #[derive(Debug)]
 struct LangContextStorage {
-    path_refs: BTreeMap<String, PathBuf>,
     builtins: ExprSet<Value>,
 }
 
@@ -76,10 +69,7 @@ impl Default for LangContext {
             .unwrap()
             .set("pb", get_pb_builtins().unwrap())
             .unwrap();
-        LangContext(Rc::new(LangContextStorage {
-            path_refs: Default::default(),
-            builtins,
-        }))
+        LangContext(Rc::new(LangContextStorage { builtins }))
     }
 }
 
@@ -88,28 +78,12 @@ impl LangContext {
         Self::default()
     }
 
-    pub fn add_path_ref(&mut self, name: impl ToString, path: &Path) {
-        Rc::get_mut(&mut self.0)
-            .unwrap()
-            .path_refs
-            .insert(name.to_string(), path.to_path_buf());
-    }
-
     pub fn add_builtin(&mut self, name: impl ToString, value: Expr<Value>) {
         Rc::get_mut(&mut self.0)
             .unwrap()
             .builtins
             .set_mut(name, value)
             .unwrap();
-    }
-
-    pub fn virtualize_path(&mut self, root: impl ToString, path: &Path) -> Result<VirtPath> {
-        let path_refs = &mut Rc::get_mut(&mut self.0).unwrap().path_refs;
-        let virtpath = VirtPath::virtualize(path, root, path_refs);
-        match virtpath {
-            Some(path) => Ok(path),
-            None => Err(format!("Can't virtualize path {}", path.display()).into()),
-        }
     }
 
     fn setup_file_args(&self, file: VirtPath) -> Result<Expr<Value>> {
@@ -137,8 +111,7 @@ impl LangContext {
     }
 
     pub fn include(&self, file: VirtPath) -> Result<Expr<Value>> {
-        let storage = self.0.as_ref();
-        let fs_path = file.to_path_buf(&storage.path_refs).unwrap();
+        let fs_path = file.to_path_buf();
         let file_expr = self.read_file(&fs_path)?;
         let file_args = self.setup_file_args(file)?;
         let file_builtins = self.setup_file_builtins()?;

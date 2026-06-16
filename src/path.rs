@@ -1,19 +1,19 @@
 use std::{
-    collections::BTreeMap,
     fmt::Display,
     path::{Path, PathBuf},
 };
 
 #[derive(Clone, PartialEq, Debug)]
 pub struct VirtPath {
-    root: String,
+    name: String,
+    root: PathBuf,
     locked_parts: Vec<String>,
     parts: Vec<String>,
 }
 
 impl Display for VirtPath {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "[{}]", self.root)?;
+        write!(f, "[{}]", self.name)?;
         for part in self.locked_parts.iter() {
             write!(f, "/{}", part)?;
         }
@@ -26,14 +26,6 @@ impl Display for VirtPath {
 }
 
 impl VirtPath {
-    pub fn new(root: impl ToString) -> VirtPath {
-        VirtPath {
-            root: root.to_string(),
-            locked_parts: vec![],
-            parts: vec![],
-        }
-    }
-
     pub fn lock(self) -> VirtPath {
         let mut res = self;
         res.locked_parts.append(&mut res.parts);
@@ -58,34 +50,31 @@ impl VirtPath {
         }
     }
 
-    pub fn to_path_buf(&self, path_refs: &BTreeMap<String, PathBuf>) -> Option<PathBuf> {
-        let root_path = path_refs.get(&self.root)?;
-        let mut cur_path = root_path.clone();
+    pub fn to_path_buf(&self) -> PathBuf {
+        let mut cur_path = self.root.clone();
         for part in self.locked_parts.iter() {
             cur_path.push(part);
         }
         for part in self.parts.iter() {
             cur_path.push(part);
         }
-        Some(cur_path)
+        cur_path
     }
 
-    pub fn virtualize(
-        path: &Path,
-        root: impl ToString,
-        path_refs: &mut BTreeMap<String, PathBuf>,
-    ) -> Option<VirtPath> {
-        if path_refs
-            .insert(root.to_string(), path.parent().unwrap().to_path_buf())
-            .is_some()
-        {
-            return None;
-        }
-        Some(VirtPath {
-            root: root.to_string(),
+    pub fn virtualize(path: &Path, name: impl ToString) -> VirtPath {
+        VirtPath {
+            name: name.to_string(),
+            root: path.parent().unwrap().to_path_buf(),
             locked_parts: vec![],
             parts: vec![path.file_name().unwrap().to_str().unwrap().into()],
-        })
+        }
+    }
+
+    #[cfg(test)]
+    fn new(name: impl ToString) -> VirtPath {
+        Self::virtualize(&PathBuf::from("/file"), name)
+            .parent()
+            .unwrap()
     }
 }
 
@@ -157,63 +146,55 @@ mod tests {
 
     #[test]
     fn test_virtpath_to_path_buf() {
-        let mut refs = BTreeMap::new();
-        refs.insert(String::from("a"), PathBuf::from("./test_a"));
-        refs.insert(String::from("b"), PathBuf::from("./test_b"));
+        let virtpath_a = PathBuf::from("./test_a");
+        let virtpath_b = PathBuf::from("./test_b");
 
         assert_eq!(
-            VirtPath::new("a").to_path_buf(&refs).unwrap(),
+            VirtPath::virtualize(&virtpath_a, "a").to_path_buf(),
             PathBuf::from("./test_a")
         );
 
         assert_eq!(
-            VirtPath::new("a")
+            VirtPath::virtualize(&virtpath_a, "a")
                 .step("hej")
                 .unwrap()
-                .to_path_buf(&refs)
-                .unwrap(),
+                .to_path_buf(),
             PathBuf::from("./test_a/hej")
         );
 
         assert_eq!(
-            VirtPath::new("a")
+            VirtPath::virtualize(&virtpath_a, "a")
                 .step("hej")
                 .unwrap()
                 .lock()
-                .to_path_buf(&refs)
-                .unwrap(),
+                .to_path_buf(),
             PathBuf::from("./test_a/hej")
         );
 
         assert_eq!(
-            VirtPath::new("b")
+            VirtPath::virtualize(&virtpath_b, "b")
                 .step("hej")
                 .unwrap()
                 .parent()
                 .unwrap()
-                .to_path_buf(&refs)
-                .unwrap(),
+                .to_path_buf(),
             PathBuf::from("./test_b")
         );
     }
 
     #[test]
     fn test_from_path() {
-        let mut refs = BTreeMap::new();
         let filepath = PathBuf::from("./test/file.txt");
-        let virtpath = VirtPath::virtualize(&filepath, "root", &mut refs).unwrap();
+        let virtpath = VirtPath::virtualize(&filepath, "root");
 
         assert_eq!(
             virtpath,
             VirtPath {
-                root: "root".into(),
+                name: "root".into(),
+                root: PathBuf::from("./test"),
                 locked_parts: vec![],
                 parts: vec!["file.txt".into()]
             }
         );
-        assert_eq!(
-            refs,
-            BTreeMap::from([(String::from("root"), PathBuf::from("./test"))])
-        )
     }
 }

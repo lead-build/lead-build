@@ -97,6 +97,14 @@ where
         self.0.get(key).cloned()
     }
 
+    pub fn remove_mut(&mut self, key: &str) -> Option<T> {
+        self.0.remove(key)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
     pub fn get_mut(&mut self, key: &str) -> Option<&mut T> {
         self.0.get_mut(key)
     }

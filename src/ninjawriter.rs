@@ -1,13 +1,16 @@
 use std::{collections::BTreeSet, fmt::Display};
 
+use crate::path::VirtPath;
+
 /*
  * Model
  */
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum NinjaArg {
     Const(String),
     Var(String),
+    Path(VirtPath),
     Concat(Vec<NinjaArg>),
 }
 
@@ -34,9 +37,9 @@ pub struct NinjaRuleRef(String);
 #[derive(Debug, Default)]
 pub struct NinjaBuild {
     rule: String,
-    outputs: Vec<String>,
-    inputs: Vec<String>,
-    deps: Vec<String>,
+    outputs: Vec<NinjaArg>,
+    inputs: Vec<NinjaArg>,
+    deps: Vec<NinjaArg>,
     vars: Vec<NinjaVar>,
     is_default: bool,
 }
@@ -85,6 +88,22 @@ fn ninja_esc_string(f: &mut std::fmt::Formatter<'_>, indent: i32, input: &str) -
     Ok(())
 }
 
+impl NinjaArg {
+    fn write(&self, indent: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NinjaArg::Const(cnst) => ninja_esc_string(f, indent + 1, cnst),
+            NinjaArg::Var(name) => write!(f, "${{{}}}", name),
+            NinjaArg::Path(path) => write!(f, "{}", path.clone().to_path_buf().display()), // TODO: Handle paths
+            NinjaArg::Concat(ninja_args) => {
+                for subarg in ninja_args.iter() {
+                    subarg.write(indent, f)?;
+                }
+                Ok(())
+            }
+        }
+    }
+}
+
 impl NinjaVar {
     fn write(&self, indent: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         ninja_indent(f, indent)?;
@@ -92,20 +111,7 @@ impl NinjaVar {
         write!(f, " =")?;
         for arg in self.args.iter() {
             write!(f, " ")?;
-            match arg {
-                NinjaArg::Const(cnst) => ninja_esc_string(f, indent + 1, cnst),
-                NinjaArg::Var(name) => write!(f, "${{{}}}", name),
-                NinjaArg::Concat(ninja_args) => {
-                    for subarg in ninja_args.iter() {
-                        match subarg {
-                            NinjaArg::Const(cnst) => ninja_esc_string(f, indent + 1, cnst),
-                            NinjaArg::Var(name) => write!(f, "${{{}}}", name),
-                            NinjaArg::Concat(_) => unreachable!(),
-                        }?;
-                    }
-                    Ok(())
-                }
-            }?;
+            arg.write(indent, f)?;
         }
         writeln!(f)?;
         Ok(())
@@ -130,19 +136,19 @@ impl Display for NinjaBuild {
         write!(f, "build")?;
         for outp in self.outputs.iter() {
             write!(f, " ")?;
-            ninja_esc_string(f, 1, outp)?;
+            outp.write(1, f)?;
         }
         write!(f, ": ")?;
         ninja_esc_string(f, 1, &self.rule)?;
         for inp in self.inputs.iter() {
             write!(f, " ")?;
-            ninja_esc_string(f, 1, inp)?;
+            inp.write(1, f)?;
         }
         if !self.deps.is_empty() {
             write!(f, " |")?;
             for dep in self.deps.iter() {
                 write!(f, " ")?;
-                ninja_esc_string(f, 1, dep)?;
+                dep.write(1, f)?;
             }
         }
         writeln!(f)?;
@@ -154,7 +160,7 @@ impl Display for NinjaBuild {
             write!(f, "default")?;
             for outp in self.outputs.iter() {
                 write!(f, " ")?;
-                ninja_esc_string(f, 1, outp)?;
+                outp.write(1, f)?;
             }
             writeln!(f)?;
             writeln!(f)?;
@@ -229,18 +235,18 @@ impl NinjaBuild {
         }
     }
 
-    pub fn output(&mut self, name: impl ToString) -> &mut Self {
-        self.outputs.push(name.to_string());
+    pub fn output(&mut self, name: NinjaArg) -> &mut Self {
+        self.outputs.push(name);
         self
     }
 
-    pub fn input(&mut self, name: impl ToString) -> &mut Self {
-        self.inputs.push(name.to_string());
+    pub fn input(&mut self, name: NinjaArg) -> &mut Self {
+        self.inputs.push(name);
         self
     }
 
-    pub fn dep(&mut self, name: impl ToString) -> &mut Self {
-        self.deps.push(name.to_string());
+    pub fn dep(&mut self, name: NinjaArg) -> &mut Self {
+        self.deps.push(name);
         self
     }
 
@@ -334,10 +340,10 @@ mod tests {
             .var("b", vec!["a\nb".into(), "a:b".into()]);
         let mut build = NinjaBuild::new(&rule.as_ref());
         build
-            .input("boll")
-            .input("hej")
-            .output("dest")
-            .output("destb")
+            .input(NinjaArg::Const("boll".into()))
+            .input(NinjaArg::Const("hej".into()))
+            .output(NinjaArg::Const("dest".into()))
+            .output(NinjaArg::Const("destb".into()))
             .var("tjo", vec!["xx".into()]);
         let output = format!("{}{}", rule, build);
         assert_eq!(
@@ -360,7 +366,10 @@ mod tests {
     fn test_build_deps() {
         let rule = NinjaRule::new("rule");
         let mut build = NinjaBuild::new(&rule.as_ref());
-        build.input("in").output("out").dep("dep");
+        build
+            .input(NinjaArg::Const("in".into()))
+            .output(NinjaArg::Const("out".into()))
+            .dep(NinjaArg::Const("dep".into()));
         let output = format!("{}{}", rule, build);
         assert_eq!(
             output.as_str(),
@@ -378,7 +387,10 @@ mod tests {
     fn test_build_default() {
         let rule = NinjaRule::new("rule");
         let mut build = NinjaBuild::new(&rule.as_ref());
-        build.input("in").output("out").set_default();
+        build
+            .input(NinjaArg::Const("in".into()))
+            .output(NinjaArg::Const("out".into()))
+            .set_default();
         let output = format!("{}{}", rule, build);
         assert_eq!(
             output.as_str(),
@@ -402,9 +414,9 @@ mod tests {
         let _rule2 = file.rule("test2").var("y", vec!["stuff".into()]).as_ref();
 
         file.build(&rule1)
-            .input("in1_1")
-            .input("in1_2")
-            .output("out1");
+            .input(NinjaArg::Const("in1_1".into()))
+            .input(NinjaArg::Const("in1_2".into()))
+            .output(NinjaArg::Const("out1".into()));
 
         assert_eq!(
             format!("{}", file),
@@ -444,8 +456,10 @@ mod tests {
         let rule1 = file.rule("test").as_ref();
         let rule2 = file.rule("test").as_ref();
 
-        file.build(&rule1).output("out1").set_default();
-        file.build(&rule2).output("out2");
+        file.build(&rule1)
+            .output(NinjaArg::Const("out1".into()))
+            .set_default();
+        file.build(&rule2).output(NinjaArg::Const("out2".into()));
 
         assert_eq!(
             format!("{}", file),
