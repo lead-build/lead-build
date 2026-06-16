@@ -12,10 +12,10 @@ authors = ["Max Sikström <max@pengi.se>"]
 name = "pb"
 
 [build-dependencies]
-lalrpop = "0.23.1"
+lalrpop = { git = "https://github.com/lalrpop/lalrpop" }
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
-lalrpop-util = { version = "0.23.1", features = ["lexer", "unicode"] }
+lalrpop-util = { git = "https://github.com/lalrpop/lalrpop", features = ["lexer", "unicode"] }
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror = "2.0.18"
