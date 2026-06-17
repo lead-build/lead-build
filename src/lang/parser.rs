@@ -365,4 +365,22 @@ mod tests {
             eval(code)
         );
     }
+
+    #[test]
+    fn test_parse_list() {
+        let res: Result<Expr<TestValue>> = parse_str("[]");
+        res.unwrap();
+        let res: Result<Expr<TestValue>> = parse_str("[1]");
+        res.unwrap();
+        let res: Result<Expr<TestValue>> = parse_str("[1,2]");
+        res.unwrap();
+        let res: Result<Expr<TestValue>> = parse_str("[1,2,]");
+        res.unwrap();
+        let res: Result<Expr<TestValue>> = parse_str("[,1,2]");
+        res.unwrap_err();
+        let res: Result<Expr<TestValue>> = parse_str("[1,,2]");
+        res.unwrap_err();
+        let res: Result<Expr<TestValue>> = parse_str("[1,2,,]");
+        res.unwrap_err();
+    }
 }

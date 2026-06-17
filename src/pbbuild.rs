@@ -130,7 +130,6 @@ impl PbBuild {
             dep.populate_ninja_file(nf);
         }
 
-
         let rule = self.rule.populate_ninja_file(nf);
         let build = nf.build(&rule);
         for inp in self.input.iter() {

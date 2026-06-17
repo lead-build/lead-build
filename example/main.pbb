@@ -5,7 +5,7 @@ let
     rule_compile = pb.rule (
         {input, output, ...}:
         {
-            command = ["gcc" "-c" "-o" output "-MMD" "-MF" "${output}.d" input];
+            command = ["gcc", "-c", "-o", output, "-MMD", "-MF", "${output}.d", input];
             depfile = "${output}.d";
         }
     );
@@ -13,18 +13,30 @@ let
     rule_link = pb.rule (
         {input, output, ...}:
         {
-            command = ["gcc" "-o" output input];
+            command = ["gcc", "-o", output, input];
         }
     );
+
+    c_build = ({
+        name,
+        objdir,
+        sources,
+        ...
+    }: (pb.build {
+        rule = rule_link;
+        output = objdir / name;
+        input = [
+            file: (pb.build {
+                rule = rule_compile;
+                output = objdir / "${file}.o";
+                input = cwd / file;
+            })
+            <- sources
+        ];
+    }));
 in
-(pb.build {
-    rule = rule_link;
-    output = objdir / "app";
-    input = [
-        (pb.build {
-            rule = rule_compile;
-            output = objdir / "main.o";
-            input = cwd / "main.c";
-        })
-    ];
+(c_build {
+    name = "app";
+    objdir = cwd / "build";
+    sources = [ "main.c" ];
 })

@@ -17,7 +17,7 @@ where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps;
 
 pub Expr: Expr<T> = {
-    <Expr15>,
+    <ExprFuncDef>,
 };
 
 // Nix, for reference:
@@ -47,76 +47,76 @@ pub Expr: Expr<T> = {
 // Logical disjunction (OR)       bool     ||  bool                   left    13
 // Logical implication            bool     ->  bool                   none    14
 
-Expr15: Expr<T> = {
-    <i:Ident> ":" <e:Expr15> => ExprType::FuncDefIdent(i, e).into(),
-    "{" <i:(<Ident> ",")*> "..." "}" ":" <e:Expr15> => ExprType::FuncDefPattern(i, e).into(),
-    <Expr14>
+ExprFuncDef: Expr<T> = {
+    <i:Ident> ":" <e:ExprFuncDef> => ExprType::FuncDefIdent(i, e).into(),
+    "{" <i:(<Ident> ",")*> "..." "}" ":" <e:ExprFuncDef> => ExprType::FuncDefPattern(i, e).into(),
+    <ExprLogImpl>
 };
 
-Expr14: Expr<T> = {
-    <lhs:Expr13> "->" <rhs:Expr13> => ExprType::BinOp(ExprBinOp::LogImpl, lhs, rhs).into(),
-    <Expr13>,
+ExprLogImpl: Expr<T> = {
+    <lhs:ExprLogOr> "->" <rhs:ExprLogOr> => ExprType::BinOp(ExprBinOp::LogImpl, lhs, rhs).into(),
+    <ExprLogOr>,
 };
 
-Expr13: Expr<T> = {
-    <lhs:Expr12> "||" <rhs:Expr12> => ExprType::BinOp(ExprBinOp::LogOr, lhs, rhs).into(),
-    <Expr12>,
+ExprLogOr: Expr<T> = {
+    <lhs:ExprLogAnd> "||" <rhs:ExprLogAnd> => ExprType::BinOp(ExprBinOp::LogOr, lhs, rhs).into(),
+    <ExprLogAnd>,
 };
 
-Expr12: Expr<T> = {
-    <lhs:Expr11> "&&" <rhs:Expr11> => ExprType::BinOp(ExprBinOp::LogAnd, lhs, rhs).into(),
-    <Expr11>,
+ExprLogAnd: Expr<T> = {
+    <lhs:ExprEq> "&&" <rhs:ExprEq> => ExprType::BinOp(ExprBinOp::LogAnd, lhs, rhs).into(),
+    <ExprEq>,
 };
 
-Expr11: Expr<T> = {
-    <lhs:Expr10> "==" <rhs:Expr10> => ExprType::BinOp(ExprBinOp::Eq, lhs, rhs).into(),
-    <lhs:Expr10> "!=" <rhs:Expr10> => ExprType::BinOp(ExprBinOp::Neq, lhs, rhs).into(),
-    <Expr10>,
+ExprEq: Expr<T> = {
+    <lhs:ExprCompare> "==" <rhs:ExprCompare> => ExprType::BinOp(ExprBinOp::Eq, lhs, rhs).into(),
+    <lhs:ExprCompare> "!=" <rhs:ExprCompare> => ExprType::BinOp(ExprBinOp::Neq, lhs, rhs).into(),
+    <ExprCompare>,
 };
 
-Expr10: Expr<T> = {
-    <lhs:Expr9> "<" <rhs:Expr9> => ExprType::BinOp(ExprBinOp::Lt, lhs, rhs).into(),
-    <lhs:Expr9> "<=" <rhs:Expr9> => ExprType::BinOp(ExprBinOp::Le, lhs, rhs).into(),
-    <lhs:Expr9> ">" <rhs:Expr9> => ExprType::BinOp(ExprBinOp::Gt, lhs, rhs).into(),
-    <lhs:Expr9> ">=" <rhs:Expr9> => ExprType::BinOp(ExprBinOp::Ge, lhs, rhs).into(),
-    <Expr9>,
+ExprCompare: Expr<T> = {
+    <lhs:ExprUpdate> "<" <rhs:ExprUpdate> => ExprType::BinOp(ExprBinOp::Lt, lhs, rhs).into(),
+    <lhs:ExprUpdate> "<=" <rhs:ExprUpdate> => ExprType::BinOp(ExprBinOp::Le, lhs, rhs).into(),
+    <lhs:ExprUpdate> ">" <rhs:ExprUpdate> => ExprType::BinOp(ExprBinOp::Gt, lhs, rhs).into(),
+    <lhs:ExprUpdate> ">=" <rhs:ExprUpdate> => ExprType::BinOp(ExprBinOp::Ge, lhs, rhs).into(),
+    <ExprUpdate>,
 };
 
-Expr9: Expr<T> = {
-    <lhs:Expr9> "//" <rhs:Expr8> => ExprType::BinOp(ExprBinOp::Lt, lhs, rhs).into(),
-    <Expr8>,
+ExprUpdate: Expr<T> = {
+    <lhs:ExprUpdate> "//" <rhs:ExprNot> => ExprType::BinOp(ExprBinOp::Update, lhs, rhs).into(),
+    <ExprNot>,
 };
 
-Expr8: Expr<T> = {
-    "!" <rhs:Expr7> => ExprType::UnOp(ExprUnOp::Not, rhs).into(),
-    <Expr7>,
+ExprNot: Expr<T> = {
+    "!" <rhs:ExprAddSub> => ExprType::UnOp(ExprUnOp::Not, rhs).into(),
+    <ExprAddSub>,
 };
 
-Expr7: Expr<T> = {
-    <lhs:Expr7> "-" <rhs:Expr6> => ExprType::BinOp(ExprBinOp::Sub, lhs, rhs).into(),
-    <lhs:Expr7> "+" <rhs:Expr6> => ExprType::BinOp(ExprBinOp::Add, lhs, rhs).into(),
-    <Expr6>,
+ExprAddSub: Expr<T> = {
+    <lhs:ExprAddSub> "-" <rhs:ExprMultDiv> => ExprType::BinOp(ExprBinOp::Sub, lhs, rhs).into(),
+    <lhs:ExprAddSub> "+" <rhs:ExprMultDiv> => ExprType::BinOp(ExprBinOp::Add, lhs, rhs).into(),
+    <ExprMultDiv>,
 };
 
-Expr6: Expr<T> = {
-    <lhs:Expr6> "*" <rhs:Expr5> => ExprType::BinOp(ExprBinOp::Mult, lhs, rhs).into(),
-    <lhs:Expr6> "/" <rhs:Expr5> => ExprType::BinOp(ExprBinOp::Div, lhs, rhs).into(),
-    <Expr5>,
+ExprMultDiv: Expr<T> = {
+    <lhs:ExprMultDiv> "*" <rhs:ExprConcat> => ExprType::BinOp(ExprBinOp::Mult, lhs, rhs).into(),
+    <lhs:ExprMultDiv> "/" <rhs:ExprConcat> => ExprType::BinOp(ExprBinOp::Div, lhs, rhs).into(),
+    <ExprConcat>,
 };
 
-Expr5: Expr<T> = {
-    <lhs:Expr5> "++" <rhs:Expr4> => ExprType::BinOp(ExprBinOp::ListConcat, lhs, rhs).into(),
-    <Expr4>,
+ExprConcat: Expr<T> = {
+    <lhs:ExprConcat> "++" <rhs:ExprHasAttr> => ExprType::BinOp(ExprBinOp::ListConcat, lhs, rhs).into(),
+    <ExprHasAttr>,
 };
 
-Expr4: Expr<T> = {
-    <lhs:Expr3> "?" <rhs:Variable> => ExprType::BinOp(ExprBinOp::HasAttr, lhs, rhs).into(),
-    <Expr3>,
+ExprHasAttr: Expr<T> = {
+    <lhs:ExprNeg> "?" <rhs:Variable> => ExprType::BinOp(ExprBinOp::HasAttr, lhs, rhs).into(),
+    <ExprNeg>,
 };
 
-Expr3: Expr<T> = {
-    "-" <rhs:Expr2> => ExprType::UnOp(ExprUnOp::Neg, rhs).into(),
-    <Expr2>,
+ExprNeg: Expr<T> = {
+    "-" <rhs:ExprFuncCall> => ExprType::UnOp(ExprUnOp::Neg, rhs).into(),
+    <ExprFuncCall>,
 };
 
 // Is this way too low proiority?
@@ -124,14 +124,19 @@ Expr3: Expr<T> = {
 //    rule = pb.rule {input, output}: {...};
 // instead of:
 //    rule = pb.rule ({input, output}: {...});
-Expr2: Expr<T> = {
-    <efunc:Expr2> <earg:Expr1> => ExprType::FuncCall(efunc, earg).into(),
-    <Expr1>,
+ExprFuncCall: Expr<T> = {
+    <efunc:ExprFuncCall> <earg:ExprAttrSel> => ExprType::FuncCall(efunc, earg).into(),
+    <ExprAttrSel>,
 };
 
-Expr1: Expr<T> = {
-    <lhs:Expr1> "." <rhs:Ident> => ExprType::AttrSel(lhs, rhs).into(),
-    <ExprTerm>,
+ExprAttrSel: Expr<T> = {
+    <lhs:ExprAttrSel> "." <rhs:Ident> => ExprType::AttrSel(lhs, rhs).into(),
+    <ExprListComp>,
+};
+
+ExprListComp: Expr<T> = {
+    "[" <func:Expr> "<-" <list:ExprTerm> "]" => ExprType::MapList(func, list).into(),
+    <ExprTerm>
 };
 
 ExprTerm: Expr<T> = {
@@ -145,8 +150,17 @@ ExprTerm: Expr<T> = {
 
 Object: Expr<T> = "{" <s:SetStmt*> "}" => ExprType::Object(ExprSet::from(s).unwrap()).into();
 
-List: Expr<T> = "[" <s:ExprTerm*> "]" => ExprType::List(s).into();
+List: Expr<T> = "[" <s:Comma<Expr>> "]" => ExprType::List(s).into();
 
+Comma<T>: Vec<T> = { // (1)
+    <mut v:(<T> ",")*> <e:T?> => match e { // (2)
+        None => v,
+        Some(e) => {
+            v.push(e);
+            v
+        }
+    }
+};
 
 Let: Expr<T> = "let" <s:SetStmt*> "in" <e:ExprTerm> => ExprType::Let(s, e).into();
 SetStmt: (String, Expr<T>) = <i:Ident> "=" <e:Expr> ";" => (i, e);

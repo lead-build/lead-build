@@ -178,6 +178,7 @@ where
     FuncDefPattern(Vec<String>, Expr<T>),
     FuncDefBuiltin(ExprBuiltinWrapper<T>),
     Let(Vec<(String, Expr<T>)>, Expr<T>),
+    MapList(Expr<T>, Expr<T>),
     FuncCall(Expr<T>, Expr<T>),
     BoundExpr(ExprSet<T>, Expr<T>),
     #[default]
@@ -285,6 +286,9 @@ where
                 expr.fmt(f)?;
                 Ok(())
             }
+            ExprType::MapList(func, input) => {
+                write!(f, "[ {} <- {} ]", func, input)
+            }
             ExprType::FuncCall(fexpr, farg) => write!(f, "{} {}", fexpr, farg),
             ExprType::BoundExpr(scope, expr) => write!(f, "[ {} @ {} ]", scope, expr),
             ExprType::FuncDefBuiltin(ExprBuiltinWrapper(name, _)) => {
@@ -379,6 +383,7 @@ where
             ExprType::FuncDefPattern(..) => false,
             ExprType::FuncDefBuiltin(..) => false,
             ExprType::Let(..) => true,
+            ExprType::MapList(..) => true,
             ExprType::FuncCall(..) => true,
             ExprType::BoundExpr(..) => true,
             ExprType::Null => false,
@@ -429,6 +434,10 @@ where
                         ))
                     }
                     ExprType::FuncDefBuiltin(_expr_builtin) => todo!(),
+                    ExprType::MapList(func, input) => Ok(ExprType::MapList(
+                        ExprType::BoundExpr(varspace.clone(), func.clone()).into(),
+                        ExprType::BoundExpr(varspace.clone(), input.clone()).into(),
+                    )),
                     ExprType::Var(name) => match &varspace.get(name) {
                         Some(value) => Ok(value.res_type()?.clone()),
                         None => Err(Error::Scope(format!(
@@ -488,6 +497,18 @@ where
                             inner_expr.clone(),
                         )),
                         _ => Ok(ExprType::BoundExpr(args, func_expr.clone())),
+                    }
+                }
+                ExprType::MapList(func, input) => {
+                    input.resolve()?;
+                    match &*input.as_ref() {
+                        ExprType::List(input_vec) => Ok(ExprType::List(
+                            input_vec
+                                .iter()
+                                .map(|iel| ExprType::FuncCall(func.clone(), iel.clone()).into())
+                                .collect::<Vec<_>>(),
+                        )),
+                        _ => Err(Error::Eval(format!("Foreach over non-list: {}", input))),
                     }
                 }
                 ExprType::UnOp(op, expr) => {
@@ -777,6 +798,14 @@ mod tests {
     }
 
     #[test]
+    fn test_func_call_order() {
+        assert_eq! {
+            eval("let f = a: b: (a+b); in (f 3 4)"),
+            eval("7"),
+        }
+    }
+
+    #[test]
     fn test_func_call_resolved() {
         assert_eq! {
             eval(r#"
@@ -999,7 +1028,20 @@ mod tests {
 
     #[test]
     fn test_list_concat() {
-        assert_eq!(eval("[1 3 5 7] + [2 4 6 8]"), eval("[1 3 5 7 2 4 6 8]"));
+        assert_eq!(
+            eval("[1, 3, 5, 7] + [2, 4, 6, 8]"),
+            eval("[1, 3, 5, 7, 2, 4, 6, 8]")
+        );
+    }
+
+    #[test]
+    fn test_list_commas() {
+        assert_eq!(eval("[1, 3, 5, 7,]"), eval("[1, 3, 5, 7]"));
+    }
+
+    #[test]
+    fn test_list_comprehension() {
+        assert_eq!(eval("[ a: (a*2) <- [1, 2, 3] ]"), eval("[2, 4, 6]"));
     }
 
     #[test]
