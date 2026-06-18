@@ -1,10 +1,9 @@
 use std::{
     cell::{Ref, RefCell},
+    collections::BTreeMap,
     fmt::{Debug, Display},
     rc::Rc,
 };
-
-use super::immutablemap::ImmutableMap;
 
 pub mod ops {
     use super::{Debug, Display, Expr};
@@ -43,12 +42,6 @@ pub mod ops {
     impl From<super::Error> for Error {
         fn from(value: super::Error) -> Self {
             Error::ExprError(value)
-        }
-    }
-
-    impl From<super::super::immutablemap::Error> for Error {
-        fn from(value: super::super::immutablemap::Error) -> Self {
-            Error::ExprError(value.into())
         }
     }
 
@@ -93,14 +86,6 @@ impl Display for Error {
     }
 }
 
-impl From<super::immutablemap::Error> for Error {
-    fn from(value: super::immutablemap::Error) -> Self {
-        match value {
-            super::immutablemap::Error::DupKey(key) => Error::DupKey(key),
-        }
-    }
-}
-
 impl From<ops::Error> for Error {
     fn from(value: ops::Error) -> Self {
         match value {
@@ -128,7 +113,7 @@ where
     T: Clone + PartialEq + Display + ExprOps;
 
 // TODO: Better implementation of ExprSet... This probably takes time to clone.
-pub type ExprSet<T> = ImmutableMap<Expr<T>>;
+pub type ExprSet<T> = BTreeMap<String, Expr<T>>;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum ExprBinOp {
@@ -245,7 +230,17 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ExprType::Object(varscope) => varscope.fmt(f),
+            ExprType::Object(varscope) => {
+                f.write_str("{ ")?;
+                for (key, value) in varscope.iter() {
+                    f.write_str(key)?;
+                    f.write_str(" = ")?;
+                    value.fmt(f)?;
+                    f.write_str("; ")?;
+                }
+                f.write_str("}")?;
+                Ok(())
+            }
             ExprType::List(items) => {
                 write!(f, "[")?;
                 for item in items.iter() {
@@ -290,7 +285,16 @@ where
                 write!(f, "[ {} <- {} ]", func, input)
             }
             ExprType::FuncCall(fexpr, farg) => write!(f, "{} {}", fexpr, farg),
-            ExprType::BoundExpr(scope, expr) => write!(f, "[ {} @ {} ]", scope, expr),
+            ExprType::BoundExpr(scope, expr) => {
+                write!(f, "[")?;
+                for (name, expr) in scope.iter() {
+                    write!(f, " {}={}", name, expr)?;
+                }
+                write!(f, " @ ")?;
+                expr.fmt(f)?;
+                write!(f, " ]")?;
+                Ok(())
+            }
             ExprType::FuncDefBuiltin(ExprBuiltinWrapper(name, _)) => {
                 write!(f, "<builtin {}>", name)
             }
@@ -390,11 +394,17 @@ where
         } {
             expr = match expr {
                 ExprType::BoundExpr(varspace, bound_expr) => match &*bound_expr.as_ref() {
-                    ExprType::Object(fields) => {
-                        Ok(ExprType::Object(fields.map(|val| {
-                            ExprType::BoundExpr(varspace.clone(), val.clone()).into()
-                        })))
-                    }
+                    ExprType::Object(fields) => Ok(ExprType::Object(
+                        fields
+                            .iter()
+                            .map(|(k, val)| {
+                                (
+                                    k.clone(),
+                                    ExprType::BoundExpr(varspace.clone(), val.clone()).into(),
+                                )
+                            })
+                            .collect(),
+                    )),
                     ExprType::List(items) => Ok(ExprType::List(
                         items
                             .iter()
@@ -409,15 +419,17 @@ where
                         let mut vars: ExprSet<T> = varspace;
                         for (field_name, field_expr) in fields {
                             let field_vars = vars.clone();
-                            vars = vars.set(
-                                field_name,
+                            vars.insert(
+                                field_name.clone(),
                                 ExprType::BoundExpr(field_vars, field_expr.clone()).into(),
-                            )?;
+                            )
+                            .map_or_else(|| Ok(()), |_| Err(Error::DupKey(field_name.clone())))?;
                         }
                         Ok(ExprType::BoundExpr(vars, target_expr.clone()))
                     }
                     ExprType::FuncDefIdent(arg_name, func_expr) => {
-                        let new_scope = varspace.unset(arg_name.as_str());
+                        let mut new_scope = varspace;
+                        new_scope.remove(arg_name);
                         Ok(ExprType::FuncDefIdent(
                             arg_name.clone(),
                             ExprType::BoundExpr(new_scope, func_expr.clone()).into(),
@@ -426,7 +438,7 @@ where
                     ExprType::FuncDefPattern(items, expr) => {
                         let mut new_scope = varspace;
                         for item in items.iter() {
-                            new_scope = new_scope.unset(item);
+                            new_scope.remove(item);
                         }
                         Ok(ExprType::FuncDefPattern(
                             items.clone(),
@@ -440,10 +452,7 @@ where
                     )),
                     ExprType::Var(name) => match &varspace.get(name) {
                         Some(value) => Ok(value.res_type()?.clone()),
-                        None => Err(Error::Scope(format!(
-                            "Unknown variable {} in {}",
-                            name, varspace
-                        ))),
+                        None => Err(Error::Scope(format!("Unknown variable {}", name))),
                     },
                     ExprType::UnOp(op, expr) => Ok(ExprType::UnOp(
                         *op,
@@ -469,16 +478,19 @@ where
                     Ok(attr_expr.as_ref().clone())
                 }
                 ExprType::FuncCall(fexpr, fargs) => {
-                    let (args, func_expr): (ExprSet<T>, Expr<T>) = match &*fexpr.res_type()? {
-                        ExprType::FuncDefIdent(arg_name, fimpl) => {
-                            Ok((ExprSet::single(arg_name, fargs), fimpl.clone()))
-                        }
+                    let (mut args, func_expr): (ExprSet<T>, Expr<T>) = match &*fexpr.res_type()? {
+                        ExprType::FuncDefIdent(arg_name, fimpl) => Ok((
+                            ExprSet::from([(arg_name.clone(), fargs.clone())]),
+                            fimpl.clone(),
+                        )),
                         ExprType::FuncDefPattern(arg_names, fimpl) => {
                             fargs.resolve()?;
                             let mut new_vars = ExprSet::new();
                             for arg_name in arg_names {
                                 let arg_value = fargs.get_item(arg_name)?;
-                                new_vars = new_vars.set(arg_name, arg_value)?;
+                                new_vars
+                                    .insert(arg_name.clone(), arg_value)
+                                    .map_or_else(|| Ok(()), |_| Err(Error::DupKey(arg_name.clone())))?;
                             }
                             Ok((new_vars, fimpl.clone()))
                         }
@@ -492,10 +504,11 @@ where
                     // If function contains a bound scope, it should still apply,
                     // and not overwrite input arguments.
                     match &*func_expr.as_ref() {
-                        ExprType::BoundExpr(varspace, inner_expr) => Ok(ExprType::BoundExpr(
-                            varspace.clone().merge(&args),
-                            inner_expr.clone(),
-                        )),
+                        ExprType::BoundExpr(varspace, inner_expr) => {
+                            let mut merged_varspace = varspace.clone();
+                            merged_varspace.append(&mut args);
+                            Ok(ExprType::BoundExpr(merged_varspace, inner_expr.clone()))
+                        }
                         _ => Ok(ExprType::BoundExpr(args, func_expr.clone())),
                     }
                 }
@@ -525,7 +538,7 @@ where
                     }
                 }
                 ExprType::BinOp(op, lhs, rhs) => match &*lhs.res_type()? {
-                    ExprType::Object(lhs_obj) => todo!("Binop on {}", lhs_obj),
+                    ExprType::Object(_lhs_obj) => todo!("Binop on object"),
                     ExprType::List(lhs_list) => match (op, &*rhs.res_type()?) {
                         (ExprBinOp::Add, ExprType::List(rhs_list)) => {
                             let mut res = lhs_list.clone();
@@ -590,7 +603,9 @@ where
         self.resolve()?;
         match &*self.as_ref() {
             ExprType::Object(fields) => {
-                fields.foreach(|_name, ex| ex.eval())?;
+                for (_, field) in fields.iter() {
+                    field.eval()?;
+                }
             }
             ExprType::List(fields) => {
                 for ex in fields.iter() {
@@ -626,7 +641,8 @@ where
         match &*node {
             ExprType::Object(vars) => Ok(vars
                 .get(name)
-                .ok_or(Error::NoValue(format!("Invalid field '{}'", name)))?),
+                .ok_or_else(|| Error::NoValue(format!("Invalid field '{}'", name)))?
+                .clone()),
             _ => Err(Error::NoValue(format!("Invalid item '{}'", name))),
         }
     }
@@ -640,8 +656,8 @@ where
 
         for bi in value.into_iter() {
             let name = bi.get_name();
-            exprset = exprset
-                .set(
+            exprset
+                .insert(
                     name.clone(),
                     ExprType::FuncDefBuiltin(ExprBuiltinWrapper(name, bi)).into(),
                 )
@@ -735,7 +751,7 @@ mod tests {
         let expr: Expr<TestValue> =
             ExprType::BoundExpr(ExprSet::new(), parse_str("invalid_var").unwrap()).into();
         if let Err(Error::Scope(message)) = expr.resolve() {
-            assert_eq!(message.as_str(), "Unknown variable invalid_var in { }");
+            assert_eq!(message.as_str(), "Unknown variable invalid_var");
         } else {
             assert!(false);
         }
@@ -778,8 +794,7 @@ mod tests {
         let func_a = parse_str("var: 13").unwrap();
         let func_b = parse_str("var: 42").unwrap();
         let call = parse_str("func_b 32").unwrap();
-        let varscope =
-            ExprSet::from(vec![("func_a", func_a.into()), ("func_b", func_b.into())]).unwrap();
+        let varscope = ExprSet::from([("func_a".into(), func_a), ("func_b".into(), func_b)]);
         let value: Expr<TestValue> = ExprType::BoundExpr(varscope, call).into();
         value.resolve().unwrap();
         assert_eq!(value, Expr::from(TestValue::Int(42)));
@@ -790,8 +805,7 @@ mod tests {
         let func_var = parse_str("var: var").unwrap();
         let arg_var = parse_str("32").unwrap();
         let call = parse_str("func arg").unwrap();
-        let varscope =
-            ExprSet::from(vec![("func", func_var.into()), ("arg", arg_var.into())]).unwrap();
+        let varscope = ExprSet::from([("func".into(), func_var), ("arg".into(), arg_var)]);
         let value: Expr<TestValue> = ExprType::BoundExpr(varscope, call).into();
         value.resolve().unwrap();
         assert_eq!(value, Expr::from(TestValue::Int(32)));
@@ -1058,11 +1072,10 @@ mod tests {
     fn test_builtin_func() {
         let code = "mybuiltin 10";
 
-        let builtins = ExprSet::from(vec![(
-            "mybuiltin",
+        let builtins = ExprSet::from([(
+            "mybuiltin".into(),
             Expr::new_builtin(Rc::new(CountingBuiltin::new())),
-        )])
-        .unwrap();
+        )]);
         let expr: Expr<TestValue> = BoundExpr(builtins, parse_str(code).unwrap()).into();
         expr.eval().unwrap();
         assert_eq!(expr, eval("10"));
@@ -1081,11 +1094,10 @@ mod tests {
                 }
             "#;
         let counter = CountingBuiltin::new();
-        let builtins = ExprSet::from(vec![(
-            "mybuiltin",
+        let builtins = ExprSet::from([(
+            "mybuiltin".into(),
             Expr::new_builtin(Rc::new(counter.clone())),
-        )])
-        .unwrap();
+        )]);
         let expr: Expr<TestValue> = BoundExpr(builtins, parse_str(code).unwrap()).into();
         expr.eval().unwrap();
         assert_eq!(expr, eval("{ a = 10; b = 10; }"));
@@ -1102,11 +1114,10 @@ mod tests {
                 {}
             "#;
         let counter = CountingBuiltin::new();
-        let builtins = ExprSet::from(vec![(
-            "mybuiltin",
+        let builtins = ExprSet::from([(
+            "mybuiltin".into(),
             Expr::new_builtin(Rc::new(counter.clone())),
-        )])
-        .unwrap();
+        )]);
         let expr: Expr<TestValue> = BoundExpr(builtins, parse_str(code).unwrap()).into();
         expr.eval().unwrap();
         assert_eq!(expr, eval("{}"));

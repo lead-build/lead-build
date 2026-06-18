@@ -154,10 +154,9 @@ mod tests {
         assert_eq!(
             Expr::from(ExprType::Object(
                 ExprSet::from([
-                    ("boll", ExprType::Value(TestValue::Int(123)).into()),
-                    ("hej", ExprType::Value(TestValue::Int(323)).into())
+                    ("boll".into(), ExprType::Value(TestValue::Int(123)).into()),
+                    ("hej".into(), ExprType::Value(TestValue::Int(323)).into())
                 ])
-                .unwrap()
             )),
             eval(code)
         );
@@ -174,20 +173,18 @@ mod tests {
         assert_eq!(
             Expr::from(ExprType::Object(
                 ExprSet::from([
-                    ("boll", ExprType::Value(TestValue::Int(123)).into()),
+                    ("boll".into(), ExprType::Value(TestValue::Int(123)).into()),
                     (
                         "hej".into(),
                         ExprType::Object(
                             ExprSet::from([
-                                ("a", ExprType::Value(TestValue::Int(2)).into()),
-                                ("b", ExprType::Value(TestValue::Int(3)).into()),
+                                ("a".into(), ExprType::Value(TestValue::Int(2)).into()),
+                                ("b".into(), ExprType::Value(TestValue::Int(3)).into()),
                             ])
-                            .unwrap()
                         )
                         .into()
                     )
                 ])
-                .unwrap()
             )),
             eval(code)
         );
@@ -230,7 +227,7 @@ mod tests {
                 Expr::from(ExprType::BinOp(
                     ExprBinOp::Add,
                     Expr::from(ExprType::Value(TestValue::String("prefix".into()))),
-                    Expr::from(ExprSet::from(vec![("a", Expr::from(TestValue::Int(12)))]).unwrap())
+                    Expr::from(ExprSet::from([("a".into(), Expr::from(TestValue::Int(12)))]))
                 )),
                 Expr::from(ExprType::Value(TestValue::String("suffix".into())))
             )),

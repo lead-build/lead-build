@@ -64,11 +64,9 @@ pub struct LangContext(Rc<LangContextStorage>);
 
 impl Default for LangContext {
     fn default() -> Self {
-        let builtins = ExprSet::new()
-            .set("lock", Expr::new_builtin(Rc::new(BuiltinLock)))
-            .unwrap()
-            .set("pb", get_pb_builtins().unwrap())
-            .unwrap();
+        let mut builtins = ExprSet::new();
+        builtins.insert("lock".to_string(), Expr::new_builtin(Rc::new(BuiltinLock)));
+        builtins.insert("pb".to_string(), get_pb_builtins().unwrap());
         LangContext(Rc::new(LangContextStorage { builtins }))
     }
 }
@@ -82,25 +80,22 @@ impl LangContext {
         Rc::get_mut(&mut self.0)
             .unwrap()
             .builtins
-            .set_mut(name, value)
-            .unwrap();
+            .insert(name.to_string(), value);
     }
 
     fn setup_file_args(&self, file: VirtPath) -> Result<Expr<Value>> {
         let cwd = file.parent().unwrap().lock();
 
-        Ok(ExprSet::from(vec![("cwd", Value::Path(cwd).into())])?.into())
+        Ok(ExprSet::from([("cwd".to_string(), Expr::from(Value::Path(cwd)))]).into())
     }
 
     fn setup_file_builtins(&self) -> Result<ExprSet<Value>> {
         let storage = self.0.as_ref();
         let mut builtins = storage.builtins.clone();
-        builtins
-            .set_mut(
-                "include",
-                Expr::new_builtin(Rc::new(BuiltinInclude(self.clone()))),
-            )
-            .unwrap();
+        builtins.insert(
+            "include".to_string(),
+            Expr::new_builtin(Rc::new(BuiltinInclude(self.clone()))),
+        );
         Ok(builtins)
     }
 

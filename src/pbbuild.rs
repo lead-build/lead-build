@@ -15,7 +15,7 @@ use crate::{
 macro_rules! expr_get_arg (
     ($obj:expr, $name:expr, $unpack:ident) => {
         $obj
-            .remove_mut($name)
+            .remove($name)
             .ok_or_else(|| crate::lang::ops::Error::Type(format!("Can't unpack {}", stringify!($name))))?
             .value()?
             .$unpack()
@@ -23,7 +23,7 @@ macro_rules! expr_get_arg (
     };
     ($obj:expr, $name:expr) => {
         $obj
-            .remove_mut($name)
+            .remove($name)
             .ok_or_else(|| crate::lang::ops::Error::Type(format!("Can't unpack {}", stringify!($name))))?
     };
 );
@@ -194,22 +194,25 @@ impl ExprBuiltin<Value> for BuiltinPbRule {
         }?;
 
         /* Generate object with placeholders */
-        let var_obj = ExprSet::from(args.iter().map(|name| {
-            /* Also store names for validation from PbBuild */
-            rule_args.insert(name.clone());
+        let var_obj = args
+            .iter()
+            .map(|name| {
+                /* Also store names for validation from PbBuild */
+                rule_args.insert(name.clone());
 
-            /* Generate element */
-            (
-                name.clone(),
-                Value::BuildVar(match name.as_str() {
-                    "input" => "in".into(),
-                    "output" => "out".into(),
-                    _ => name.clone(),
-                })
-                .into(),
-            )
-        }))?
-        .into();
+                /* Generate element */
+                (
+                    name.clone(),
+                    Value::BuildVar(match name.as_str() {
+                        "input" => "in".into(),
+                        "output" => "out".into(),
+                        _ => name.clone(),
+                    })
+                    .into(),
+                )
+            })
+            .collect::<ExprSet<Value>>()
+            .into();
 
         /* Generate rule function with variable placeholders and call */
         let rule_func: Expr<Value> = ExprType::FuncCall(arg, var_obj).into();
@@ -226,7 +229,7 @@ impl ExprBuiltin<Value> for BuiltinPbRule {
 
         /* Convert all variables to ninja rule */
         let mut vars: Vec<(String, Vec<NinjaArg>)> = Vec::new();
-        for (name, expr) in objargs.into_vec().into_iter() {
+        for (name, expr) in objargs.into_iter() {
             expr.resolve()?;
             let attrs = match &*expr.as_ref() {
                 ExprType::List(exprs) => exprs.clone(),
@@ -334,8 +337,9 @@ impl ExprBuiltin<Value> for BuiltinPbBuild {
 }
 
 pub fn get_pb_builtins() -> Result<Expr<Value>> {
-    let pbset = ExprSet::new()
-        .set("rule", Expr::new_builtin(Rc::new(BuiltinPbRule)))?
-        .set("build", Expr::new_builtin(Rc::new(BuiltinPbBuild)))?;
+    let pbset = ExprSet::from([
+        ("rule".into(), Expr::new_builtin(Rc::new(BuiltinPbRule))),
+        ("build".into(), Expr::new_builtin(Rc::new(BuiltinPbBuild))),
+    ]);
     Ok(pbset.into())
 }

@@ -1,6 +1,5 @@
 mod error;
 mod expr;
-mod immutablemap;
 mod parser;
 mod stringdecode;
 

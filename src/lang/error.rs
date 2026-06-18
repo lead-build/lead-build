@@ -1,6 +1,6 @@
 use std::result;
 
-use super::{expr, immutablemap, parser};
+use super::{expr, parser};
 
 pub type Result<T> = result::Result<T, Error>;
 
@@ -8,9 +8,6 @@ pub type Result<T> = result::Result<T, Error>;
 pub enum Error {
     #[error("IO Error: {0}")]
     Io(#[from] std::io::Error),
-
-    #[error("ExprSet error: {0}")]
-    ExprSet(#[from] immutablemap::Error),
 
     #[error("Parse error: {0}")]
     Parse(#[from] parser::Error),

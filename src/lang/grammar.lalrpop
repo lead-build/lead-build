@@ -148,7 +148,7 @@ ExprTerm: Expr<T> = {
     "(" <Expr> ")"
 };
 
-Object: Expr<T> = "{" <s:SetStmt*> "}" => ExprType::Object(ExprSet::from(s).unwrap()).into();
+Object: Expr<T> = "{" <s:SetStmt*> "}" => ExprType::Object(s.into_iter().collect::<ExprSet<T>>()).into();
 
 List: Expr<T> = "[" <s:Comma<Expr>> "]" => ExprType::List(s).into();
 
