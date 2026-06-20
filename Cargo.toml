@@ -5,6 +5,9 @@ edition = "2024"
 license = "GPL-2.0-only"
 keywords = ["build", "ninja"]
 authors = ["Max Sikström <max@pengi.se>"]
+description = "Configuration language for declarative builds"
+documentation = "https://github.com/lead-build/lead-build"
+repository = "https://github.com/lead-build/lead-build"
 
 [lib]
 
@@ -12,12 +15,9 @@ authors = ["Max Sikström <max@pengi.se>"]
 name = "pb"
 
 [build-dependencies]
-lalrpop = { git = "https://github.com/lalrpop/lalrpop" }
+lalrpop = { version = "0.23.1" }
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
-lalrpop-util = { git = "https://github.com/lalrpop/lalrpop", features = [
-    "lexer",
-    "unicode",
-] }
+lalrpop-util = { version = "0.23.1", features = ["lexer", "unicode"] }
 strum = { version = "0.28.0", features = ["derive"] }
