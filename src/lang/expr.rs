@@ -114,7 +114,7 @@ type Result<RT> = std::result::Result<RT, Error>;
  */
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Expr<T>(Rc<RefCell<ExprType<T>>>)
+pub struct Expr<T>(Rc<ExprStorage<T>>)
 where
     T: Clone + PartialEq + Display + ExprOps;
 
@@ -151,6 +151,14 @@ pub enum ExprUnOp {
 pub struct ExprBuiltinWrapper<T>(String, Rc<dyn ExprBuiltin<T>>)
 where
     T: Clone + PartialEq + Display + ExprOps;
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ExprStorage<T>
+where
+    T: Clone + PartialEq + Display + ExprOps,
+{
+    tok: RefCell<ExprType<T>>,
+}
 
 // Clone is needed since ExprType::Var is implemented via cloning of ExprType
 #[derive(Debug, PartialEq, Clone, Default, EnumTryAs)]
@@ -252,12 +260,32 @@ where
     }
 }
 
+impl<T> From<ExprType<T>> for ExprStorage<T>
+where
+    T: Clone + PartialEq + Display + ExprOps,
+{
+    fn from(value: ExprType<T>) -> Self {
+        ExprStorage {
+            tok: RefCell::new(value),
+        }
+    }
+}
+
+impl<T> From<ExprStorage<T>> for Expr<T>
+where
+    T: Clone + PartialEq + Display + ExprOps,
+{
+    fn from(value: ExprStorage<T>) -> Self {
+        Expr(Rc::new(value))
+    }
+}
+
 impl<T> From<ExprType<T>> for Expr<T>
 where
     T: Clone + PartialEq + Display + ExprOps,
 {
     fn from(value: ExprType<T>) -> Self {
-        Expr(Rc::new(RefCell::new(value)))
+        Expr::from(ExprStorage::from(value))
     }
 }
 
@@ -266,7 +294,7 @@ where
     T: Clone + PartialEq + Display + ExprOps,
 {
     fn from(value: T) -> Self {
-        Expr::from(ExprType::Value(value))
+        Expr::from(ExprType::from(value))
     }
 }
 
@@ -305,11 +333,11 @@ where
     T: Clone + PartialEq + Display + ExprOps + Debug + Exportable,
 {
     pub fn inner_ref(&self) -> Ref<'_, ExprType<T>> {
-        self.0.as_ref().borrow()
+        self.0.as_ref().tok.borrow()
     }
 
     pub fn resolve(&self) -> Result<()> {
-        let mut expr = self.0.as_ref().take();
+        let mut expr = self.0.as_ref().tok.take();
 
         while match &expr {
             ExprType::Object(..) => false,
@@ -527,7 +555,7 @@ where
             }?;
         }
 
-        self.0.as_ref().replace(expr);
+        self.0.as_ref().tok.replace(expr);
         Ok(())
     }
 
