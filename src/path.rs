@@ -89,6 +89,37 @@ impl VirtPath {
         }
     }
 
+    pub fn translate(self, from: &VirtPath, to: &VirtPath) -> Option<VirtPath> {
+        if self.name != from.name || self.root != from.root {
+            None
+        } else {
+            let self_path = [self.locked_parts.clone(), self.parts.clone()].concat();
+            let from_path = [from.locked_parts.clone(), from.parts.clone()].concat();
+
+            if let Some(suffix) = self_path.strip_prefix(from_path.as_slice()) {
+                let mut new_parts = to.parts.clone();
+                let suffix = suffix.iter().map(|s| s.clone());
+                new_parts.extend(suffix);
+                Some(VirtPath {
+                    name: to.name.clone(),
+                    root: to.root.clone(),
+                    locked_parts: to.locked_parts.clone(),
+                    parts: new_parts,
+                })
+            } else {
+                None
+            }
+        }
+    }
+
+    pub fn retype(self, from: &str, to: &str) -> Option<VirtPath> {
+        let mut out = self;
+        let last = out.parts.pop()?;
+        let last_prefix = last.strip_suffix(from)?;
+        out.parts.push(last_prefix.to_string() + to);
+        Some(out)
+    }
+
     #[cfg(test)]
     fn new(name: impl ToString) -> VirtPath {
         Self::virtualize(&PathBuf::from("/file"), name)
@@ -214,6 +245,80 @@ mod tests {
                 locked_parts: vec![],
                 parts: vec!["file.txt".into()]
             }
+        );
+    }
+
+    #[test]
+    fn test_translate() {
+        let src_dir = VirtPath::virtualize(&PathBuf::from("./src"), "src");
+        let build_dir = VirtPath::virtualize(&PathBuf::from("./build"), "build")
+            .step("subproj")
+            .unwrap();
+
+        let src_file = src_dir
+            .clone()
+            .step("lib")
+            .unwrap()
+            .step("source.c")
+            .unwrap();
+        let exp_obj_file = build_dir
+            .clone()
+            .step("lib")
+            .unwrap()
+            .step("source.c")
+            .unwrap();
+
+        assert_eq!(src_file.translate(&src_dir, &build_dir), Some(exp_obj_file));
+    }
+
+    #[test]
+    fn test_translate_invalid_root() {
+        let src_dir = VirtPath::virtualize(&PathBuf::from("./src"), "src");
+        let build_dir = VirtPath::virtualize(&PathBuf::from("./build"), "build")
+            .step("subproj")
+            .unwrap();
+
+        let src_subdir = src_dir.clone().step("otherdir").unwrap();
+
+        let src_file = src_dir
+            .clone()
+            .step("lib")
+            .unwrap()
+            .step("source.c")
+            .unwrap();
+
+        assert_eq!(src_file.translate(&src_subdir, &build_dir), None);
+    }
+
+    #[test]
+    fn test_retype() {
+        assert_eq!(
+            VirtPath::new("root")
+                .step("test")
+                .unwrap()
+                .step("src.c")
+                .unwrap()
+                .retype(".c", ".o"),
+            Some(
+                VirtPath::new("root")
+                    .step("test")
+                    .unwrap()
+                    .step("src.o")
+                    .unwrap()
+            )
+        );
+    }
+
+    #[test]
+    fn test_retype_invalid() {
+        assert_eq!(
+            VirtPath::new("root")
+                .step("test")
+                .unwrap()
+                .step("src.s")
+                .unwrap()
+                .retype(".c", ".o"),
+            None
         );
     }
 }

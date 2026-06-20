@@ -9,6 +9,7 @@ use crate::{
     Expr,
     lang::{Error, ErrorType, ExprBuiltin, ExprSet, ExprType, Result},
     ninjawriter::{NinjaArg, NinjaFile, NinjaRuleRef},
+    path::VirtPath,
     value::Value,
 };
 
@@ -354,13 +355,122 @@ where
     }
 }
 
-pub fn get_pb_builtins<F>() -> Result<Expr<Value, F>, F>
-where
-    F: Clone + Debug,
-{
+#[derive(Debug)]
+pub struct BuiltinPbLock;
+
+impl ExprBuiltin<Value, VirtPath> for BuiltinPbLock {
+    fn get_name(&self) -> String {
+        "lock".into()
+    }
+
+    fn call(&self, arg: Expr<Value, VirtPath>) -> Result<Expr<Value, VirtPath>, VirtPath> {
+        let val = arg.value()?;
+        let path = val.try_as_path().ok_or(
+            Error::new(ErrorType::Type, format!("expected path, got {}", arg))
+                .reref(&arg.get_loc()),
+        )?;
+        Ok(ExprType::Value(Value::Path(path.lock())).reref(arg.get_loc()))
+    }
+}
+
+#[derive(Debug)]
+pub struct BuiltinPbTranslate;
+
+impl ExprBuiltin<Value, VirtPath> for BuiltinPbTranslate {
+    fn get_name(&self) -> String {
+        "translate".into()
+    }
+
+    fn call(&self, arg: Expr<Value, VirtPath>) -> Result<Expr<Value, VirtPath>, VirtPath> {
+        arg.resolve()?;
+        let loc = arg.get_loc();
+
+        let input = arg.get_item("input")?;
+        let from = arg.get_item("from")?;
+        let to = arg.get_item("to")?;
+        // TODO: Verify no more args are available
+
+        let input = input
+            .value()?
+            .try_as_path()
+            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&input.get_loc()))?;
+        let from = from
+            .value()?
+            .try_as_path()
+            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&from.get_loc()))?;
+        let to = to
+            .value()?
+            .try_as_path()
+            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&to.get_loc()))?;
+
+        // Clone here only to allow error message
+        let output = input.clone().translate(&from, &to).ok_or_else(|| {
+            Error::new(
+                ErrorType::Type,
+                format!("Can't translate {} from {} to {}", input, from, to),
+            )
+            .reref(&loc)
+        })?;
+
+        Ok(ExprType::Value(Value::Path(output)).reref(loc))
+    }
+}
+
+#[derive(Debug)]
+pub struct BuiltinPbRetype;
+
+impl ExprBuiltin<Value, VirtPath> for BuiltinPbRetype {
+    fn get_name(&self) -> String {
+        "retype".into()
+    }
+
+    fn call(&self, arg: Expr<Value, VirtPath>) -> Result<Expr<Value, VirtPath>, VirtPath> {
+        arg.resolve()?;
+        let loc = arg.get_loc();
+
+        let input = arg.get_item("input")?;
+        let from = arg.get_item("from")?;
+        let to = arg.get_item("to")?;
+        // TODO: Verify no more args are available
+
+        let input = input
+            .value()?
+            .try_as_path()
+            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&input.get_loc()))?;
+        let from = from
+            .value()?
+            .try_as_string()
+            .ok_or_else(|| Error::new(ErrorType::Type, "expected string").reref(&from.get_loc()))?;
+        let to = to
+            .value()?
+            .try_as_string()
+            .ok_or_else(|| Error::new(ErrorType::Type, "expected string").reref(&to.get_loc()))?;
+
+        // Clone here only to allow error message
+        let output = input
+            .clone()
+            .retype(from.as_str(), to.as_str())
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorType::Type,
+                    format!("Can't change suffix on {} from {} to {}", input, from, to),
+                )
+                .reref(&loc)
+            })?;
+
+        Ok(ExprType::Value(Value::Path(output)).reref(loc))
+    }
+}
+
+pub fn get_pb_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
     let pbset = ExprSet::from([
         ("rule".into(), Expr::new_builtin(Rc::new(BuiltinPbRule))),
         ("build".into(), Expr::new_builtin(Rc::new(BuiltinPbBuild))),
+        (
+            "translate".into(),
+            Expr::new_builtin(Rc::new(BuiltinPbTranslate)),
+        ),
+        ("retype".into(), Expr::new_builtin(Rc::new(BuiltinPbRetype))),
     ]);
     Ok(ExprType::Object(pbset).builtin())
 }

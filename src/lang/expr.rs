@@ -321,6 +321,14 @@ where
     pub fn resolve(&self) -> Result<(), F> {
         let mut storref: ExprStorage<T, F> = self.0.as_ref().take();
 
+        let todo = |loc, f, l, c| {
+            Error::new(
+                ErrorType::Type,
+                format!("not yet implemented {}:{}:{}", f, l, c),
+            )
+            .reref(&loc)
+        };
+
         while match &storref.tok {
             ExprType::Object(..) => false,
             ExprType::List(..) => false,
@@ -425,9 +433,9 @@ where
                         .loc(loc))
                     }
                     ExprStorage {
-                        tok: ExprType::FuncDefBuiltin(_expr_builtin),
-                        ..
-                    } => todo!(),
+                        tok: ExprType::FuncDefBuiltin(expr_builtin),
+                        loc: biloc,
+                    } => Ok(ExprType::FuncDefBuiltin(expr_builtin.clone()).loc(biloc.clone())),
                     ExprStorage {
                         tok: ExprType::MapList(func, input),
                         ..
@@ -621,8 +629,8 @@ where
                 } => match &*lhs.res_type().map_err(|e| e.reref(&loc))? {
                     ExprStorage {
                         tok: ExprType::Object(_lhs_obj),
-                        ..
-                    } => todo!("Binop on object"),
+                        loc: tloc,
+                    } => Err(todo(tloc.clone(), file!(), line!(), column!())),
                     ExprStorage {
                         tok: ExprType::List(lhs_list),
                         loc: lhs_loc,
@@ -638,7 +646,7 @@ where
                             res.extend(rhs_list.iter().cloned());
                             Ok(ExprType::List(res).loc(loc))
                         }
-                        _ => todo!("error message"),
+                        _ => Err(todo(lhs_loc.clone(), file!(), line!(), column!())),
                     },
                     ExprStorage {
                         tok: ExprType::Value(lhs_val),
@@ -671,11 +679,21 @@ where
                                 .clone()
                                 .loc(loc)),
                         },
-                        _ => match &(&*rhs.res_type().map_err(|e| e.reref(&lhs_loc))?).tok {
-                            ExprType::Object(_rhs_obj) => todo!(),
-                            ExprType::Value(rhs_val) => match op {
-                                ExprBinOp::HasAttr => todo!(),
-                                ExprBinOp::ListConcat => todo!(),
+                        _ => match &*rhs.res_type().map_err(|e| e.reref(&lhs_loc))? {
+                            ExprStorage {
+                                tok: ExprType::Object(_rhs_obj),
+                                loc: rhs_loc,
+                            } => Err(todo(rhs_loc.clone(), file!(), line!(), column!())),
+                            ExprStorage {
+                                tok: ExprType::Value(rhs_val),
+                                loc: _rhs_loc,
+                            } => match op {
+                                ExprBinOp::HasAttr => {
+                                    Err(todo(loc.clone(), file!(), line!(), column!()))
+                                }
+                                ExprBinOp::ListConcat => {
+                                    Err(todo(loc.clone(), file!(), line!(), column!()))
+                                }
                                 ExprBinOp::Mult => {
                                     Ok(ExprType::Value(T::op_mult(lhs_val, rhs_val)?).loc(loc))
                                 }
@@ -688,7 +706,9 @@ where
                                 ExprBinOp::Add => {
                                     Ok(ExprType::Value(T::op_add(lhs_val, rhs_val)?).loc(loc))
                                 }
-                                ExprBinOp::Update => todo!(),
+                                ExprBinOp::Update => {
+                                    Err(todo(loc.clone(), file!(), line!(), column!()))
+                                }
                                 ExprBinOp::Lt => {
                                     Ok(ExprType::Value(T::op_lt(lhs_val, rhs_val)?).loc(loc))
                                 }
@@ -709,9 +729,9 @@ where
                                 }
                                 _ => unreachable!(),
                             },
-                            typ => Err(Error::new(
+                            ExprStorage { tok, loc: _ } => Err(Error::new(
                                 ErrorType::Eval,
-                                format!("Resolving unresolvable type {}", typ),
+                                format!("Resolving unresolvable type {}", tok),
                             )
                             .reref(&loc)),
                         },
@@ -791,7 +811,7 @@ where
                 .clone()),
             _ => Err(Error::new(
                 ErrorType::NoValue,
-                format!("Invalid item '{}'", name),
+                format!("Missing item '{}'", name),
             )),
         }
     }

@@ -30,24 +30,6 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinInclude {
 }
 
 #[derive(Debug)]
-pub struct BuiltinLock;
-
-impl ExprBuiltin<Value, VirtPath> for BuiltinLock {
-    fn get_name(&self) -> String {
-        "lock".into()
-    }
-
-    fn call(&self, arg: Expr<Value, VirtPath>) -> Result<Expr<Value, VirtPath>, VirtPath> {
-        let val = arg.value()?;
-        let path = val.try_as_path().ok_or(Error::new(
-            ErrorType::Type,
-            format!("expected path, got {}", arg),
-        ))?;
-        Ok(ExprType::Value(Value::Path(path.lock())).builtin())
-    }
-}
-
-#[derive(Debug)]
 struct LangContextStorage {
     builtins: ExprSet<Value, VirtPath>,
 }
@@ -58,8 +40,7 @@ pub struct LangContext(Rc<LangContextStorage>);
 impl Default for LangContext {
     fn default() -> Self {
         let mut builtins = ExprSet::new();
-        builtins.insert("lock".to_string(), Expr::new_builtin(Rc::new(BuiltinLock)));
-        builtins.insert("pb".to_string(), get_pb_builtins().unwrap());
+        builtins.insert("pb".into(), get_pb_builtins().unwrap());
         LangContext(Rc::new(LangContextStorage { builtins }))
     }
 }
@@ -78,22 +59,13 @@ impl LangContext {
 
     fn setup_file_args(&self, file: VirtPath) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let cwd = file.parent().unwrap().lock();
-
-        Ok(ExprType::from(ExprSet::from([(
-            "cwd".to_string(),
-            ExprType::from(Value::Path(cwd)).builtin(),
-        )]))
-        .builtin())
-    }
-
-    fn setup_file_builtins(&self) -> Result<ExprSet<Value, VirtPath>, VirtPath> {
-        let storage = self.0.as_ref();
-        let mut builtins = storage.builtins.clone();
+        let mut builtins = self.0.builtins.clone();
+        builtins.insert("cwd".into(), ExprType::from(Value::Path(cwd)).builtin());
         builtins.insert(
             "include".to_string(),
             Expr::new_builtin(Rc::new(BuiltinInclude(self.clone()))),
         );
-        Ok(builtins)
+        Ok(ExprType::from(builtins).builtin())
     }
 
     pub fn read_file(&self, filename: &VirtPath) -> Result<Expr<Value, VirtPath>, VirtPath> {
@@ -106,12 +78,7 @@ impl LangContext {
     pub fn include(&self, file: VirtPath) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let file_expr = self.read_file(&file)?;
         let file_args = self.setup_file_args(file)?;
-        let file_builtins = self.setup_file_builtins()?;
-        let called_expr: Expr<Value, VirtPath> = ExprType::FuncCall(
-            ExprType::Bind(file_builtins, file_expr).builtin(),
-            file_args,
-        )
-        .builtin(); // TODO: Should this outermost builtin actually be a .loc()?
+        let called_expr: Expr<Value, VirtPath> = ExprType::FuncCall(file_expr, file_args).builtin(); // TODO: Should this outermost builtin actually be a .loc()?
         Ok(called_expr)
     }
 }

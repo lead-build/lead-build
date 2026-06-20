@@ -1,1 +1,45 @@
-{ cwd, ... }:
+{ cwd, pb, ... }:
+let
+    rule_compile = pb.rule (
+        {input, output, ...}:
+        {
+            command = ["gcc", "-c", "-o", output, "-MMD", "-MF", "${output}.d", input];
+            depfile = "${output}.d";
+        }
+    );
+
+    rule_link = pb.rule (
+        {input, output, ...}:
+        {
+            command = ["gcc", "-o", output, input];
+        }
+    );
+in
+{
+    c_build = {
+        output,
+        srcdir,
+        objdir,
+        sources,
+        ...
+    }: pb.build {
+        rule = rule_link;
+        output = output;
+        input = [
+            file: (pb.build {
+                rule = rule_compile;
+                output = pb.translate {
+                    input = pb.retype {
+                        input = file;
+                        from = ".c";
+                        to = ".o";
+                    };
+                    from = srcdir;
+                    to = objdir;
+                };
+                input = file;
+            })
+            <- sources
+        ];
+    };
+}
