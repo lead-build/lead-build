@@ -1,7 +1,7 @@
 use clap::Parser;
 use lead_build::{
     Expr, LangContext, Result, Value,
-    lang::{Error, ErrorType},
+    lang::{Error, ErrorType, ExprStorage, ExprType},
     ninjawriter::NinjaFile,
     path::VirtPath,
 };
@@ -29,6 +29,34 @@ struct Args {
     cd: Option<PathBuf>,
 }
 
+fn add_expr_to_ninjafile(
+    expr: &Expr<Value, VirtPath>,
+    ninja_file: &mut NinjaFile,
+) -> Result<(), VirtPath> {
+    expr.resolve()?;
+    match &*expr.inner_ref() {
+        ExprStorage {
+            tok: ExprType::Value(Value::Build(build)),
+            ..
+        } => {
+            build.populate_ninja_file(ninja_file);
+            Ok(())
+        }
+        ExprStorage {
+            tok: ExprType::List(list),
+            ..
+        } => {
+            for item in list.iter() {
+                add_expr_to_ninjafile(item, ninja_file)?;
+            }
+            Ok(())
+        }
+        ExprStorage { tok: _, loc } => {
+            Err(Error::new(ErrorType::Custom, "Not a valid build definition").reref(loc))
+        }
+    }
+}
+
 fn run(args: Args) -> Result<(), VirtPath> {
     let ctx: LangContext = LangContext::new();
 
@@ -50,19 +78,16 @@ fn run(args: Args) -> Result<(), VirtPath> {
     let main_file = VirtPath::virtualize(&input, "root");
     let expr: Expr<Value, VirtPath> = ctx.include(main_file)?;
 
-    if let Value::Build(build) = expr.value()? {
-        let mut ninja_file = NinjaFile::new();
-        build.populate_ninja_file(&mut ninja_file);
+    let mut ninja_file = NinjaFile::new();
 
-        let output_file =
-            File::create(output).or_else(|e| Err(Error::new(ErrorType::Custom, e.to_string())))?;
-        let mut writer = BufWriter::new(&output_file);
+    add_expr_to_ninjafile(&expr, &mut ninja_file)?;
 
-        write!(&mut writer, "{}", ninja_file)
-            .or_else(|e| Err(Error::new(ErrorType::Custom, e.to_string())))?;
-    } else {
-        println!("expceted top level to be a build, got {}", expr);
-    }
+    let output_file =
+        File::create(output).or_else(|e| Err(Error::new(ErrorType::Custom, e.to_string())))?;
+    let mut writer = BufWriter::new(&output_file);
+    write!(writer, "{}", ninja_file)
+        .or_else(|e| Err(Error::new(ErrorType::Custom, e.to_string())))?;
+
     Ok(())
 }
 

@@ -4,9 +4,9 @@ let
 
     lib = include (cwd / "lib.pbb");
 in
-lib.c_build {
+[lib.c_build {
     output = cwd / "app";
     srcdir = cwd / "src";
     objdir = cwd / "build";
     sources = [ cwd / "src" / "main.c" ];
-}
+}, "test"]
