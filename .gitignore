@@ -24,3 +24,11 @@ target
 # Added by cargo
 
 /target
+
+# Often crated when testing
+
+build.ninja
+.ninja_log
+*.o
+app
+build

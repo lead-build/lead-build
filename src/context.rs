@@ -70,7 +70,12 @@ impl LangContext {
 
     pub fn read_file(&self, filename: &VirtPath) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let fs_path = filename.to_path_buf();
-        let code = fs::read_to_string(fs_path).unwrap();
+        let code = fs::read_to_string(fs_path.clone()).or_else(|_| {
+            Err(Error::new(
+                ErrorType::Custom,
+                format!("File not found: {}", fs_path.display()),
+            ))
+        })?;
         let expr: Expr<Value, VirtPath> = parse_str(&code, filename)?;
         Ok(expr)
     }
