@@ -69,33 +69,12 @@ where
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs + rhs)),
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::String(lhs.clone() + rhs)),
-            (Value::Path(lhs), Value::String(rhs)) => Err(Error::new(
-                ErrorType::Type,
-                format!(
-                    "Can't use paths as part of strings (yet?) ({} + {})",
-                    lhs, rhs
-                ),
-            )),
-            (Value::String(_), Value::BuildVar(_)) => {
-                Ok(Value::BuildConcat(vec![lhs.clone(), rhs.clone()]))
-            }
-            (Value::BuildVar(_), Value::String(_)) => {
-                Ok(Value::BuildConcat(vec![lhs.clone(), rhs.clone()]))
-            }
-            (Value::BuildConcat(vs), Value::BuildVar(_)) => {
+            (Value::BuildConcat(vs), _) => {
                 let mut vs = vs.clone();
                 vs.push(rhs.clone());
                 Ok(Value::BuildConcat(vs))
             }
-            (Value::BuildConcat(vs), Value::String(_)) => {
-                let mut vs = vs.clone();
-                vs.push(rhs.clone());
-                Ok(Value::BuildConcat(vs))
-            }
-            _ => Err(Error::new(
-                ErrorType::Type,
-                format!("can't add {} and {}", lhs, rhs),
-            )),
+            (_, _) => Ok(Value::BuildConcat(vec![lhs.clone(), rhs.clone()])),
         }
     }
 

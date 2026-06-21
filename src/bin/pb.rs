@@ -27,6 +27,10 @@ struct Args {
     /// Change directory before invoking command
     #[arg(short = 'C', id = "PATH")]
     cd: Option<PathBuf>,
+
+    /// Print evaluated output instead of generating build.ninja file
+    #[arg(short = 'E', long)]
+    eval: bool,
 }
 
 fn add_expr_to_ninjafile(
@@ -61,15 +65,11 @@ fn run(args: Args) -> Result<(), VirtPath> {
     let ctx: LangContext = LangContext::new();
 
     if let Some(dir) = args.cd {
-        set_current_dir(&dir).or_else(|e| {
-            Err(Error::new(
+        set_current_dir(&dir).map_err(|e| {
+            Error::new(
                 ErrorType::Custom,
-                format!(
-                    "Error changing directory: {}\n\n{}",
-                    dir.display(),
-                    e.to_string()
-                ),
-            ))
+                format!("Error changing directory: {}\n\n{}", dir.display(), e),
+            )
         })?;
     }
 
@@ -78,29 +78,35 @@ fn run(args: Args) -> Result<(), VirtPath> {
     let main_file = VirtPath::virtualize(&input, "root");
     let expr: Expr<Value, VirtPath> = ctx.include(main_file)?;
 
-    let mut ninja_file = NinjaFile::new();
+    if args.eval {
+        expr.eval()?;
+        println!("{}", expr);
+        Ok(())
+    } else {
+        let mut ninja_file = NinjaFile::new();
 
-    add_expr_to_ninjafile(&expr, &mut ninja_file)?;
+        add_expr_to_ninjafile(&expr, &mut ninja_file)?;
 
-    let errors = ninja_file.validate();
-    if errors.len() > 0 {
-        return Err(Error::new(
-            ErrorType::Custom,
-            format!(
-                "Error generating {}:\n  {}",
-                output.display(),
-                errors.join("\n  ")
-            ),
-        ));
+        let errors = ninja_file.validate();
+        if !errors.is_empty() {
+            return Err(Error::new(
+                ErrorType::Custom,
+                format!(
+                    "Error generating {}:\n  {}",
+                    output.display(),
+                    errors.join("\n  ")
+                ),
+            ));
+        }
+
+        let output_file =
+            File::create(output).map_err(|e| Error::new(ErrorType::Custom, e.to_string()))?;
+        let mut writer = BufWriter::new(&output_file);
+        write!(writer, "{}", ninja_file)
+            .or_else(|e| Err(Error::new(ErrorType::Custom, e.to_string())))?;
+
+        Ok(())
     }
-
-    let output_file =
-        File::create(output).or_else(|e| Err(Error::new(ErrorType::Custom, e.to_string())))?;
-    let mut writer = BufWriter::new(&output_file);
-    write!(writer, "{}", ninja_file)
-        .or_else(|e| Err(Error::new(ErrorType::Custom, e.to_string())))?;
-
-    Ok(())
 }
 
 fn main() {

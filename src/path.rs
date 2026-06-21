@@ -38,7 +38,7 @@ impl Referrable for VirtPath {
         let fs_path = self.to_path_buf();
         let code = fs::read_to_string(fs_path.clone()).unwrap();
         let before = code[..left].to_string();
-        let lines = before.lines().into_iter().count();
+        let lines = before.lines().count();
         let column = before.lines().last().unwrap().len() + 1;
         write!(f, "{}:{}:{}", fs_path.display(), lines, column)
     }
@@ -98,7 +98,7 @@ impl VirtPath {
 
             if let Some(suffix) = self_path.strip_prefix(from_path.as_slice()) {
                 let mut new_parts = to.parts.clone();
-                let suffix = suffix.iter().map(|s| s.clone());
+                let suffix = suffix.iter().cloned();
                 new_parts.extend(suffix);
                 Some(VirtPath {
                     name: to.name.clone(),

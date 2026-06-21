@@ -53,7 +53,7 @@ pub struct PbBuildRule {
 
 impl Display for PbBuildRule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "BuildRule()")
+        write!(f, "BuildRule({})", self.name)
     }
 }
 
@@ -130,7 +130,24 @@ pub struct PbBuild {
 
 impl Display for PbBuild {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Build({})", self.rule)
+        write!(f, "{}(", self.rule.name)?;
+        for o in self.output.iter() {
+            if let NinjaArg::Path(op) = o {
+                write!(f, " {}", op.to_path_buf().display())?;
+            } else {
+                write!(f, "??")?;
+            }
+        }
+        write!(f, " <-",)?;
+        for i in self.input.iter() {
+            if let NinjaArg::Path(ip) = i {
+                write!(f, " {}", ip.to_path_buf().display())?;
+            } else {
+                write!(f, "??")?;
+            }
+        }
+        write!(f, " )")?;
+        Ok(())
     }
 }
 
@@ -173,6 +190,7 @@ fn value_to_ninja_arg(attr: &Value) -> NinjaArg {
                     Value::Int(value) => NinjaArg::Const(format!("{}", value)),
                     Value::String(value) => NinjaArg::Const(value.clone()),
                     Value::BuildVar(value) => NinjaArg::Var(value.clone()),
+                    Value::Path(path) => NinjaArg::Path(path.clone()),
                     _ => unreachable!(),
                 })
                 .collect(),
@@ -250,7 +268,7 @@ where
         let mut vars: Vec<(String, Vec<NinjaArg>)> = Vec::new();
         for (name, expr) in objargs.into_iter() {
             expr.resolve()?;
-            let attrs = match &(&*expr.inner_ref()).tok {
+            let attrs = match &expr.inner_ref().tok {
                 ExprType::List(exprs) => exprs.clone(),
                 ExprType::Value(value) => vec![ExprType::from(value.clone()).reref(loc.clone())],
                 _ => panic!("pb.rule function needs to return an object"),
@@ -259,7 +277,7 @@ where
                 .into_iter()
                 .map(|e| {
                     e.resolve()?;
-                    match &(&*e.inner_ref()).tok {
+                    match &e.inner_ref().tok {
                         ExprType::Value(attr) => Ok(value_to_ninja_arg(attr)),
                         _ => Err(Error::new(ErrorType::Type, "Rule attr is not a value")),
                     }
@@ -320,7 +338,7 @@ where
 
             let mut value: Vec<NinjaArg> = vec![];
 
-            let elems: Vec<Expr<Value, F>> = match &(&*build_arg.inner_ref()).tok {
+            let elems: Vec<Expr<Value, F>> = match &build_arg.inner_ref().tok {
                 ExprType::List(exprs) => Ok(exprs.clone()),
                 ExprType::Value(value) => {
                     Ok(vec![ExprType::from(value.clone()).reref(loc.clone())])
@@ -333,7 +351,7 @@ where
 
             for elem in elems.into_iter() {
                 elem.resolve()?;
-                value.push(match &(&*elem.inner_ref()).tok {
+                value.push(match &elem.inner_ref().tok {
                     ExprType::Value(attr) => {
                         if let Value::Build(build) = attr {
                             deps.push(build.clone());
@@ -477,6 +495,7 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbRetype {
 
 pub fn get_pb_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
     let pbset = ExprSet::from([
+        ("lock".into(), Expr::new_builtin(Rc::new(BuiltinPbLock))),
         ("rule".into(), Expr::new_builtin(Rc::new(BuiltinPbRule))),
         ("build".into(), Expr::new_builtin(Rc::new(BuiltinPbBuild))),
         (

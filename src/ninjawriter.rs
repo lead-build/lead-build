@@ -284,11 +284,7 @@ impl NinjaFile {
     }
 
     pub fn get_rule_ref(&mut self, id: usize) -> Option<NinjaRuleRef> {
-        if let Some(rule) = self.rules.get(&id) {
-            Some(rule.as_ref())
-        } else {
-            None
-        }
+        self.rules.get(&id).map(|rule| rule.as_ref())
     }
 
     pub fn validate(&self) -> Vec<String> {
