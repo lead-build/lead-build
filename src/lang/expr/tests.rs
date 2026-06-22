@@ -392,6 +392,21 @@ fn test_list_concat() {
 }
 
 #[test]
+fn test_tuple() {
+    assert_eq!(eval("let a=1; b=2; in (a,b)"), eval("(1,2)"));
+}
+
+#[test]
+fn test_tuple_single_item() {
+    assert_ne!(eval("(1,)"), eval("(1)"));
+}
+
+#[test]
+fn test_tuple_empty() {
+    assert_eq!(eval("(,)"), ExprType::Tuple(vec![]).builtin());
+}
+
+#[test]
 fn test_list_commas() {
     assert_eq!(eval("[1, 3, 5, 7,]"), eval("[1, 3, 5, 7]"));
 }

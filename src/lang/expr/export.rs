@@ -53,9 +53,21 @@ where
                 for item in items.iter() {
                     newline(indent + 1, f)?;
                     item.export(indent + 1, f)?;
+                    write!(f, ",")?;
                 }
                 newline(indent, f)?;
                 write!(f, "]")?;
+                Ok(())
+            }
+            ExprType::Tuple(items) => {
+                write!(f, "(")?;
+                for item in items.iter() {
+                    newline(indent + 1, f)?;
+                    item.export(indent + 1, f)?;
+                    write!(f, ",")?;
+                }
+                newline(indent, f)?;
+                write!(f, ")")?;
                 Ok(())
             }
             ExprType::AttrSel(val, attr) => {

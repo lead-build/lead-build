@@ -104,6 +104,7 @@ where
 {
     Object(ExprSet<T, F>),
     List(Vec<Expr<T, F>>),
+    Tuple(Vec<Expr<T, F>>),
     AttrSel(Expr<T, F>, String),
     Value(T),
     Var(String),
@@ -332,6 +333,7 @@ where
         while match &storref.tok {
             ExprType::Object(..) => false,
             ExprType::List(..) => false,
+            ExprType::Tuple(..) => false,
             ExprType::AttrSel(..) => true,
             ExprType::Value(..) => false,
             ExprType::Var(..) => true,
@@ -371,6 +373,18 @@ where
                         tok: ExprType::List(items),
                         ..
                     } => Ok(ExprType::List(
+                        items
+                            .iter()
+                            .map(|item| {
+                                ExprType::Bind(varspace.clone(), item.clone()).reref(item.get_loc())
+                            })
+                            .collect(),
+                    )
+                    .loc(loc)),
+                    ExprStorage {
+                        tok: ExprType::Tuple(items),
+                        ..
+                    } => Ok(ExprType::Tuple(
                         items
                             .iter()
                             .map(|item| {
@@ -768,6 +782,11 @@ where
                 }
             }
             ExprType::List(fields) => {
+                for ex in fields.iter() {
+                    ex.eval()?
+                }
+            }
+            ExprType::Tuple(fields) => {
                 for ex in fields.iter() {
                     ex.eval()?
                 }

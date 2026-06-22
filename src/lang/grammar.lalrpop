@@ -145,6 +145,7 @@ ExprListComp: Expr<T, F> = {
 ExprTerm: Expr<T, F> = {
     <Object>,
     <List>,
+    <Tuple>,
     <Value>,
     <Let>,
     <Bind>,
@@ -153,8 +154,11 @@ ExprTerm: Expr<T, F> = {
 };
 
 Object: Expr<T, F> = <l: @L> "{" <s:SetStmt*> "}" <r: @R> => ExprType::Object(s.into_iter().collect::<ExprSet<T, F>>()).toexpr(l, r, f);
-
 List: Expr<T, F> = <l: @L> "[" <s:Comma<Expr>> "]" <r: @R> => ExprType::List(s).toexpr(l, r, f);
+Tuple: Expr<T, F> = {
+    <l: @L> "(" <sa:Expr> "," <mut s:Comma<Expr>> ")" <r: @R> => { s.insert(0, sa); ExprType::Tuple(s).toexpr(l, r, f) },
+    <l: @L> "(" "," ")" <r: @R> => ExprType::Tuple(vec![]).toexpr(l, r, f)
+};
 
 Comma<T>: Vec<T> = { // (1)
     <mut v:(<T> ",")*> <e:T?> => match e { // (2)
