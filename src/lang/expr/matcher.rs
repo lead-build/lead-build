@@ -26,18 +26,16 @@ impl Matcher {
         T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
         F: Clone + Debug,
     {
-        expr.resolve()?;
-
-        let res = match self {
+        match self {
             Matcher::Alias(matcher, name) => {
                 let mut output = matcher.run(expr.clone())?;
                 // TODO: Check if overlapping keysets
                 output.insert(name.clone(), expr);
-                output
+                Ok(output)
             }
-            Matcher::DontCare => ExprSet::new(),
-            Matcher::Ident(name) => ExprSet::from([(name.to_string(), expr)]),
-            Matcher::Tuple(matchers) => match &expr.inner_ref().tok {
+            Matcher::DontCare => Ok(ExprSet::new()),
+            Matcher::Ident(name) => Ok(ExprSet::from([(name.to_string(), expr)])),
+            Matcher::Tuple(matchers) => match &expr.res_type()?.tok {
                 ExprType::Tuple(exprs) => {
                     if exprs.len() != matchers.len() {
                         Err(Error::new(
@@ -52,11 +50,11 @@ impl Matcher {
                         // TODO: Check if overlapping keysets
                         output.append(&mut subvars);
                     }
-                    output
+                    Ok(output)
                 }
-                _ => Err(Error::new(ErrorType::Type, "Expected tuple").reref(&expr.get_loc()))?,
+                _ => Err(Error::new(ErrorType::Type, "Expected tuple").reref(&expr.get_loc())),
             },
-            Matcher::Object(items, need_all) => match &expr.inner_ref().tok {
+            Matcher::Object(items, need_all) => match &expr.res_type()?.tok {
                 ExprType::Object(exprs) => {
                     let mut input = exprs.clone();
                     let mut output = ExprSet::new();
@@ -74,19 +72,17 @@ impl Matcher {
                         output.append(&mut subvars);
                     }
 
-                    if *need_all && (input.len() != 0) {
+                    if *need_all && !input.is_empty() {
                         Err(
                             Error::new(ErrorType::NoValue, "Extra fields passed to function")
                                 .reref(&expr.get_loc()),
                         )?
                     }
 
-                    output
+                    Ok(output)
                 }
-                _ => Err(Error::new(ErrorType::Type, "Expected tuple").reref(&expr.get_loc()))?,
+                _ => Err(Error::new(ErrorType::Type, "Expected tuple").reref(&expr.get_loc())),
             },
-        };
-
-        Ok(res)
+        }
     }
 }

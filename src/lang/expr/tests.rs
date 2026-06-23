@@ -76,6 +76,22 @@ fn test_let() {
 }
 
 #[test]
+fn test_let_pattern() {
+    assert_eq!(
+        eval(
+            r#"
+            let
+                x = { b = 32; a = 12; };
+                { a = newvar, ... } = x;
+            in
+                newvar
+            "#
+        ),
+        eval("12")
+    );
+}
+
+#[test]
 fn test_bind() {
     assert_eq!(
         eval("let x = 12; in (bind a = 21; b = 37; in a)"),

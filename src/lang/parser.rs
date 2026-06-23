@@ -328,8 +328,14 @@ mod tests {
         assert_eq!(
             ExprType::from(ExprType::Let(
                 vec![
-                    ("a".into(), ExprType::Value(TestValue::Int(21)).builtin()),
-                    ("b".into(), ExprType::Value(TestValue::Int(33)).builtin()),
+                    (
+                        Matcher::Ident("a".into()),
+                        ExprType::Value(TestValue::Int(21)).builtin()
+                    ),
+                    (
+                        Matcher::Ident("b".into()),
+                        ExprType::Value(TestValue::Int(33)).builtin()
+                    ),
                 ],
                 ExprType::Value(TestValue::Int(434)).builtin(),
             ))

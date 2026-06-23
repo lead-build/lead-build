@@ -70,7 +70,7 @@ where
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         writeln!(f, "{}{}", self.typ, self.msg)?;
-        if self.locs.len() > 0 {
+        if !self.locs.is_empty() {
             writeln!(f)?;
             writeln!(f, "Backtrace:")?;
             for (idx, loc) in self.locs.iter().enumerate() {

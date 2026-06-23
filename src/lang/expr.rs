@@ -121,7 +121,7 @@ where
     BinOp(ExprBinOp, Expr<T, F>, Expr<T, F>),
     FuncDef(Matcher, Expr<T, F>),
     FuncDefBuiltin(ExprBuiltinWrapper<T, F>),
-    Let(Vec<(String, Expr<T, F>)>, Expr<T, F>),
+    Let(Vec<(Matcher, Expr<T, F>)>, Expr<T, F>),
     Map(ExprMapType, Expr<T, F>, Expr<T, F>),
     FuncCall(Expr<T, F>, Expr<T, F>),
     Bind(ExprSet<T, F>, Expr<T, F>),
@@ -413,17 +413,20 @@ where
                         ..
                     } => {
                         let mut vars: ExprSet<T, F> = varspace;
-                        for (field_name, field_expr) in fields {
+                        for (field_matcher, field_expr) in fields {
                             let field_vars = vars.clone();
-                            vars.insert(
-                                field_name.clone(),
-                                ExprType::Bind(field_vars, field_expr.clone())
-                                    .reref(field_expr.get_loc()),
-                            )
-                            .map_or_else(
-                                || Ok(()),
-                                |_| Err(Error::new(ErrorType::DupKey, field_name.clone())),
-                            )?;
+                            for (name, value) in field_matcher
+                                .run(
+                                    ExprType::Bind(field_vars, field_expr.clone())
+                                        .reref(field_expr.get_loc()),
+                                )?
+                                .into_iter()
+                            {
+                                vars.insert(name.clone(), value).map_or_else(
+                                    || Ok(()),
+                                    |_| Err(Error::new(ErrorType::DupKey, name.clone())),
+                                )?;
+                            }
                         }
                         Ok(ExprType::Bind(vars, target_expr.clone()).loc(loc))
                     }
@@ -450,7 +453,7 @@ where
                         tok: ExprType::Map(typ, func, input),
                         ..
                     } => Ok(ExprType::Map(
-                        typ.clone(),
+                        *typ,
                         ExprType::Bind(varspace.clone(), func.clone()).reref(func.get_loc()),
                         ExprType::Bind(varspace.clone(), input.clone()).reref(input.get_loc()),
                     )
@@ -559,7 +562,7 @@ where
                         ExprStorage {
                             tok: ExprType::List(input_vec),
                             ..
-                        } => Ok(input_vec.iter().cloned().collect::<Vec<_>>()),
+                        } => Ok(input_vec.to_vec()),
                         ExprStorage {
                             tok: ExprType::Object(args),
                             ..
@@ -655,7 +658,7 @@ where
                     ExprStorage {
                         tok: ExprType::List(lhs_list),
                         loc: lhs_loc,
-                    } => match (op, &*rhs.res_type().map_err(|e| e.reref(&lhs_loc))?) {
+                    } => match (op, &*rhs.res_type().map_err(|e| e.reref(lhs_loc))?) {
                         (
                             ExprBinOp::Add,
                             ExprStorage {
@@ -676,7 +679,7 @@ where
                         ExprBinOp::LogAnd => match lhs_val.as_bool()? {
                             true => Ok(rhs
                                 .res_type()
-                                .map_err(|e| e.reref(&lhs_loc))?
+                                .map_err(|e| e.reref(lhs_loc))?
                                 .tok
                                 .clone()
                                 .loc(loc)),
@@ -686,7 +689,7 @@ where
                             true => Ok(ExprType::Value(lhs_val.new_from_bool(true)).loc(loc)),
                             false => Ok(rhs
                                 .res_type()
-                                .map_err(|e| e.reref(&lhs_loc))?
+                                .map_err(|e| e.reref(lhs_loc))?
                                 .tok
                                 .clone()
                                 .loc(loc)),
@@ -695,12 +698,12 @@ where
                             false => Ok(ExprType::Value(lhs_val.new_from_bool(true)).loc(loc)),
                             true => Ok(rhs
                                 .res_type()
-                                .map_err(|e| e.reref(&lhs_loc))?
+                                .map_err(|e| e.reref(lhs_loc))?
                                 .tok
                                 .clone()
                                 .loc(loc)),
                         },
-                        _ => match &*rhs.res_type().map_err(|e| e.reref(&lhs_loc))? {
+                        _ => match &*rhs.res_type().map_err(|e| e.reref(lhs_loc))? {
                             ExprStorage {
                                 tok: ExprType::Object(_rhs_obj),
                                 loc: rhs_loc,
@@ -782,7 +785,7 @@ where
 
     pub fn eval(&self) -> Result<(), F> {
         self.resolve()?;
-        match &(&*self.inner_ref()).tok {
+        match &self.inner_ref().tok {
             ExprType::Object(fields) => {
                 for (_, field) in fields.iter() {
                     field.eval()?;
@@ -806,7 +809,7 @@ where
     pub fn value(&self) -> Result<T, F> {
         // Since we expect a string, we only need to resolve one level.
         self.resolve()?;
-        match &(&*self.inner_ref()).tok {
+        match &self.inner_ref().tok {
             ExprType::Value(val) => Ok(val.clone()),
             _ => Err(Error::new(
                 ErrorType::NoValue,
@@ -818,7 +821,7 @@ where
     pub fn eval_string(&self) -> Result<String, F> {
         // Since we expect a string, we only need to resolve one level.
         self.resolve()?;
-        match &(&*self.inner_ref()).tok {
+        match &self.inner_ref().tok {
             ExprType::Value(val) => Ok(val.as_string()?),
             _ => Err(Error::new(
                 ErrorType::NoValue,
@@ -830,7 +833,7 @@ where
     pub fn get_item(&self, name: &str) -> Result<Expr<T, F>, F> {
         self.resolve()?;
         let node = self.inner_ref();
-        match &(&*node).tok {
+        match &node.tok {
             ExprType::Object(vars) => Ok(vars
                 .get(name)
                 .ok_or_else(|| Error::new(ErrorType::NoValue, format!("Invalid field '{}'", name)))?
@@ -859,6 +862,6 @@ where
                 .unwrap();
         }
 
-        ExprType::Object(exprset.into()).builtin()
+        ExprType::Object(exprset).builtin()
     }
 }

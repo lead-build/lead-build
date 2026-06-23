@@ -165,15 +165,14 @@ ExprObject: Expr<T, F> = <l: @L> "{" <s:AssignStmt*> "}" <r: @R> => ExprType::Ob
 ExprList: Expr<T, F> = <l: @L> "[" <s:Comma<Expr>> "]" <r: @R> => ExprType::List(s).toexpr(l, r, f);
 ExprTuple: Expr<T, F> = <l: @L> "(" <s:TupleComma<Expr>> ")" <r: @R> => ExprType::Tuple(s).toexpr(l, r, f);
 
-ExprLet: Expr<T, F> = <l: @L> "let" <s:SetStmt*> "in" <r: @R> <e:ExprTerm> => ExprType::Let(s, e).toexpr(l, r, f);
+ExprLet: Expr<T, F> = <l: @L> "let" <s:LetSetStmt*> "in" <r: @R> <e:ExprTerm> => ExprType::Let(s, e).toexpr(l, r, f);
 ExprBind: Expr<T, F> = <l: @L> "bind" <s:AssignStmt*> "in" <r: @R> <e:ExprTerm> => ExprType::Bind(s.into_iter().collect(), e).toexpr(l, r, f);
 
 
-// AssignStmt assigns a value to a variable, while SetStmt also applies pattern
+// AssignStmt assigns a value to a variable, while LetSetStmt also applies pattern
 // match, for use in a "let" keyword
 //
-// TODO: Implement pattern match
-SetStmt: (String, Expr<T, F>) = <i:Ident> "=" <e:Expr> ";" => (i, e);
+LetSetStmt: (Matcher, Expr<T, F>) = <m:Matcher> "=" <e:Expr> ";" => (m, e);
 AssignStmt: (String, Expr<T, F>) = <i:Ident> "=" <e:Expr> ";" => (i, e);
 
 ExprVar: Expr<T, F> = <l: @L> <s:Ident> <r: @R> => ExprType::Var(s).toexpr(l, r, f);
