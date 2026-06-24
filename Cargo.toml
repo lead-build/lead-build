@@ -6,7 +6,7 @@ license = "GPL-2.0-only"
 keywords = ["build", "ninja"]
 authors = ["Max Sikström <max@pengi.se>"]
 description = "Configuration language for declarative builds"
-documentation = "https://github.com/lead-build/lead-build"
+documentation = "https://lead-build.readthedocs.io/en/latest/"
 repository = "https://github.com/lead-build/lead-build"
 
 [lib]
