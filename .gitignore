@@ -32,3 +32,6 @@ build.ninja
 *.o
 app
 build
+
+/.venv
+

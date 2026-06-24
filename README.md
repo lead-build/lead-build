@@ -2,40 +2,9 @@
 
 Lead build is a declarative build system, providing modularity and reusability.
 
-## Declarative
+# Documentation
 
-A classic script defines a build as a sequence of operations to reach a goal.
-The concept of "sequence of operations" means it describes _how_ to produce the
-output, rather than what the _goal_.
-
-In a declarative build system like lead, the goal is in focus, how to combine
-it from its _dependencies_, and only its dependencies.
-
-In lead, each _intermediate_ node is treated as a varaible, not the file it
-produces, in contrast to "gnu make", which also means it can be prameterized
-into functions.
-
-## Modularity
-
-Since intermediate build steps can be paramterized, it is possible to make
-modules reusable for different targets.
-
-For example, a module producing an `.o` file, with some headers, can fully own
-its build description, but still be parameterized on which compiler to use,
-where the intermediate files should be placed, and even which compiler and
-architecture should be the goal, where the project using the library only needs
-to call the librarys lead `.pbb` script.
-
-## Reusability
-
-With the modularity and paramterization in mind, it is possible to define
-conventions of how to call libraries and shared code, to be able to reuse
-modules easily between projects, without needing to specify paths.
-
-# Name
-
-The goal is to make "Pure builds", and thus the tool `pb`. Which naturally means
-results the project "lead"
+Documentation can be found in [docs/index.md](docs/index.md)
 
 # Versioning
 
