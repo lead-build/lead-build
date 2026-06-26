@@ -4,3 +4,16 @@ site_description: Lead - Declarative build environment
 
 theme:
   name: readthedocs
+
+nav:
+  - Home: index.md
+  - Language:
+    - Introduction: language/00-introduction.md
+    - Core Language Concepts: language/01-basics.md
+    - Expressions: language/02-expressions.md
+    - Functions and Pattern Matching: language/03-functions.md
+    - List operations: language/04-list-operations.md
+    - Paths: language/05-paths.md
+  - Builds:
+    - Rules and Builds: builds/01-rules-and-builds.md
+    - Abstraction and libraries: builds/02-abstraction.md

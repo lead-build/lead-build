@@ -31,6 +31,17 @@ leadlib.lang.c.build {
 }
 ```
 
+## Installation
+
+Currently available as a rust crate.
+
+Run:
+```
+cargo install lead-build
+```
+
+Or check out the git repository at [https://github.com/lead-build/lead-build](https://github.com/lead-build/lead-build)
+
 ## Getting started
 
 Start with the language itself, then move on to functions, iteration, and paths.
@@ -47,7 +58,7 @@ Start with the language itself, then move on to functions, iteration, and paths.
 After the language, learn how to express build rules and produce build graphs:
 
 - [Rules and builds](builds/01-rules-and-builds.md)
-- [Ninja output](builds/02-ninja.md)
+- [Abstraction and libraries](builds/02-abstraction.md)
 
 ## Next step
 
