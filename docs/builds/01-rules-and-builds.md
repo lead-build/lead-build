@@ -7,8 +7,8 @@ Rules and builds are special value types in Lead. They are not ordinary literals
 A rule specifies how to transform inputs into outputs. Create a rule with the builtin constructor `pb.rule` by providing a function that declares the variables the rule uses (for example `|{input, output, ...}|`) and returns an object describing the rule template and metadata.
 
 Common fields returned by that object:
-- `command` — the command template, typically a list of command-line arguments (for example `["gcc", "-c", "-o", output, "-MMD", "-MF", "${output}.d", input]`) or a string template.
-- `description` — short, human-readable text shown in build output.
+- `command` - the command template, typically a list of command-line arguments (for example `["gcc", "-c", "-o", output, "-MMD", "-MF", "${output}.d", input]`) or a string template.
+- `description` - short, human-readable text shown in build output.
 - Optional fields such as `depfile`, `rspfile`, `pool`, etc., which control additional Ninja features.
 
 The variables named in the rule function become placeholders used when emitting the Ninja rule; pb maps those placeholders to Ninja variables (e.g. `$in` / `$out`) as part of the translation. pb also generates a stable, unique rule name derived from the rule's template.
@@ -40,9 +40,9 @@ A build is an instance of a rule applied to concrete inputs and outputs. In Lead
 
 When constructing a build, set the following fields:
 
-- `rule` — the rule object produced by `pb.rule`
-- `input` — the file or files needed by the build
-- `output` — the file or files produced by the build
+- `rule` - the rule object produced by `pb.rule`
+- `input` - the file or files needed by the build
+- `output` - the file or files produced by the build
 
 Minimal example:
 

@@ -17,3 +17,7 @@ nav:
   - Builds:
     - Rules and Builds: builds/01-rules-and-builds.md
     - Abstraction and libraries: builds/02-abstraction.md
+
+  - Reference:
+    - Language: reference/language.md
+    - Builtins: reference/builtins.md

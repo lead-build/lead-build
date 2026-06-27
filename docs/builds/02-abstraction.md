@@ -45,7 +45,7 @@ The above example shows that it can significantly reduce the amount of overhead 
 
 ## Creating library functions
 
-Remember the rewriting rules available in the [chapter about paths](../language/05-paths.md)? Put that togehter with how binding the first arguments of a function, as descibed in the [chapter about functions](../langauge/03-functions.md).
+Remember the rewriting rules available in the [chapter about paths](../language/05-paths.md)? Put that togehter with how binding the first arguments of a function, as descibed in the [chapter about functions](../language/03-functions.md).
 
 That results in the following code:
 
