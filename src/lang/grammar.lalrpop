@@ -64,17 +64,17 @@ ExprFuncDef: Expr<T, F> = {
 };
 
 ExprLogImpl: Expr<T, F> = {
-    <l: @L> <lhs:ExprLogOr> "->" <rhs:ExprLogOr> <r: @R> => ExprType::BinOp(ExprBinOp::LogImpl, lhs, rhs).toexpr(l, r, f),
+    <l: @L> <lhs:ExprLogImpl> "->" <rhs:ExprLogOr> <r: @R> => ExprType::BinOp(ExprBinOp::LogImpl, lhs, rhs).toexpr(l, r, f),
     <ExprLogOr>,
 };
 
 ExprLogOr: Expr<T, F> = {
-    <l: @L> <lhs:ExprLogAnd> "||" <rhs:ExprLogAnd> <r: @R> => ExprType::BinOp(ExprBinOp::LogOr, lhs, rhs).toexpr(l, r, f),
+    <l: @L> <lhs:ExprLogOr> "||" <rhs:ExprLogAnd> <r: @R> => ExprType::BinOp(ExprBinOp::LogOr, lhs, rhs).toexpr(l, r, f),
     <ExprLogAnd>,
 };
 
 ExprLogAnd: Expr<T, F> = {
-    <l: @L> <lhs:ExprEq> "&&" <rhs:ExprEq> <r: @R> => ExprType::BinOp(ExprBinOp::LogAnd, lhs, rhs).toexpr(l, r, f),
+    <l: @L> <lhs:ExprLogAnd> "&&" <rhs:ExprEq> <r: @R> => ExprType::BinOp(ExprBinOp::LogAnd, lhs, rhs).toexpr(l, r, f),
     <ExprEq>,
 };
 
