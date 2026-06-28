@@ -39,7 +39,11 @@ impl Referrable for VirtPath {
         let code = fs::read_to_string(fs_path.clone()).unwrap();
         let before = code[..left].to_string();
         let lines = before.lines().count();
-        let column = before.lines().last().unwrap().len() + 1;
+        let column = if let Some(last_line) = before.lines().last() {
+            last_line.len() + 1
+        } else {
+            0
+        };
         write!(f, "{}:{}:{}", fs_path.display(), lines, column)
     }
 }

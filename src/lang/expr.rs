@@ -557,7 +557,7 @@ where
                     ExprStorage {
                         tok: ExprType::FuncDefBuiltin(ExprBuiltinWrapper(_, funcrc)),
                         ..
-                    } => Ok(ExprType::Bind(ExprSet::new(), funcrc.as_ref().call(fargs)?).loc(loc)),
+                    } => Ok(ExprType::Bind(ExprSet::new(), funcrc.as_ref().call(fargs).map_err(|e| e.reref(&loc))?).loc(loc)),
                     ExprStorage { tok: _, loc: floc } => Err(Error::new(
                         ErrorType::Scope,
                         format!("called func, but it's a {}", fexpr),
