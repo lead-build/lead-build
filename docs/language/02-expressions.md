@@ -69,6 +69,23 @@ Each field in a composite type may also be an expression. For example:
 
 Just a note: paths in the example above are just strings to illustrate the concept of expressions. In reality, paths use their own type, which will be introduced later.
 
+## Switch expressions
+
+Lead-build also supports a `switch` expression for choosing between a small number of alternatives. The first matching case is used, and an optional `_ => ...` case can provide a default when nothing matches.
+
+```lead
+let
+  arch = "riscv64";
+in
+  switch arch {
+    "x86_64" => "desktop";
+    "riscv64" => "embedded";
+    _ => "unknown";
+  }
+```
+
+Each case is written as `matcher => expression;`. Matchers are compared against the value after `switch` in order, and the first equal case wins.
+
 ## Strings
 
 Strings are written with double quotes. They are a basic literal type and can be combined with other strings using `+` for concatenation.

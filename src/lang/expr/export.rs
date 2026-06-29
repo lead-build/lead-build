@@ -170,6 +170,27 @@ where
                 expr.export(indent + 1, f)?;
                 Ok(())
             }
+            ExprType::Switch(expr, cases, default) => {
+                write!(f, "match ")?;
+                expr.export(indent + 1, f)?;
+                write!(f, " {{")?;
+                for (matcher, case_expr) in cases {
+                    newline(indent + 2, f)?;
+                    matcher.export(indent + 2, f)?;
+                    write!(f, " => ")?;
+                    case_expr.export(indent + 2, f)?;
+                    write!(f, ";")?;
+                }
+                if let Some(default_expr) = default {
+                    newline(indent + 2, f)?;
+                    write!(f, "_ => ")?;
+                    default_expr.export(indent + 2, f)?;
+                    write!(f, ";")?;
+                }
+                newline(indent + 1, f)?;
+                write!(f, "}}")?;
+                Ok(())
+            }
             ExprType::FuncDefBuiltin(ExprBuiltinWrapper(name, _)) => {
                 write!(f, "<builtin {}>", name)
             }

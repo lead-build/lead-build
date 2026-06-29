@@ -716,3 +716,67 @@ fn test_builtin_func_laziness_no_calls() {
     assert_eq!(expr, eval("{}"));
     assert_eq!(counter.get(), 0);
 }
+
+#[test]
+fn test_switch_value() {
+    assert_eq!(
+        eval(
+            r#"
+            switch 234 {
+                123 => 1;
+                234 => 2;
+            }
+            "#
+        ),
+        eval("2")
+    );
+}
+
+#[test]
+fn test_switch_variable() {
+    assert_eq!(
+        eval(
+            r#"
+            let a = 234; in
+            switch 234 {
+                123 => 1;
+                a => 2;
+            }
+            "#
+        ),
+        eval("2")
+    );
+}
+
+#[test]
+fn test_switch_condition() {
+    assert_eq!(
+        eval(
+            r#"
+            let a = 123; in
+            switch true {
+                a == 323 => 1;
+                a == 123 => 2;
+                true => 3;
+            }
+            "#
+        ),
+        eval("2")
+    );
+}
+
+#[test]
+fn test_switch_none() {
+    assert_eq!(
+        eval(
+            r#"
+            switch 17 {
+                1 => 1;
+                2 => 2;
+                _ => 3;
+            }
+            "#
+        ),
+        eval("3")
+    );
+}

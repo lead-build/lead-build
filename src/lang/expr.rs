@@ -126,6 +126,11 @@ where
     Map(ExprMapType, Expr<T, F>, Expr<T, F>),
     FuncCall(Expr<T, F>, Expr<T, F>),
     Bind(ExprSet<T, F>, Expr<T, F>),
+    Switch(
+        Expr<T, F>,
+        Vec<(Expr<T, F>, Expr<T, F>)>,
+        Option<Expr<T, F>>,
+    ),
     #[default]
     Null,
 }
@@ -355,6 +360,7 @@ where
             ExprType::Map(..) => true,
             ExprType::FuncCall(..) => true,
             ExprType::Bind(..) => true,
+            ExprType::Switch(..) => true,
             ExprType::Null => false,
         } {
             storref = match storref {
@@ -522,6 +528,25 @@ where
                         ..
                     } => Ok(ExprType::Bind(inner_vars.clone(), inner_expr.clone()).loc(loc)),
                     ExprStorage {
+                        tok: ExprType::Switch(inner_expr, inner_cases, inner_default),
+                        ..
+                    } => Ok(ExprType::Switch(
+                        ExprType::Bind(varspace.clone(), inner_expr.clone()).reref(loc.clone()),
+                        inner_cases
+                            .iter()
+                            .map(|(m, e)| {
+                                (
+                                    ExprType::Bind(varspace.clone(), m.clone()).reref(m.get_loc()),
+                                    ExprType::Bind(varspace.clone(), e.clone()).reref(e.get_loc()),
+                                )
+                            })
+                            .collect(),
+                        inner_default.as_ref().map(|e| {
+                            ExprType::Bind(varspace.clone(), e.clone()).reref(e.get_loc())
+                        }),
+                    )
+                    .loc(loc)),
+                    ExprStorage {
                         tok: ExprType::Null,
                         ..
                     } => panic!("Found null in expr tree"),
@@ -557,7 +582,11 @@ where
                     ExprStorage {
                         tok: ExprType::FuncDefBuiltin(ExprBuiltinWrapper(_, funcrc)),
                         ..
-                    } => Ok(ExprType::Bind(ExprSet::new(), funcrc.as_ref().call(fargs).map_err(|e| e.reref(&loc))?).loc(loc)),
+                    } => Ok(ExprType::Bind(
+                        ExprSet::new(),
+                        funcrc.as_ref().call(fargs).map_err(|e| e.reref(&loc))?,
+                    )
+                    .loc(loc)),
                     ExprStorage { tok: _, loc: floc } => Err(Error::new(
                         ErrorType::Scope,
                         format!("called func, but it's a {}", fexpr),
@@ -804,6 +833,51 @@ where
                     )
                     .reref(&loc)),
                 },
+                ExprStorage {
+                    tok: ExprType::Switch(ref_expr, cases, default_case),
+                    loc,
+                } => {
+                    let outcome = cases
+                        .iter()
+                        .map(|(matcher, outcome)| {
+                            let compare =
+                                ExprType::BinOp(ExprBinOp::Eq, matcher.clone(), ref_expr.clone())
+                                    .reref(matcher.get_loc());
+                            if let Some(is_match) = compare
+                                .res_type()
+                                .map_err(|e| e.reref(&loc))?
+                                .tok
+                                .try_as_value_ref()
+                            {
+                                let found = is_match.as_bool().map_err(|e| e.reref(&loc))?;
+                                if found {
+                                    Ok(Some(outcome.clone()))
+                                } else {
+                                    Ok(None)
+                                }
+                            } else {
+                                Ok(None)
+                            }
+                        })
+                        .collect::<Result<Vec<Option<Expr<T, F>>>, F>>()?
+                        .into_iter()
+                        .flatten()
+                        .next();
+
+                    if let Some(outcome_expr) = outcome {
+                        Ok(outcome_expr.inner_ref().tok.clone().loc(loc))
+                    } else {
+                        if let Some(default_expr) = default_case {
+                            Ok(default_expr.inner_ref().tok.clone().loc(loc))
+                        } else {
+                            Err(Error::new(
+                                ErrorType::Eval,
+                                format!("No matching case for {}", ref_expr),
+                            )
+                            .reref(&loc))
+                        }
+                    }
+                }
                 ExprStorage {
                     tok: ExprType::Null,
                     loc: _loc,

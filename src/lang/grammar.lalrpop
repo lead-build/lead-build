@@ -145,11 +145,21 @@ ExprAttrSel: Expr<T, F> = {
 };
 
 ExprListComp: Expr<T, F> = {
-    <l: @L> "(" <func:Expr> "<-" <init:Expr> ".." <list:ExprTerm> ")" <r: @R> => ExprType::Fold(func, init, list).toexpr(l, r, f),
-    <l: @L> "[" <func:Expr> "<-" <list:ExprTerm> "]" <r: @R> => ExprType::Map(ExprMapType::List, func, list).toexpr(l, r, f),
-    <l: @L> "{" <func:Expr> "<-" <list:ExprTerm> "}" <r: @R> => ExprType::Map(ExprMapType::Object, func, list).toexpr(l, r, f),
-    <ExprTerm>
+    <l: @L> "(" <func:Expr> "<-" <init:Expr> ".." <list:ExprSwitch> ")" <r: @R> => ExprType::Fold(func, init, list).toexpr(l, r, f),
+    <l: @L> "[" <func:Expr> "<-" <list:ExprSwitch> "]" <r: @R> => ExprType::Map(ExprMapType::List, func, list).toexpr(l, r, f),
+    <l: @L> "{" <func:Expr> "<-" <list:ExprSwitch> "}" <r: @R> => ExprType::Map(ExprMapType::Object, func, list).toexpr(l, r, f),
+    <ExprSwitch>
 };
+
+ExprSwitch: Expr<T, F> = {
+    <l: @L> "switch"
+        <e:ExprTerm> "{"
+            <cases:(<Expr> "=>" <Expr> ";")*>
+            <default:("_" "=>" <Expr> ";")?>
+        "}" <r: @R>
+    => ExprType::Switch(e, cases, default).toexpr(l, r, f),
+    <ExprTerm>
+}
 
 ExprTerm: Expr<T, F> = {
     <ExprObject>,
@@ -166,8 +176,8 @@ ExprObject: Expr<T, F> = <l: @L> "{" <s:AssignStmt*> "}" <r: @R> => ExprType::Ob
 ExprList: Expr<T, F> = <l: @L> "[" <s:Comma<Expr>> "]" <r: @R> => ExprType::List(s).toexpr(l, r, f);
 ExprTuple: Expr<T, F> = <l: @L> "(" <s:TupleComma<Expr>> ")" <r: @R> => ExprType::Tuple(s).toexpr(l, r, f);
 
-ExprLet: Expr<T, F> = <l: @L> "let" <s:LetSetStmt*> "in" <r: @R> <e:ExprTerm> => ExprType::Let(s, e).toexpr(l, r, f);
-ExprBind: Expr<T, F> = <l: @L> "bind" <s:AssignStmt*> "in" <r: @R> <e:ExprTerm> => ExprType::Bind(s.into_iter().collect(), e).toexpr(l, r, f);
+ExprLet: Expr<T, F> = <l: @L> "let" <s:LetSetStmt*> "in" <r: @R> <e:ExprListComp> => ExprType::Let(s, e).toexpr(l, r, f);
+ExprBind: Expr<T, F> = <l: @L> "bind" <s:AssignStmt*> "in" <r: @R> <e:ExprListComp> => ExprType::Bind(s.into_iter().collect(), e).toexpr(l, r, f);
 
 
 // AssignStmt assigns a value to a variable, while LetSetStmt also applies pattern

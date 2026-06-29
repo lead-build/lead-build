@@ -124,6 +124,7 @@ Following operators are available:
 | `( func <- init .. list )` | 16         | list fold                         |
 | `[ func <- iterable ]`     | 16         | list map                          |
 | `{ func <- iterable }`     | 16         | object map                        |
+| `switch expr { ... }`      | 16         | switch expression                  |
 
 
 ### Function defintion
@@ -170,3 +171,26 @@ This means four combinations:
 | List   | Object | `{ |input_val| (output_key, output_value) <- source_list }`                |
 | Object | List   | `[ |(input_key, input_val)| output_val <- input_object ]`                  |
 | Object | Object | `{ |(input_key, input_val)| (output_key, output_value) <- source_object }` |
+
+### Switch expressions
+
+Switch expressions choose the first matching case from a series of value comparisons.
+
+```lead
+switch arch {
+  "x86_64" => "desktop";
+  "riscv64" => "embedded";
+  _ => "unknown";
+}
+```
+
+The general shape is:
+
+```lead
+switch expr {
+  matcher => result;
+  _ => default_result;
+}
+```
+
+Cases are checked in order. The first matcher equal to the switch value wins, and the optional `_` case acts as a default when no case matches.
