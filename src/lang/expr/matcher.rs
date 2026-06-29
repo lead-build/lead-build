@@ -5,6 +5,8 @@ use std::{
 
 use super::{Error, ErrorType, Exportable, Expr, ExprOps, ExprSet, ExprType, Result};
 
+pub type ObjectMatch<T, F> = (String, Matcher<T, F>, Option<Expr<T, F>>);
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Matcher<T, F>
 where
@@ -15,7 +17,7 @@ where
     DontCare,
     Ident(String),
     Tuple(Vec<Matcher<T, F>>),
-    Object(Vec<(String, Matcher<T, F>, Option<Expr<T, F>>)>, bool),
+    Object(Vec<ObjectMatch<T, F>>, bool),
 }
 
 impl<T, F> Display for Matcher<T, F>

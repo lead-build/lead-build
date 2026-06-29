@@ -1,0 +1,15 @@
+|{ cwd, pb, include, ... }|
+let
+    objdir = cwd / "obj";
+
+    lib = include (cwd / "lib.pbb");
+in
+[
+    lib.c_build { output = cwd / "app"; srcdir = cwd / "src"; objdir = cwd / "build"; sources = [ cwd / "src" / "main.c",
+    cwd / "src" / "main.c",
+    cwd / "src" / "main.c",
+    cwd / "src" / "main.c",
+    cwd / "src" / "main.c",
+    cwd / "src" / "main.c",
+    cwd / "src" / "main.c" ]; }
+]

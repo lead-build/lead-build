@@ -1,10 +1,18 @@
 use super::error::{Error, ErrorType, Result};
 use super::expr::{
     Exportable, Expr, ExprBinOp, ExprMapType, ExprOps, ExprSet, ExprType, ExprUnOp,
-    matcher::Matcher,
+    matcher::{Matcher, ObjectMatch},
 };
 use super::stringdecode::{StringType, string_decode};
 use std::fmt::{Debug, Display};
+
+// Types just to reduce the complexity within the grammar file. Those are only
+// there to silence out clippy for now...
+
+type TypeSwitchCase<T, F> = (Expr<T, F>, Expr<T, F>);
+type TypeLetSetStmt<T, F> = (Matcher<T, F>, Expr<T, F>);
+type TypeAssignStmt<T, F> = (String, Expr<T, F>);
+
 lalrpop_mod!(grammar, "lang/grammar.rs");
 
 use lalrpop_util::lalrpop_mod;

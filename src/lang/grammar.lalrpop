@@ -10,11 +10,18 @@ use super::{
     ParsableValue,
     Display,
     Matcher,
+    ObjectMatch,
+    TypeSwitchCase,
+    TypeLetSetStmt,
+    TypeAssignStmt,
     unpack_str,
     unpack_int,
     unpack_bool
 };
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    marker::PhantomData,
+};
 
 grammar<T, F>(f: &F)
 where
@@ -154,12 +161,17 @@ ExprListComp: Expr<T, F> = {
 ExprSwitch: Expr<T, F> = {
     <l: @L> "switch"
         <e:ExprTerm> "{"
-            <cases:(<Expr> "=>" <Expr> ";")*>
+            <cases:SwitchCase*>
             <default:("_" "=>" <Expr> ";")?>
         "}" <r: @R>
     => ExprType::Switch(e, cases, default).toexpr(l, r, f),
     <ExprTerm>
 }
+
+SwitchCase: TypeSwitchCase<T, F> = {
+    <e:Expr> "=>" <r:Expr> ";" => (e, r),
+};
+
 
 ExprTerm: Expr<T, F> = {
     <ExprObject>,
@@ -183,8 +195,8 @@ ExprBind: Expr<T, F> = <l: @L> "bind" <s:AssignStmt*> "in" <r: @R> <e:ExprListCo
 // AssignStmt assigns a value to a variable, while LetSetStmt also applies pattern
 // match, for use in a "let" keyword
 //
-LetSetStmt: (Matcher<T, F>, Expr<T, F>) = <m:Matcher> "=" <e:Expr> ";" => (m, e);
-AssignStmt: (String, Expr<T, F>) = <i:Ident> "=" <e:Expr> ";" => (i, e);
+LetSetStmt: TypeLetSetStmt<T, F> = <m:Matcher> "=" <e:Expr> ";" => (m, e);
+AssignStmt: TypeAssignStmt<T, F> = <i:Ident> "=" <e:Expr> ";" => (i, e);
 
 ExprVar: Expr<T, F> = <l: @L> <s:Ident> <r: @R> => ExprType::Var(s).toexpr(l, r, f);
 
@@ -212,7 +224,7 @@ MatcherInner: Matcher<T, F> = {
     "{" <v:(<MatcherVar> ",")*> "..." "}" => Matcher::Object(v, false),
 };
 
-MatcherVar: (String, Matcher<T, F>, Option<Expr<T, F>>) = {
+MatcherVar: ObjectMatch<T, F> = {
     <i:Ident> => (i.clone(), Matcher::Ident(i), None),
     <i:Ident> "=" <m:Matcher> => (i, m, None),
     <i:Ident> "?" <d:ExprTerm> => (i.clone(), Matcher::Ident(i), Some(d)),
@@ -223,7 +235,10 @@ MatcherVar: (String, Matcher<T, F>, Option<Expr<T, F>>) = {
 // Terminals
 //
 
-Ident: String = <s:r"[a-zA-Z][a-zA-Z0-9_]*"> => s.to_string();
+Ident: String = <s:r"[a-zA-Z][a-zA-Z0-9_]*"> => {
+    let _ : PhantomData<T> = PhantomData;
+    s.to_string()
+};
 ExprValue: Expr<T, F> = {
     <l: @L> "true" <r: @R> => unpack_bool(true).toexpr(l, r, f),
     <l: @L> "false" <r: @R> => unpack_bool(false).toexpr(l, r, f),

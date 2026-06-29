@@ -231,7 +231,7 @@ where
             match_items
                 .iter()
                 .map(|(name, _, default)| {
-                    if let Some(_) = default {
+                    if default.is_some() {
                         return Err(Error::new(
                             ErrorType::Type,
                             format!("pb.rule does not support default values for {}", name),
