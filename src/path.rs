@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::lang::Referrable;
+use crate::lang::{Error, ErrorType, Referrable, Result};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct VirtPath {
@@ -55,22 +55,71 @@ impl VirtPath {
         res
     }
 
-    pub fn parent(self) -> Option<VirtPath> {
+    pub fn parent<F: Clone>(self) -> Result<VirtPath, F> {
         let mut out = self;
-        out.parts.pop().map(|_| out)
+        let res = out.parts.pop();
+        match res {
+            Some(_) => Ok(out),
+            None => Err(Error::new(
+                ErrorType::Custom,
+                format!("Parent of {} locked", out),
+            )),
+        }
     }
 
-    pub fn step(self, elem: impl ToString) -> Option<VirtPath> {
+    pub fn step<F: Clone>(self, elem: impl ToString) -> Result<VirtPath, F> {
         let mut out: VirtPath = self;
         let elem = elem.to_string();
         match elem.as_str() {
-            ".." => out.parent(),
-            "." => Some(out),
+            ".." => Ok(out.parent()?),
+            "." => Ok(out),
             _ => {
                 out.parts.push(elem);
-                Some(out)
+                Ok(out)
             }
         }
+    }
+
+    pub fn apply<F: Clone>(&self, ext: &str) -> Result<VirtPath, F> {
+        let mut out = self.clone();
+        for part in ext.split("/") {
+            if !part.is_empty() {
+                let last = out.parts.last_mut().ok_or_else(|| {
+                    Error::new(
+                        ErrorType::Custom,
+                        format!(
+                            "can't add suffix to path without unlocked elements: {}",
+                            self
+                        ),
+                    )
+                })?;
+                last.push_str(part);
+            }
+            out.parts.push("".into());
+        }
+        let _ = out.parts.pop();
+        Ok(out)
+    }
+
+    pub fn remove_suffix<F: Clone>(&self, suffix: &str) -> Result<VirtPath, F> {
+        let mut out = self.clone();
+        let last = out.parts.pop().ok_or_else(|| {
+            Error::new(
+                ErrorType::Custom,
+                format!(
+                    "can't remove suffix from path without unlocked elements: {}",
+                    out
+                ),
+            )
+        })?;
+        let last_prefix = last.strip_suffix(suffix).ok_or_else(|| {
+            Error::new(
+                ErrorType::Custom,
+                format!("Invalid suffix {} for path {}", suffix, self),
+            )
+        })?;
+        out.parts.push(last_prefix.to_string());
+        Ok(out)
     }
 
     pub fn to_path_buf(&self) -> PathBuf {
@@ -116,14 +165,6 @@ impl VirtPath {
         }
     }
 
-    pub fn retype(self, from: &str, to: &str) -> Option<VirtPath> {
-        let mut out = self;
-        let last = out.parts.pop()?;
-        let last_prefix = last.strip_suffix(from)?;
-        out.parts.push(last_prefix.to_string() + to);
-        Some(out)
-    }
-
     #[cfg(test)]
     pub fn new(name: impl ToString) -> VirtPath {
         VirtPath {
@@ -139,43 +180,45 @@ impl VirtPath {
 mod tests {
     use super::*;
 
+    type TestF = i32;
+
     #[test]
     fn test_step_down() {
         let path = VirtPath::new("root");
         assert_eq!(path.to_string().as_str(), "[root]/$");
-        let path = path.step("test").unwrap();
+        let path = path.step::<TestF>("test").unwrap();
         assert_eq!(path.to_string().as_str(), "[root]/$/test");
-        let path = path.step("b").unwrap();
+        let path = path.step::<TestF>("b").unwrap();
         assert_eq!(path.to_string().as_str(), "[root]/$/test/b");
-        let path = path.step("..").unwrap();
+        let path = path.step::<TestF>("..").unwrap();
         assert_eq!(path.to_string().as_str(), "[root]/$/test");
-        let path = path.step(".").unwrap();
+        let path = path.step::<TestF>(".").unwrap();
         assert_eq!(path.to_string().as_str(), "[root]/$/test");
-        let path = path.step("..").unwrap();
+        let path = path.step::<TestF>("..").unwrap();
         assert_eq!(path.to_string().as_str(), "[root]/$");
-        assert!(path.step("..").is_none());
+        assert!(path.step::<TestF>("..").is_err());
     }
 
     #[test]
     fn test_lock() {
         let path = VirtPath::new("root");
         assert_eq!(path.to_string().as_str(), "[root]/$");
-        let path = path.step("test").unwrap();
+        let path = path.step::<TestF>("test").unwrap();
         assert_eq!(path.to_string().as_str(), "[root]/$/test");
         let path = path.lock();
         assert_eq!(path.to_string().as_str(), "[root]/test/$");
-        assert!(path.step("..").is_none());
+        assert!(path.step::<TestF>("..").is_err());
     }
 
     #[test]
     fn test_relock() {
         let path = VirtPath::new("root");
         assert_eq!(path.to_string().as_str(), "[root]/$");
-        let path = path.step("test").unwrap();
+        let path = path.step::<TestF>("test").unwrap();
         assert_eq!(path.to_string().as_str(), "[root]/$/test");
         let path = path.lock();
         assert_eq!(path.to_string().as_str(), "[root]/test/$");
-        let path = path.step("b").unwrap();
+        let path = path.step::<TestF>("b").unwrap();
         assert_eq!(path.to_string().as_str(), "[root]/test/$/b");
         let path = path.lock();
         assert_eq!(path.to_string().as_str(), "[root]/test/b/$");
@@ -195,9 +238,9 @@ mod tests {
     fn test_path_path_eq() {
         let base = VirtPath::new("a");
         let cur = VirtPath::new("a");
-        let cur = cur.step("test").unwrap();
+        let cur = cur.step::<TestF>("test").unwrap();
         assert_ne!(base, cur);
-        let cur = cur.step("..").unwrap();
+        let cur = cur.step::<TestF>("..").unwrap();
         assert_eq!(base, cur);
     }
 
@@ -213,7 +256,7 @@ mod tests {
 
         assert_eq!(
             VirtPath::virtualize(&virtpath_a, "a")
-                .step("hej")
+                .step::<TestF>("hej")
                 .unwrap()
                 .to_path_buf(),
             PathBuf::from("./test_a/hej")
@@ -221,7 +264,7 @@ mod tests {
 
         assert_eq!(
             VirtPath::virtualize(&virtpath_a, "a")
-                .step("hej")
+                .step::<TestF>("hej")
                 .unwrap()
                 .lock()
                 .to_path_buf(),
@@ -230,9 +273,9 @@ mod tests {
 
         assert_eq!(
             VirtPath::virtualize(&virtpath_b, "b")
-                .step("hej")
+                .step::<TestF>("hej")
                 .unwrap()
-                .parent()
+                .parent::<TestF>()
                 .unwrap()
                 .to_path_buf(),
             PathBuf::from("./test_b")
@@ -259,20 +302,20 @@ mod tests {
     fn test_translate() {
         let src_dir = VirtPath::virtualize(&PathBuf::from("./src"), "src");
         let build_dir = VirtPath::virtualize(&PathBuf::from("./build"), "build")
-            .step("subproj")
+            .step::<TestF>("subproj")
             .unwrap();
 
         let src_file = src_dir
             .clone()
-            .step("lib")
+            .step::<TestF>("lib")
             .unwrap()
-            .step("source.c")
+            .step::<TestF>("source.c")
             .unwrap();
         let exp_obj_file = build_dir
             .clone()
-            .step("lib")
+            .step::<TestF>("lib")
             .unwrap()
-            .step("source.c")
+            .step::<TestF>("source.c")
             .unwrap();
 
         assert_eq!(src_file.translate(&src_dir, &build_dir), Some(exp_obj_file));
@@ -282,50 +325,66 @@ mod tests {
     fn test_translate_invalid_root() {
         let src_dir = VirtPath::virtualize(&PathBuf::from("./src"), "src");
         let build_dir = VirtPath::virtualize(&PathBuf::from("./build"), "build")
-            .step("subproj")
+            .step::<TestF>("subproj")
             .unwrap();
 
-        let src_subdir = src_dir.clone().step("otherdir").unwrap();
+        let src_subdir = src_dir.clone().step::<TestF>("otherdir").unwrap();
 
         let src_file = src_dir
             .clone()
-            .step("lib")
+            .step::<TestF>("lib")
             .unwrap()
-            .step("source.c")
+            .step::<TestF>("source.c")
             .unwrap();
 
         assert_eq!(src_file.translate(&src_subdir, &build_dir), None);
     }
 
     #[test]
-    fn test_retype() {
+    fn test_apply_parts() {
         assert_eq!(
             VirtPath::new("root")
-                .step("test")
+                .step::<TestF>("test")
                 .unwrap()
-                .step("src.c")
-                .unwrap()
-                .retype(".c", ".o"),
-            Some(
-                VirtPath::new("root")
-                    .step("test")
-                    .unwrap()
-                    .step("src.o")
-                    .unwrap()
-            )
-        );
+                .step::<TestF>("src.s")
+                .unwrap(),
+            VirtPath::new("root").apply::<i32>("/test/src.s").unwrap()
+        )
     }
 
     #[test]
-    fn test_retype_invalid() {
+    fn test_apply_suffix() {
         assert_eq!(
+            VirtPath::new("root").step::<TestF>("test.o").unwrap(),
             VirtPath::new("root")
-                .step("test")
+                .step::<TestF>("test")
                 .unwrap()
-                .step("src.s")
+                .apply::<TestF>(".o")
                 .unwrap()
-                .retype(".c", ".o"),
-            None
-        );
+        )
+    }
+
+    #[test]
+    fn test_remove_suffix() {
+        let base: VirtPath = VirtPath::new("root");
+        assert_eq!(
+            base.clone()
+                .step::<TestF>("src.s")
+                .unwrap()
+                .remove_suffix::<TestF>(".s")
+                .unwrap(),
+            base.clone().step::<TestF>("src").unwrap()
+        )
+    }
+
+    #[test]
+    fn test_remove_suffix_fail() {
+        let base: VirtPath = VirtPath::new("root");
+        assert!(
+            base.step::<TestF>("src.s")
+                .unwrap()
+                .remove_suffix::<TestF>(".c")
+                .is_err()
+        )
     }
 }

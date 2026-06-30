@@ -455,52 +455,6 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbTranslate {
     }
 }
 
-#[derive(Debug)]
-pub struct BuiltinPbRetype;
-
-impl ExprBuiltin<Value, VirtPath> for BuiltinPbRetype {
-    fn get_name(&self) -> String {
-        "retype".into()
-    }
-
-    fn call(&self, arg: Expr<Value, VirtPath>) -> Result<Expr<Value, VirtPath>, VirtPath> {
-        arg.resolve()?;
-        let loc = arg.get_loc();
-
-        let input = arg.get_item("input")?;
-        let from = arg.get_item("from")?;
-        let to = arg.get_item("to")?;
-        // TODO: Verify no more args are available
-
-        let input = input
-            .value()?
-            .try_as_path()
-            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&input.get_loc()))?;
-        let from = from
-            .value()?
-            .try_as_string()
-            .ok_or_else(|| Error::new(ErrorType::Type, "expected string").reref(&from.get_loc()))?;
-        let to = to
-            .value()?
-            .try_as_string()
-            .ok_or_else(|| Error::new(ErrorType::Type, "expected string").reref(&to.get_loc()))?;
-
-        // Clone here only to allow error message
-        let output = input
-            .clone()
-            .retype(from.as_str(), to.as_str())
-            .ok_or_else(|| {
-                Error::new(
-                    ErrorType::Type,
-                    format!("Can't change suffix on {} from {} to {}", input, from, to),
-                )
-                .reref(&loc)
-            })?;
-
-        Ok(ExprType::Value(Value::Path(output)).reref(loc))
-    }
-}
-
 pub fn get_pb_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
     let pbset = ExprSet::from([
         ("lock".into(), Expr::new_builtin(Rc::new(BuiltinPbLock))),
@@ -510,7 +464,6 @@ pub fn get_pb_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
             "translate".into(),
             Expr::new_builtin(Rc::new(BuiltinPbTranslate)),
         ),
-        ("retype".into(), Expr::new_builtin(Rc::new(BuiltinPbRetype))),
     ]);
     Ok(ExprType::Object(pbset).builtin())
 }

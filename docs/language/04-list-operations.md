@@ -72,7 +72,7 @@ The general form is:
 For example:
 
 ```lead
-(|prev field| (prev * 10 + field) <- 7 .. [1, 2, 3])
+(|prev field| prev * 10 + field <- 7 .. [1, 2, 3])
 ```
 
 This evaluates as:

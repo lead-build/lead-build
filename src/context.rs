@@ -58,7 +58,7 @@ impl LangContext {
     }
 
     fn setup_file_args(&self, file: VirtPath) -> Result<Expr<Value, VirtPath>, VirtPath> {
-        let cwd = file.parent().unwrap().lock();
+        let cwd = file.parent()?.lock();
         let mut builtins = self.0.builtins.clone();
         builtins.insert("cwd".into(), ExprType::from(Value::Path(cwd)).builtin());
         builtins.insert(

@@ -320,6 +320,8 @@ impl NinjaFile {
 mod tests {
     use super::*;
 
+    type TestF = i32;
+
     macro_rules! lines (
         ($line:expr) => ($line);
         ($line:expr, $($rest:expr),+) => (concat!($line, "\n", lines!($($rest),+)));
@@ -494,10 +496,13 @@ mod tests {
         let rule2 = file.rule(3, "test").as_ref();
 
         file.build(4, &rule1)
-            .output(NinjaArg::Path(VirtPath::new("root").step("out1").unwrap()))
+            .output(NinjaArg::Path(
+                VirtPath::new("root").step::<TestF>("out1").unwrap(),
+            ))
             .set_default();
-        file.build(5, &rule2)
-            .output(NinjaArg::Path(VirtPath::new("root").step("out2").unwrap()));
+        file.build(5, &rule2).output(NinjaArg::Path(
+            VirtPath::new("root").step::<TestF>("out2").unwrap(),
+        ));
 
         assert_eq!(file.validate(), Vec::<String>::new());
 
@@ -533,10 +538,12 @@ mod tests {
     fn test_multiple_same_targets() {
         let mut file = NinjaFile::new();
         let rule = file.rule(1, "test").as_ref();
-        file.build(2, &rule)
-            .output(NinjaArg::Path(VirtPath::new("root").step("file").unwrap()));
-        file.build(3, &rule)
-            .output(NinjaArg::Path(VirtPath::new("root").step("file").unwrap()));
+        file.build(2, &rule).output(NinjaArg::Path(
+            VirtPath::new("root").step::<TestF>("file").unwrap(),
+        ));
+        file.build(3, &rule).output(NinjaArg::Path(
+            VirtPath::new("root").step::<TestF>("file").unwrap(),
+        ));
         assert_eq!(
             file.validate(),
             vec!["Multiple builds generating: ./file".to_string()]

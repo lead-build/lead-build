@@ -303,7 +303,6 @@ fn test_func_call_pattern_extra_args() {
 
 #[test]
 fn test_var_through_func_call() {
-    // TODO: "let var = 3 in func var" should work, or give an error...
     assert_eq! {
         eval(r#"
                 let
@@ -312,7 +311,7 @@ fn test_var_through_func_call() {
                 let
                     myvar = 13;
                 in
-                (func myvar)
+                    func myvar
             "#),
         eval("15"),
     }
@@ -559,6 +558,22 @@ fn test_parse_func_multi_args() {
 }
 
 #[test]
+fn test_parse_func_let_priority() {
+    assert_eq!(
+        eval(
+            r#"
+        let
+            func = |a| a + 3;
+            x = 7;
+        in
+            func x
+        "#
+        ),
+        eval("10")
+    );
+}
+
+#[test]
 fn test_parse_func_multi_args_syntax() {
     assert_eq!(eval("|a b c| x"), eval("|a| |b| |c| x"),);
 }
@@ -599,7 +614,7 @@ fn test_list_commas() {
 #[test]
 fn test_list_fold() {
     assert_eq!(
-        eval("(|prev field| (prev*10 + field) <- 7 .. [1, 2, 3] )"),
+        eval("(|prev field| prev*10 + field <- 7 .. [1, 2, 3] )"),
         eval("7123")
     );
 }

@@ -32,7 +32,10 @@ impl Exportable for Value {
             Value::BuildRule(v) => v.fmt(f),
             Value::BuildVar(v) => write!(f, "${}", v),
             Value::BuildConcat(vs) => {
-                for v in vs.iter() {
+                for (i, v) in vs.iter().enumerate() {
+                    if i != 0 {
+                        write!(f, " + ")?;
+                    }
                     v.fmt(f)?;
                 }
                 Ok(())
@@ -69,6 +72,7 @@ where
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs + rhs)),
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::String(lhs.clone() + rhs)),
+            (Value::Path(lhs), Value::String(rhs)) => Ok(Value::Path(lhs.apply(rhs)?)),
             (Value::BuildConcat(vs), _) => {
                 let mut vs = vs.clone();
                 vs.push(rhs.clone());
@@ -81,6 +85,7 @@ where
     fn op_sub(lhs: &Self, rhs: &Self) -> Result<Self, F> {
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs - rhs)),
+            (Value::Path(lhs), Value::String(rhs)) => Ok(Value::Path(lhs.remove_suffix(rhs)?)),
             _ => Err(Error::new(
                 ErrorType::Type,
                 format!("can't subtract {} and {}", lhs, rhs),
@@ -101,10 +106,7 @@ where
     fn op_div(lhs: &Self, rhs: &Self) -> Result<Self, F> {
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs / rhs)),
-            (Value::Path(lhs), Value::String(rhs)) => match lhs.clone().step(rhs) {
-                Some(path) => Ok(Value::Path(path)),
-                None => todo!(),
-            },
+            (Value::Path(lhs), Value::String(rhs)) => Ok(Value::Path(lhs.clone().step(rhs)?)),
             _ => Err(Error::new(
                 ErrorType::Type,
                 format!("can't divide {} and {}", lhs, rhs),
