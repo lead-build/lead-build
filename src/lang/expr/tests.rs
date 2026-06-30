@@ -586,6 +586,11 @@ fn test_list_concat() {
 }
 
 #[test]
+fn test_object_update() {
+    assert_eq!(eval("{a=1; b=2;} // {b=3; c=4;}"), eval("{a=1; b=3; c=4;}"));
+}
+
+#[test]
 fn test_tuple() {
     assert_eq!(eval("let a=1; b=2; in (a,b)"), eval("(1,2)"));
 }

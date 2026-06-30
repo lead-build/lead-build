@@ -719,13 +719,26 @@ where
                     loc,
                 } => match &*lhs.res_type().map_err(|e| e.reref(&loc))? {
                     ExprStorage {
-                        tok: ExprType::Object(_lhs_obj),
-                        loc: tloc,
-                    } => Err(todo(tloc.clone(), file!(), line!(), column!())),
+                        tok: ExprType::Object(lhs_obj),
+                        ..
+                    } => match (op, &*rhs.res_type().map_err(|e| e.reref(&loc))?) {
+                        (
+                            ExprBinOp::Update,
+                            ExprStorage {
+                                tok: ExprType::Object(rhs_obj),
+                                ..
+                            },
+                        ) => {
+                            let mut res_obj = lhs_obj.clone();
+                            res_obj.append(&mut rhs_obj.clone());
+                            Ok(ExprType::Object(res_obj).loc(loc))
+                        }
+                        _ => Err(todo(loc.clone(), file!(), line!(), column!())),
+                    },
                     ExprStorage {
                         tok: ExprType::List(lhs_list),
-                        loc: lhs_loc,
-                    } => match (op, &*rhs.res_type().map_err(|e| e.reref(lhs_loc))?) {
+                        ..
+                    } => match (op, &*rhs.res_type().map_err(|e| e.reref(&loc))?) {
                         (
                             ExprBinOp::ListConcat,
                             ExprStorage {
@@ -737,7 +750,7 @@ where
                             res.extend(rhs_list.iter().cloned());
                             Ok(ExprType::List(res).loc(loc))
                         }
-                        _ => Err(todo(lhs_loc.clone(), file!(), line!(), column!())),
+                        _ => Err(todo(loc, file!(), line!(), column!())),
                     },
                     ExprStorage {
                         tok: ExprType::Value(lhs_val),
