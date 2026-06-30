@@ -101,31 +101,31 @@ Following operators are available:
 | Operator                   | Precedence | Description                       |
 | -------------------------- | ---------- | --------------------------------- |
 | `let ... in ...`           | 1          | let block expression              |
-| `|matcher| expr`           | 2          | Function definition               |
-| `lhs -> rhs`               | 3          | Logical implication               |
-| `lhs || rhs`               | 4          | Logical or                        |
-| `lhs && rhs`               | 5          | Logical and                       |
-| `lhs == rhs`               | 6          | Equal                             |
-| `lhs != rhs`               | 6          | Not equal                         |
-| `lhs < rhs`                | 7          | Less than                         |
-| `lhs <= rhs`               | 7          | Less than or equal                |
-| `lhs > rhs`                | 7          | Greater than                      |
-| `lhs >= rhs`               | 7          | Greater than or equal             |
-| `lhs // rhs`               | 8          | Object update/merge               |
-| `!expr`                    | 9          | Logical not                       |
-| `lhs + rhs`                | 10         | Addition or string concatentation |
-| `lhs - rhs`                | 10         | Subtraction                       |
-| `lhs * rhs`                | 11         | Multiplication                    |
-| `lhs / rhs`                | 11         | Division or path extension        |
-| `lhs ++ rhs`               | 12         | List concactenation               |
-| `lhs ? rhs`                | 13         | Has attribute                     |
-| `-expr`                    | 14         | Numeric negation                  |
-| `func arg`                 | 15         | Function call                     |
-| `object.ident`             | 16         | attribute selection               |
-| `( func <- init .. list )` | 17         | list fold                         |
-| `[ func <- iterable ]`     | 17         | list map                          |
-| `{ func <- iterable }`     | 17         | object map                        |
-| `switch expr { ... }`      | 17         | switch expression                 |
+| `|matcher| expr`           | 1          | Function definition               |
+| `lhs -> rhs`               | 2          | Logical implication               |
+| `lhs || rhs`               | 3          | Logical or                        |
+| `lhs && rhs`               | 4          | Logical and                       |
+| `lhs == rhs`               | 5          | Equal                             |
+| `lhs != rhs`               | 5          | Not equal                         |
+| `lhs < rhs`                | 6          | Less than                         |
+| `lhs <= rhs`               | 6          | Less than or equal                |
+| `lhs > rhs`                | 6          | Greater than                      |
+| `lhs >= rhs`               | 6          | Greater than or equal             |
+| `lhs // rhs`               | 7          | Object update/merge               |
+| `!expr`                    | 8          | Logical not                       |
+| `lhs + rhs`                | 9          | Addition or string concatentation |
+| `lhs - rhs`                | 9          | Subtraction                       |
+| `lhs * rhs`                | 10         | Multiplication                    |
+| `lhs / rhs`                | 10         | Division or path extension        |
+| `lhs ++ rhs`               | 11         | List concactenation               |
+| `lhs ? rhs`                | 12         | Has attribute                     |
+| `-expr`                    | 13         | Numeric negation                  |
+| `func arg`                 | 14         | Function call                     |
+| `object.ident`             | 15         | attribute selection               |
+| `( func <- init .. list )` | 16         | list fold                         |
+| `[ func <- iterable ]`     | 16         | list map                          |
+| `{ func <- iterable }`     | 16         | object map                        |
+| `switch expr { ... }`      | 16         | switch expression                 |
 
 
 ### Function defintion

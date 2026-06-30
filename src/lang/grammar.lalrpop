@@ -34,11 +34,7 @@ pub Expr: Expr<T, F> = {
 
 ExprBindBlocks: Expr<T, F> = {
     <l: @L> "let" <s:LetSetStmt*> "in" <r: @R> <e:ExprBindBlocks> => ExprType::Let(s, e).toexpr(l, r, f),
-    <ExprFuncDef>
-};
-
-ExprFuncDef: Expr<T, F> = {
-    <l: @L> "|" <ms:Matcher*> "|" <e:ExprFuncDef> <r: @R> => {
+    <l: @L> "|" <ms:Matcher*> "|" <e:ExprBindBlocks> <r: @R> => {
         let mut e = e;
         for m in ms.into_iter().rev() {
             e = ExprType::FuncDef(m, e).toexpr(l, r, f);

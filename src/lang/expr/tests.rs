@@ -48,6 +48,14 @@ fn test_func_in_let_res() {
 }
 
 #[test]
+fn test_func_with_let() {
+    assert_eq!(
+        eval("let a = |x| let a = (x+1); in a; in (a 12)"),
+        eval("13")
+    );
+}
+
+#[test]
 fn test_resolve_deep() -> Result<(), FRef> {
     // This also tests "inner" as prefixed for reserved keyword "in" is ok
     let expr = parse_str(
