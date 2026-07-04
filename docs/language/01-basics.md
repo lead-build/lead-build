@@ -21,6 +21,23 @@ Those include:
 - Build rules - an instruction for how to perform a build operation
 - Builds - representing a build that uses a build rule to transform input files into output files.
 
+## Comments
+
+Lead-build supports line comments that start with `#` and continue to the end of the line.
+
+```lead
+# This is a full-line comment
+{
+    name = "demo"; # This is a trailing comment
+}
+```
+
+If `#` appears inside a string literal, it is treated as normal string content, not as a comment start.
+
+```lead
+"value#part"
+```
+
 ## Objects
 
 Objects are the primary data structure in the language. They group named fields into a single value. An object is written using braces `{ ... }`, with each field defined as:

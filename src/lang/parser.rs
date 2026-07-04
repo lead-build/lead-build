@@ -413,4 +413,53 @@ mod tests {
         let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[1,2,,]", &1);
         res.unwrap_err();
     }
+
+    #[test]
+    fn test_parse_comment_line_only() {
+        let code = "# this is a comment\n123";
+        assert_eq!(
+            ExprType::from(ExprType::Value(TestValue::Int(123))).builtin(),
+            eval(code)
+        );
+    }
+
+    #[test]
+    fn test_parse_comment_trailing() {
+        let code = "let a = 21; b = 33; # this is ignored\nin 434";
+        assert_eq!(
+            ExprType::from(ExprType::Let(
+                vec![
+                    (
+                        Matcher::Ident("a".into()),
+                        ExprType::Value(TestValue::Int(21)).builtin()
+                    ),
+                    (
+                        Matcher::Ident("b".into()),
+                        ExprType::Value(TestValue::Int(33)).builtin()
+                    ),
+                ],
+                ExprType::Value(TestValue::Int(434)).builtin(),
+            ))
+            .builtin(),
+            eval(code)
+        );
+    }
+
+    #[test]
+    fn test_parse_comment_eof() {
+        let code = "123 # trailing comment with no newline";
+        assert_eq!(
+            ExprType::from(ExprType::Value(TestValue::Int(123))).builtin(),
+            eval(code)
+        );
+    }
+
+    #[test]
+    fn test_parse_hash_in_string() {
+        let code = "\"abc#def\"";
+        assert_eq!(
+            ExprType::from(ExprType::Value(TestValue::String("abc#def".into()))).builtin(),
+            eval(code)
+        );
+    }
 }

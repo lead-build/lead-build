@@ -29,6 +29,13 @@ where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
     F: Clone + Debug;
 
+match {
+    r"[ \t\r\n]+" => { },
+    r"#[^\n\r]*" => { }
+} else {
+    _
+}
+
 pub Expr: Expr<T, F> = {
     <ExprBindBlocks>,
 };
