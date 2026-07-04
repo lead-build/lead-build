@@ -100,7 +100,7 @@ Escape sequences inside strings are written with a backslash. For example:
 
 A newline inside a string literal is represented as `\n`, so the first example evaluates to a string containing a line break between `hello` and `world`.
 
-During lexing, a comment begins when `#` is encountered outside a quoted string, and it continues to the end of that line. Inside a quoted string, `#` is treated as regular text and becomes part of the string value.
+A comment starts when `#` appears outside a quoted string and continues to the end of that line. Inside a quoted string, `#` is regular text and becomes part of the string value.
 
 String interpolation can be used to embed expressions inside a string. Expressions inside `${...}` are evaluated and inserted into the string. For example:
 
