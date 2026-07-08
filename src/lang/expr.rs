@@ -330,7 +330,12 @@ where
     F: Clone + Debug,
 {
     pub fn bind(&self, varspace: ExprSet<T, F>) -> Expr<T, F> {
-        ExprType::Bind(varspace, self.clone()).reref(self.get_loc())
+        let referenced = self.referenced_vars();
+        let filtered_varspace = varspace
+            .into_iter()
+            .filter(|(name, _)| referenced.contains(name))
+            .collect();
+        ExprType::Bind(filtered_varspace, self.clone()).reref(self.get_loc())
     }
 
     pub fn inner_ref(&self) -> Ref<'_, ExprStorage<T, F>> {
