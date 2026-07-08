@@ -420,7 +420,7 @@ where
     }
 
     pub fn resolve(&self) -> Result<(), F> {
-        let mut storref: ExprStorage<T, F> = self.0.as_ref().take();
+        let mut storref: ExprStorage<T, F> = self.inner_ref().clone();
 
         let todo = |loc, f, l, c| {
             Error::new(
@@ -978,26 +978,31 @@ where
     }
 
     pub fn eval(&self) -> Result<(), F> {
-        self.resolve()?;
-        match &self.inner_ref().tok {
-            ExprType::Object(fields) => {
-                for (_, field) in fields.iter() {
-                    field.eval()?;
-                }
-            }
-            ExprType::List(fields) => {
-                for ex in fields.iter() {
-                    ex.eval()?
-                }
-            }
-            ExprType::Tuple(fields) => {
-                for ex in fields.iter() {
-                    ex.eval()?
-                }
-            }
-            _ => {}
+        let mut first_err: Option<Error<F>> = None;
+
+        if let Err(err) = self.resolve() {
+            first_err = Some(err);
         }
-        Ok(())
+
+        let fields: Vec<Expr<T, F>> = match &self.inner_ref().tok {
+            ExprType::Object(fields) => fields.values().cloned().collect(),
+            ExprType::List(fields) | ExprType::Tuple(fields) => fields.to_vec(),
+            _ => vec![],
+        };
+
+        for ex in fields.into_iter() {
+            if let Err(err) = ex.eval() {
+                if first_err.is_none() {
+                    first_err = Some(err);
+                }
+            }
+        }
+
+        if let Some(err) = first_err {
+            Err(err)
+        } else {
+            Ok(())
+        }
     }
 
     pub fn value(&self) -> Result<T, F> {

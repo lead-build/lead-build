@@ -156,6 +156,16 @@ fn test_invalid_var() -> Result<(), FRef> {
 }
 
 #[test]
+fn test_resolve_error_keeps_original_expr() {
+    let expr: Expr<TestValue, FRef> =
+        ExprType::Bind(ExprSet::new(), parse_str("invalid_var", &1).unwrap()).builtin();
+    let before = expr.inner_ref().tok.clone();
+
+    assert!(expr.resolve().is_err());
+    assert_eq!(expr.inner_ref().tok, before);
+}
+
+#[test]
 fn test_let_set_var() {
     assert_eq! {
         eval(r#"
@@ -474,6 +484,27 @@ fn test_parse_func_call_from_obj() {
         eval("let lib = { func = |a| a+3; }; in (lib.func 7)"),
         eval("10")
     );
+}
+
+#[test]
+fn test_eval_keeps_going_after_field_error() {
+    let mybuiltin = CountingBuiltin::new();
+    let expr = parse_str(
+        r#"
+        {
+            a = invalid_var;
+            b = mybuiltin 7;
+        }
+        "#,
+        &1,
+    )
+    .unwrap();
+    let varscope = ExprSet::from([("mybuiltin".into(), Expr::new_builtin(Rc::new(mybuiltin.clone())))]);
+    let value: Expr<TestValue, FRef> = ExprType::Bind(varscope, expr).builtin();
+
+    let err = value.eval().expect_err("evaluation should fail");
+    assert_eq!(err.msg, "Unknown variable invalid_var");
+    assert_eq!(mybuiltin.get(), 1);
 }
 
 #[test]
