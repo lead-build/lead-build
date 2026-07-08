@@ -329,6 +329,10 @@ where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
     F: Clone + Debug,
 {
+    pub fn bind(&self, varspace: ExprSet<T, F>) -> Expr<T, F> {
+        ExprType::Bind(varspace, self.clone()).reref(self.get_loc())
+    }
+
     pub fn inner_ref(&self) -> Ref<'_, ExprStorage<T, F>> {
         self.0.as_ref().borrow()
     }
@@ -451,13 +455,7 @@ where
                     } => Ok(ExprType::Object(
                         fields
                             .iter()
-                            .map(|(k, val)| {
-                                (
-                                    k.clone(),
-                                    ExprType::Bind(varspace.clone(), val.clone())
-                                        .reref(val.get_loc()),
-                                )
-                            })
+                            .map(|(k, val)| (k.clone(), val.bind(varspace.clone())))
                             .collect(),
                     )
                     .loc(loc)),
@@ -467,9 +465,7 @@ where
                     } => Ok(ExprType::List(
                         items
                             .iter()
-                            .map(|item| {
-                                ExprType::Bind(varspace.clone(), item.clone()).reref(item.get_loc())
-                            })
+                            .map(|item| item.bind(varspace.clone()))
                             .collect(),
                     )
                     .loc(loc)),
@@ -479,9 +475,7 @@ where
                     } => Ok(ExprType::Tuple(
                         items
                             .iter()
-                            .map(|item| {
-                                ExprType::Bind(varspace.clone(), item.clone()).reref(item.get_loc())
-                            })
+                            .map(|item| item.bind(varspace.clone()))
                             .collect(),
                     )
                     .loc(loc)),
@@ -489,8 +483,8 @@ where
                         tok: ExprType::AttrSel(val, attr),
                         ..
                     } => Ok(ExprType::AttrSel(
-                        ExprType::Bind(varspace.clone(), val.clone()).reref(val.get_loc()),
-                        ExprType::Bind(varspace, attr.clone()).reref(attr.get_loc()),
+                        val.bind(varspace.clone()),
+                        attr.bind(varspace),
                     )
                     .loc(loc)),
                     ExprStorage {
@@ -501,10 +495,7 @@ where
                         for (field_matcher, field_expr) in fields {
                             let field_vars = vars.clone();
                             for (name, value) in field_matcher
-                                .run(
-                                    ExprType::Bind(field_vars, field_expr.clone())
-                                        .reref(field_expr.get_loc()),
-                                )?
+                                .run(field_expr.bind(field_vars))?
                                 .into_iter()
                             {
                                 vars.insert(name.clone(), value).map_or_else(
@@ -513,7 +504,7 @@ where
                                 )?;
                             }
                         }
-                        Ok(ExprType::Bind(vars, target_expr.clone()).loc(loc))
+                        Ok(target_expr.bind(vars).inner_ref().clone())
                     }
                     ExprStorage {
                         tok: ExprType::FuncDef(matcher, func_expr),
@@ -524,11 +515,7 @@ where
                         // priority. This all depends on when resolving FuncDef
                         // later in FuncCall, the resuling varspace is merged
                         // into the contained Bind
-                        Ok(ExprType::FuncDef(
-                            matcher.clone(),
-                            ExprType::Bind(varspace, func_expr.clone()).reref(func_expr.get_loc()),
-                        )
-                        .loc(loc))
+                        Ok(ExprType::FuncDef(matcher.clone(), func_expr.bind(varspace)).loc(loc))
                     }
                     ExprStorage {
                         tok: ExprType::FuncDefBuiltin(expr_builtin),
@@ -538,9 +525,9 @@ where
                         tok: ExprType::Fold(func, init, input),
                         ..
                     } => Ok(ExprType::Fold(
-                        ExprType::Bind(varspace.clone(), func.clone()).reref(func.get_loc()),
-                        ExprType::Bind(varspace.clone(), init.clone()).reref(func.get_loc()),
-                        ExprType::Bind(varspace.clone(), input.clone()).reref(input.get_loc()),
+                        func.bind(varspace.clone()),
+                        init.bind(varspace.clone()),
+                        input.bind(varspace.clone()),
                     )
                     .loc(loc)),
                     ExprStorage {
@@ -548,8 +535,8 @@ where
                         ..
                     } => Ok(ExprType::Map(
                         *typ,
-                        ExprType::Bind(varspace.clone(), func.clone()).reref(func.get_loc()),
-                        ExprType::Bind(varspace.clone(), input.clone()).reref(input.get_loc()),
+                        func.bind(varspace.clone()),
+                        input.bind(varspace.clone()),
                     )
                     .loc(loc)),
                     ExprStorage {
@@ -576,7 +563,7 @@ where
                         ..
                     } => Ok(ExprType::UnOp(
                         *op,
-                        ExprType::Bind(varspace, expr.clone()).reref(expr.get_loc()),
+                        expr.bind(varspace),
                     )
                     .loc(loc)),
                     ExprStorage {
@@ -584,16 +571,16 @@ where
                         ..
                     } => Ok(ExprType::BinOp(
                         *op,
-                        ExprType::Bind(varspace.clone(), lhs.clone()).reref(lhs.get_loc()),
-                        ExprType::Bind(varspace, rhs.clone()).reref(rhs.get_loc()),
+                        lhs.bind(varspace.clone()),
+                        rhs.bind(varspace),
                     )
                     .loc(loc)),
                     ExprStorage {
                         tok: ExprType::FuncCall(fargs, fexpr),
                         ..
                     } => Ok(ExprType::FuncCall(
-                        ExprType::Bind(varspace.clone(), fargs.clone()).reref(fargs.get_loc()),
-                        ExprType::Bind(varspace, fexpr.clone()).reref(fexpr.get_loc()),
+                        fargs.bind(varspace.clone()),
+                        fexpr.bind(varspace),
                     )
                     .loc(loc)),
                     ExprStorage {
@@ -603,24 +590,22 @@ where
                     ExprStorage {
                         tok: ExprType::Bind(inner_vars, inner_expr),
                         ..
-                    } => Ok(ExprType::Bind(inner_vars.clone(), inner_expr.clone()).loc(loc)),
+                    } => Ok(inner_expr.bind(inner_vars.clone()).inner_ref().clone()),
                     ExprStorage {
                         tok: ExprType::Switch(inner_expr, inner_cases, inner_default),
                         ..
                     } => Ok(ExprType::Switch(
-                        ExprType::Bind(varspace.clone(), inner_expr.clone()).reref(loc.clone()),
+                        inner_expr.bind(varspace.clone()),
                         inner_cases
                             .iter()
                             .map(|(m, e)| {
                                 (
-                                    ExprType::Bind(varspace.clone(), m.clone()).reref(m.get_loc()),
-                                    ExprType::Bind(varspace.clone(), e.clone()).reref(e.get_loc()),
+                                    m.bind(varspace.clone()),
+                                    e.bind(varspace.clone()),
                                 )
                             })
                             .collect(),
-                        inner_default.as_ref().map(|e| {
-                            ExprType::Bind(varspace.clone(), e.clone()).reref(e.get_loc())
-                        }),
+                        inner_default.as_ref().map(|e| e.bind(varspace.clone())),
                     )
                     .loc(loc)),
                     ExprStorage {
@@ -654,16 +639,18 @@ where
 
                         fbound.append(&mut vars);
 
-                        Ok(ExprType::Bind(fbound, fexpr.clone()).loc(loc))
+                        Ok(fexpr.bind(fbound).inner_ref().clone())
                     }
                     ExprStorage {
                         tok: ExprType::FuncDefBuiltin(ExprBuiltinWrapper(_, funcrc)),
                         ..
-                    } => Ok(ExprType::Bind(
-                        ExprSet::new(),
-                        funcrc.as_ref().call(fargs).map_err(|e| e.reref(&loc))?,
-                    )
-                    .loc(loc)),
+                    } => Ok(funcrc
+                        .as_ref()
+                        .call(fargs)
+                        .map_err(|e| e.reref(&loc))?
+                        .bind(ExprSet::new())
+                        .inner_ref()
+                        .clone()),
                     ExprStorage { tok: _, loc: floc } => Err(Error::new(
                         ErrorType::Scope,
                         format!("called func, but it's a {}", fexpr),
