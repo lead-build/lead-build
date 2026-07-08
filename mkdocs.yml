@@ -21,3 +21,4 @@ nav:
   - Reference:
     - Language: reference/language.md
     - Builtins: reference/builtins.md
+    - Debugging: reference/debugging.md

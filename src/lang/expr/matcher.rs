@@ -128,7 +128,7 @@ where
                                     ErrorType::NoValue,
                                     format!("Expected field '{}' not found", itname),
                                 )
-                                .reref(&expr.get_loc())
+                                .reref(&expr.get_loc()) // TODO: Add location of matcher
                             })?;
                         let mut subvars = itmatch.run(in_expr.clone())?;
                         // TODO: Check if overlapping keysets

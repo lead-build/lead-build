@@ -4,6 +4,7 @@ use crate::{
     lang::{Error, ErrorType, Expr, ExprBuiltin, ExprSet, ExprType, Result, parse_str},
     path::VirtPath,
     pbbuild::get_pb_builtins,
+    debug::get_dbg_builtins,
     value::Value,
 };
 
@@ -41,6 +42,7 @@ impl Default for LangContext {
     fn default() -> Self {
         let mut builtins = ExprSet::new();
         builtins.insert("pb".into(), get_pb_builtins().unwrap());
+        builtins.insert("dbg".into(), get_dbg_builtins().unwrap());
         LangContext(Rc::new(LangContextStorage { builtins }))
     }
 }

@@ -72,3 +72,12 @@ pb.build {
 `rule_definition` is the output of `pb.rule`, and the rest of the variables are defined from the arguments to the rule definition.
 
 More information is available in the [builds](../builds/01-rules-and-builds.md) chapter.
+
+## Debug builtins
+
+The `dbg` object contains helpers for inspecting values while evaluating expressions.
+
+- `dbg.trace`: prints a value and returns it unchanged.
+- `dbg.break`: prints a value and stops evaluation with a debug error.
+
+See [Debugging builtins](debugging.md) for details and examples.

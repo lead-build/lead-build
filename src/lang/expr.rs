@@ -573,7 +573,7 @@ where
                             _ => (ExprSet::new(), fimpl.clone()),
                         };
 
-                        let mut vars = matcher.run(fargs)?;
+                        let mut vars = matcher.run(fargs).map_err(|e| e.reref(&loc))?;
 
                         fbound.append(&mut vars);
 
