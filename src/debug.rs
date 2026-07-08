@@ -16,6 +16,7 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinDbgTrace {
     }
 
     fn call(&self, arg: Expr<Value, VirtPath>) -> Result<Expr<Value, VirtPath>, VirtPath> {
+        let _ = arg.eval();
         println!("{}", arg);
         Ok(arg)
     }

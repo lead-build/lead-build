@@ -4,7 +4,7 @@ Lead Build exposes a `dbg` builtin object for debugging expressions during evalu
 
 ## `dbg.trace`
 
-Prints the input expression and returns it unchanged.
+Attempts to evaluate the input expression, prints it, and returns it unchanged.
 
 Syntax:
 ```lead
@@ -12,6 +12,7 @@ dbg.trace expr
 ```
 
 Behavior:
+- First runs `eval` on `expr`. Any eval error is ignored.
 - Prints `expr` using standard output.
 - Returns the same expression value, so it can be inserted into larger expressions without changing behavior.
 
@@ -28,7 +29,7 @@ This prints `3` and evaluates to `30`.
 
 ## `dbg.break`
 
-Prints the input expression and then raises a debug exception.
+Attempts to evaluate the input expression, prints it, and then raises a debug exception.
 
 Syntax:
 ```lead
@@ -36,8 +37,9 @@ dbg.break expr
 ```
 
 Behavior:
+- First runs `eval` on `expr`. Any eval error is ignored.
 - Prints `expr` using standard output.
-- Raises a `Debug` error with the message `break: <expr>`.
+- Raises a `Debug` error with the message `break`.
 
 Use `dbg.break` when you want evaluation to stop at a specific point and show the current value.
 

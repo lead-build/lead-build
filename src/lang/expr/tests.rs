@@ -508,6 +508,23 @@ fn test_eval_keeps_going_after_field_error() {
 }
 
 #[test]
+fn test_eval_keeps_going_into_bind_subparts_after_error() {
+    let mybuiltin = CountingBuiltin::new();
+    let expr: Expr<TestValue, FRef> = ExprType::Bind(
+        ExprSet::from([
+            ("mybuiltin".into(), Expr::new_builtin(Rc::new(mybuiltin.clone()))),
+            ("x".into(), parse_str("mybuiltin 7", &1).unwrap()),
+        ]),
+        parse_str("invalid_var", &1).unwrap(),
+    )
+    .builtin();
+
+    let err = expr.eval().expect_err("evaluation should fail");
+    assert_eq!(err.msg, "Unknown variable invalid_var");
+    assert_eq!(mybuiltin.get(), 1);
+}
+
+#[test]
 fn test_parse_func_call_match_tuple() {
     assert_eq!(
         eval(

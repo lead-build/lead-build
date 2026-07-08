@@ -77,7 +77,7 @@ More information is available in the [builds](../builds/01-rules-and-builds.md) 
 
 The `dbg` object contains helpers for inspecting values while evaluating expressions.
 
-- `dbg.trace`: prints a value and returns it unchanged.
-- `dbg.break`: prints a value and stops evaluation with a debug error.
+- `dbg.trace`: attempts to eval and print a value, then returns it unchanged.
+- `dbg.break`: attempts to eval and print a value, then stops evaluation with a debug error.
 
 See [Debugging builtins](debugging.md) for details and examples.

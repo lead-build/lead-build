@@ -961,6 +961,14 @@ where
                     }
                 }
                 ExprStorage {
+                    tok: ExprType::Var(name),
+                    loc,
+                } => Err(Error::new(
+                    ErrorType::Scope,
+                    format!("Unknown variable {}", name),
+                )
+                .reref(&loc)),
+                ExprStorage {
                     tok: ExprType::Null,
                     loc: _loc,
                 } => panic!("Found null in expr tree"),
@@ -987,6 +995,14 @@ where
         let fields: Vec<Expr<T, F>> = match &self.inner_ref().tok {
             ExprType::Object(fields) => fields.values().cloned().collect(),
             ExprType::List(fields) | ExprType::Tuple(fields) => fields.to_vec(),
+            ExprType::Bind(varspace, bound_expr) => {
+                let mut parts: Vec<Expr<T, F>> = varspace
+                    .values()
+                    .map(|part| part.bind(varspace.clone()))
+                    .collect();
+                parts.push(bound_expr.clone());
+                parts
+            }
             _ => vec![],
         };
 
