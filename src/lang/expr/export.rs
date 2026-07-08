@@ -15,6 +15,19 @@ fn newline(lvl: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     Ok(())
 }
 
+fn is_ident(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+
+    if !first.is_ascii_alphabetic() {
+        return false;
+    }
+
+    chars.all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
+}
+
 pub trait Exportable {
     fn export(&self, indent: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result;
 }
@@ -72,7 +85,21 @@ where
             }
             ExprType::AttrSel(val, attr) => {
                 val.export(indent, f)?;
-                write!(f, ".{}", attr)?;
+
+                // Dot-identifier syntax is parsed into a string value; print it unquoted
+                // when it is a plain identifier so pretty output matches source style.
+                if let ExprType::Value(attr_value) = &attr.inner_ref().tok {
+                    if let Ok(name) = attr_value.as_string() {
+                        if is_ident(name.as_str()) {
+                            write!(f, ".{}", name)?;
+                            return Ok(());
+                        }
+                    }
+                }
+
+                write!(f, ".{{")?;
+                attr.export(indent + 1, f)?;
+                write!(f, "}}")?;
                 Ok(())
             }
             ExprType::Value(val) => val.export(indent, f),
