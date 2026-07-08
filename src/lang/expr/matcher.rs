@@ -1,4 +1,5 @@
 use std::{
+    collections::HashSet,
     fmt::{Debug, Display},
     iter::zip,
 };
@@ -81,6 +82,36 @@ where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
     F: Clone + Debug,
 {
+    pub fn referenced_vars(&self) -> HashSet<String> {
+        let mut referenced_vars = HashSet::new();
+        self.visit_referenced_vars(&mut referenced_vars);
+        referenced_vars
+    }
+
+    fn visit_referenced_vars(&self, referenced_vars: &mut HashSet<String>) {
+        match self {
+            Matcher::Alias(inner, name) => {
+                let _ = name;
+                inner.visit_referenced_vars(referenced_vars);
+            }
+            Matcher::DontCare => {}
+            Matcher::Ident(_) => {}
+            Matcher::Tuple(matchers) => {
+                for item in matchers.iter() {
+                    item.visit_referenced_vars(referenced_vars);
+                }
+            }
+            Matcher::Object(items, _) => {
+                for (_, item_matcher, item_default) in items.iter() {
+                    if let Some(default_expr) = item_default {
+                        referenced_vars.extend(default_expr.referenced_vars());
+                    }
+                    item_matcher.visit_referenced_vars(referenced_vars);
+                }
+            }
+        }
+    }
+
     pub fn run(&self, expr: Expr<T, F>) -> Result<ExprSet<T, F>, F>
     where
         T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,

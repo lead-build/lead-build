@@ -6,7 +6,7 @@ pub use export::Exportable;
 pub use matcher::Matcher;
 use std::{
     cell::{Ref, RefCell},
-    collections::BTreeMap,
+    collections::{BTreeMap, HashSet},
     fmt::{Debug, Display},
     rc::Rc,
 };
@@ -331,6 +331,83 @@ where
 {
     pub fn inner_ref(&self) -> Ref<'_, ExprStorage<T, F>> {
         self.0.as_ref().borrow()
+    }
+
+    pub fn referenced_vars(&self) -> HashSet<String> {
+        match self.inner_ref().tok.clone() {
+            ExprType::Object(fields) => fields
+                .values()
+                .flat_map(|field| field.referenced_vars().into_iter())
+                .collect(),
+            ExprType::List(items) | ExprType::Tuple(items) => items
+                .iter()
+                .flat_map(|item| item.referenced_vars().into_iter())
+                .collect(),
+            ExprType::AttrSel(value, attr) => {
+                let mut vars = value.referenced_vars();
+                vars.extend(attr.referenced_vars());
+                vars
+            }
+            ExprType::Value(_) | ExprType::FuncDefBuiltin(_) | ExprType::Null => HashSet::new(),
+            ExprType::Var(name) => HashSet::from([name]),
+            ExprType::UnOp(_, inner) => inner.referenced_vars(),
+            ExprType::BinOp(_, lhs, rhs) => {
+                let mut vars = lhs.referenced_vars();
+                vars.extend(rhs.referenced_vars());
+                vars
+            }
+            ExprType::FuncDef(matcher, body) => {
+                let mut vars = matcher.referenced_vars();
+                vars.extend(body.referenced_vars());
+                vars
+            }
+            ExprType::Let(bindings, target) => {
+                let mut vars = HashSet::new();
+
+                for (matcher, value_expr) in bindings.iter() {
+                    vars.extend(value_expr.referenced_vars());
+                    vars.extend(matcher.referenced_vars());
+                }
+
+                vars.extend(target.referenced_vars());
+                vars
+            }
+            ExprType::Fold(func, init, input) => {
+                let mut vars = func.referenced_vars();
+                vars.extend(init.referenced_vars());
+                vars.extend(input.referenced_vars());
+                vars
+            }
+            ExprType::Map(_, func, input) => {
+                let mut vars = func.referenced_vars();
+                vars.extend(input.referenced_vars());
+                vars
+            }
+            ExprType::FuncCall(arg, func) => {
+                let mut vars = arg.referenced_vars();
+                vars.extend(func.referenced_vars());
+                vars
+            }
+            ExprType::Bind(varspace, bound_expr) => {
+                let mut vars: HashSet<String> = varspace
+                    .values()
+                    .flat_map(|value| value.referenced_vars().into_iter())
+                    .collect();
+                vars.extend(bound_expr.referenced_vars());
+                vars
+            }
+            ExprType::Switch(ref_expr, cases, default_case) => {
+                let mut vars = ref_expr.referenced_vars();
+                for (matcher_expr, outcome_expr) in cases.iter() {
+                    vars.extend(matcher_expr.referenced_vars());
+                    vars.extend(outcome_expr.referenced_vars());
+                }
+                if let Some(default_expr) = default_case {
+                    vars.extend(default_expr.referenced_vars());
+                }
+                vars
+            }
+        }
     }
 
     pub fn resolve(&self) -> Result<(), F> {
