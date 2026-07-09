@@ -21,7 +21,10 @@ fn referenced_vars(code: &str) -> HashSet<String> {
 
 #[test]
 fn test_referenced_vars_simple() {
-    assert_eq!(referenced_vars("a + b"), HashSet::from(["a".into(), "b".into()]));
+    assert_eq!(
+        referenced_vars("a + b"),
+        HashSet::from(["a".into(), "b".into()])
+    );
 }
 
 #[test]
@@ -35,7 +38,9 @@ fn test_referenced_vars_let_bindings_are_not_free() {
 #[test]
 fn test_referenced_vars_function_matcher_scope() {
     assert_eq!(
-        referenced_vars("let func = |{a = ax, b ? def, ...} @ obj| ax + b + obj.inner + cap; in (func input)"),
+        referenced_vars(
+            "let func = |{a = ax, b ? def, ...} @ obj| ax + b + obj.inner + cap; in (func input)"
+        ),
         HashSet::from([
             "ax".into(),
             "b".into(),
@@ -54,6 +59,12 @@ fn test_referenced_vars_shadowing() {
         referenced_vars("let x = a; in (let x = b; in (x + c))"),
         HashSet::from(["x".into(), "a".into(), "b".into(), "c".into()])
     );
+}
+
+#[test]
+fn test_referenced_in_matcher() {
+    let referenced = referenced_vars("|{a ? x, ...}| a");
+    assert!(referenced.contains("x"));
 }
 
 #[test]
@@ -96,6 +107,14 @@ fn test_func_with_let() {
     assert_eq!(
         eval("let a = |x| let a = (x+1); in a; in (a 12)"),
         eval("13")
+    );
+}
+
+#[test]
+fn test_stacked_func_defaults() {
+    assert_eq!(
+        eval("let f = |{a = ax ? 1}| |{b = bx ? ax}| (ax+bx); in (f {} {})"),
+        eval("2")
     );
 }
 
@@ -499,7 +518,10 @@ fn test_eval_keeps_going_after_field_error() {
         &1,
     )
     .unwrap();
-    let varscope = ExprSet::from([("mybuiltin".into(), Expr::new_builtin(Rc::new(mybuiltin.clone())))]);
+    let varscope = ExprSet::from([(
+        "mybuiltin".into(),
+        Expr::new_builtin(Rc::new(mybuiltin.clone())),
+    )]);
     let value: Expr<TestValue, FRef> = ExprType::Bind(varscope, expr).builtin();
 
     let err = value.eval().expect_err("evaluation should fail");
@@ -512,7 +534,10 @@ fn test_eval_keeps_going_into_bind_subparts_after_error() {
     let mybuiltin = CountingBuiltin::new();
     let expr: Expr<TestValue, FRef> = ExprType::Bind(
         ExprSet::from([
-            ("mybuiltin".into(), Expr::new_builtin(Rc::new(mybuiltin.clone()))),
+            (
+                "mybuiltin".into(),
+                Expr::new_builtin(Rc::new(mybuiltin.clone())),
+            ),
             ("x".into(), parse_str("mybuiltin 7", &1).unwrap()),
         ]),
         parse_str("invalid_var", &1).unwrap(),
@@ -551,6 +576,22 @@ fn test_parse_func_call_match_default() {
         "#
         ),
         eval("15")
+    );
+}
+
+#[test]
+fn test_parse_func_call_match_default_outer_scope() {
+    assert_eq!(
+        eval(
+            r#"
+        let
+            x = 12;
+            func = |{a ? x}| a;
+        in
+            func {}
+        "#
+        ),
+        eval("12")
     );
 }
 

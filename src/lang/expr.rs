@@ -520,7 +520,11 @@ where
                         // priority. This all depends on when resolving FuncDef
                         // later in FuncCall, the resuling varspace is merged
                         // into the contained Bind
-                        Ok(ExprType::FuncDef(matcher.clone(), func_expr.bind(varspace)).loc(loc))
+                        Ok(ExprType::FuncDef(
+                            matcher.bind_defaults(&varspace),
+                            func_expr.bind(varspace),
+                        )
+                        .loc(loc))
                     }
                     ExprStorage {
                         tok: ExprType::FuncDefBuiltin(expr_builtin),

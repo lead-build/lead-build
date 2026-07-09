@@ -82,6 +82,37 @@ where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
     F: Clone + Debug,
 {
+    pub fn bind_defaults(&self, varscope: &ExprSet<T, F>) -> Matcher<T, F> {
+        match self {
+            Matcher::Alias(matcher, name) => {
+                Matcher::Alias(Box::new(matcher.bind_defaults(varscope)), name.clone())
+            }
+            Matcher::DontCare => Matcher::DontCare,
+            Matcher::Ident(name) => Matcher::Ident(name.clone()),
+            Matcher::Tuple(matchers) => Matcher::Tuple(
+                matchers
+                    .iter()
+                    .map(|matcher| matcher.bind_defaults(varscope))
+                    .collect(),
+            ),
+            Matcher::Object(items, need_all) => Matcher::Object(
+                items
+                    .iter()
+                    .map(|(name, matcher, default)| {
+                        (
+                            name.clone(),
+                            matcher.bind_defaults(varscope),
+                            default
+                                .as_ref()
+                                .map(|default_expr| default_expr.bind(varscope.clone())),
+                        )
+                    })
+                    .collect(),
+                *need_all,
+            ),
+        }
+    }
+
     pub fn referenced_vars(&self) -> HashSet<String> {
         let mut referenced_vars = HashSet::new();
         self.visit_referenced_vars(&mut referenced_vars);
