@@ -493,9 +493,8 @@ where
                     } => {
                         let mut vars: ExprSet<T, F> = varspace;
                         for (field_matcher, field_expr) in fields {
-                            let field_vars = vars.clone();
                             for (name, value) in field_matcher
-                                .run(field_expr.bind(&field_vars))?
+                                .run(field_expr.bind(&vars))?
                                 .into_iter()
                             {
                                 vars.insert(name.clone(), value).map_or_else(
@@ -643,13 +642,16 @@ where
                     ExprStorage {
                         tok: ExprType::FuncDefBuiltin(ExprBuiltinWrapper(_, funcrc)),
                         ..
-                    } => Ok(funcrc
-                        .as_ref()
-                        .call(fargs)
-                        .map_err(|e| e.reref(&loc))?
-                        .bind(&ExprSet::new())
-                        .inner_ref()
-                        .clone()),
+                    } => {
+                        let empty_vars = ExprSet::new();
+                        Ok(funcrc
+                            .as_ref()
+                            .call(fargs)
+                            .map_err(|e| e.reref(&loc))?
+                            .bind(&empty_vars)
+                            .inner_ref()
+                            .clone())
+                    }
                     ExprStorage { tok: _, loc: floc } => Err(Error::new(
                         ErrorType::Scope,
                         format!("called func, but it's a {}", fexpr),
@@ -793,7 +795,7 @@ where
                             },
                         ) => {
                             let mut res_obj = lhs_obj.clone();
-                            res_obj.append(&mut rhs_obj.clone());
+                            res_obj.extend(rhs_obj.iter().map(|(key, value)| (key.clone(), value.clone())));
                             Ok(ExprType::Object(res_obj).loc(loc))
                         }
                         _ => Err(todo(loc.clone(), file!(), line!(), column!())),
