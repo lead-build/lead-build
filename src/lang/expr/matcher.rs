@@ -104,7 +104,7 @@ where
                             matcher.bind_defaults(varscope),
                             default
                                 .as_ref()
-                                .map(|default_expr| default_expr.bind(varscope.clone())),
+                                .map(|default_expr| default_expr.bind(varscope)),
                         )
                     })
                     .collect(),
