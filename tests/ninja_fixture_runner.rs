@@ -1,6 +1,6 @@
-use lead_build::{LangContext, add_expr_to_ninjafile};
 use lead_build::ninjawriter::NinjaFile;
 use lead_build::path::VirtPath;
+use lead_build::{LangContext, add_expr_to_ninjafile};
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -47,14 +47,13 @@ fn run_ninja_fixture_cases() {
         let main_vpath = VirtPath::virtualize(&main_file, format!("ninja-case-{case_name}"));
         let ctx = LangContext::new();
 
-        let expr = ctx.include(main_vpath).unwrap_or_else(|e| {
-            panic!("ninja case '{}' include failed:\n{}", case_name, e)
-        });
+        let expr = ctx
+            .include(main_vpath)
+            .unwrap_or_else(|e| panic!("ninja case '{}' include failed:\n{}", case_name, e));
 
         let mut ninja_file = NinjaFile::new();
-        add_expr_to_ninjafile(&expr, &mut ninja_file).unwrap_or_else(|e| {
-            panic!("ninja case '{}' conversion failed:\n{}", case_name, e)
-        });
+        add_expr_to_ninjafile(&expr, &mut ninja_file)
+            .unwrap_or_else(|e| panic!("ninja case '{}' conversion failed:\n{}", case_name, e));
 
         let errors = ninja_file.validate();
         assert!(

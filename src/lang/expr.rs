@@ -1008,10 +1008,10 @@ where
         };
 
         for ex in fields.into_iter() {
-            if let Err(err) = ex.eval() {
-                if first_err.is_none() {
-                    first_err = Some(err);
-                }
+            if let Err(err) = ex.eval()
+                && first_err.is_none()
+            {
+                first_err = Some(err);
             }
         }
 

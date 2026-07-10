@@ -119,10 +119,10 @@ where
         let mut leading_path: Option<VirtPath> = None;
         let mut out = String::new();
 
-        if matches!(parts_iter.peek(), Some(Value::Path(_))) {
-            if let Some(Value::Path(path)) = parts_iter.next() {
-                leading_path = Some(path);
-            }
+        if matches!(parts_iter.peek(), Some(Value::Path(_)))
+            && let Some(Value::Path(path)) = parts_iter.next()
+        {
+            leading_path = Some(path);
         }
 
         for part in parts_iter {

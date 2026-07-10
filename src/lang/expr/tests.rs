@@ -169,7 +169,7 @@ fn test_invalid_var() -> Result<(), FRef> {
     if let Err(Error { msg, .. }) = expr.resolve() {
         assert_eq!(msg.as_str(), "Unknown variable invalid_var");
     } else {
-        assert!(false);
+        panic!("expected resolve() to return an error");
     }
     Ok(())
 }
@@ -973,7 +973,6 @@ fn test_switch_none() {
         eval("3")
     );
 }
-
 
 #[test]
 fn test_string_concat() {

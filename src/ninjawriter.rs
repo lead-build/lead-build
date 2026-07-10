@@ -308,17 +308,16 @@ impl NinjaFile {
 
         let mut errors: BTreeSet<String> = BTreeSet::new();
         let mut output_set = HashSet::new();
-        for build in self
-            .builds
-            .values()
-            .chain(self.aliases.iter())
-        {
+        for build in self.builds.values().chain(self.aliases.iter()) {
             for output in build.outputs.iter() {
                 match output {
                     NinjaArg::Path(file) => {
                         let fs_path = file.to_path_buf();
                         if !output_set.insert(fs_path.clone()) {
-                            errors.insert(format!("Multiple builds generating: {}", fs_path.display()));
+                            errors.insert(format!(
+                                "Multiple builds generating: {}",
+                                fs_path.display()
+                            ));
                         }
                     }
                     NinjaArg::Const(_) if build.rule == "phony" => {

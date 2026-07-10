@@ -88,8 +88,8 @@ fn run_parsing_fixture_cases() {
                 }
             }
             expected_kind => {
-                let err = result
-                    .expect_err(&format!("case '{}' expected error, got success", case_name));
+                let err =
+                    result.expect_err(&format!("case '{}' expected error, got success", case_name));
                 assert!(
                     matches_kind(&err.typ, expected_kind),
                     "case '{}' expected error kind {:?}, got {:?} ({})",

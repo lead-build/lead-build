@@ -162,14 +162,14 @@ mod tests {
 
     type FRef = i32;
 
-    fn eval<'a>(code: &str) -> Expr<TestValue, FRef> {
+    fn eval(code: &str) -> Expr<TestValue, FRef> {
         parse_str(code, &1).unwrap()
     }
 
     #[test]
     fn test_parse_int() {
         assert_eq!(
-            ExprType::from(ExprType::Value(TestValue::Int(1231))).builtin(),
+            ExprType::Value(TestValue::Int(1231)).builtin(),
             eval("1231")
         );
     }
@@ -183,13 +183,13 @@ mod tests {
             }
         "#;
         assert_eq!(
-            ExprType::from(ExprType::Object(ExprSet::from([
+            ExprType::Object(ExprSet::from([
                 (
                     "boll".into(),
                     ExprType::Value(TestValue::Int(123)).builtin()
                 ),
                 ("hej".into(), ExprType::Value(TestValue::Int(323)).builtin())
-            ])))
+            ]))
             .builtin(),
             eval(code)
         );
@@ -204,7 +204,7 @@ mod tests {
             }
         "#;
         assert_eq!(
-            ExprType::from(ExprType::Object(ExprSet::from([
+            ExprType::Object(ExprSet::from([
                 (
                     "boll".into(),
                     ExprType::Value(TestValue::Int(123)).builtin()
@@ -217,7 +217,7 @@ mod tests {
                     ]))
                     .builtin()
                 )
-            ])))
+            ]))
             .builtin(),
             eval(code)
         );
@@ -227,7 +227,7 @@ mod tests {
     fn test_parse_str_unicode() {
         let code = "\"boll\\\"hej\\u0041\"";
         assert_eq!(
-            ExprType::from(ExprType::Value(TestValue::String("boll\"hejA".into()))).builtin(),
+            ExprType::Value(TestValue::String("boll\"hejA".into())).builtin(),
             eval(code)
         );
     }
@@ -236,10 +236,10 @@ mod tests {
     fn test_parse_func_call() {
         let code = "hej 12";
         assert_eq!(
-            ExprType::from(ExprType::FuncCall(
+            ExprType::FuncCall(
                 ExprType::Value(TestValue::Int(12)).builtin(),
                 ExprType::Var("hej".into()).builtin(),
-            ))
+            )
             .builtin(),
             eval(code)
         );
@@ -267,7 +267,7 @@ mod tests {
     fn test_parse_let() {
         let code = "let a = 21; b = 33; in 434";
         assert_eq!(
-            ExprType::from(ExprType::Let(
+            ExprType::Let(
                 vec![
                     (
                         Matcher::Ident("a".into()),
@@ -279,7 +279,7 @@ mod tests {
                     ),
                 ],
                 ExprType::Value(TestValue::Int(434)).builtin(),
-            ))
+            )
             .builtin(),
             eval(code)
         );
@@ -289,7 +289,7 @@ mod tests {
     fn test_parse_add_mul_prio() {
         let code = "2 * 3 + 4 * 5";
         assert_eq!(
-            ExprType::from(ExprType::BinOp(
+            ExprType::BinOp(
                 ExprBinOp::Add,
                 ExprType::BinOp(
                     ExprBinOp::Mult,
@@ -303,7 +303,7 @@ mod tests {
                     ExprType::Value(TestValue::Int(5)).builtin()
                 )
                 .builtin()
-            ))
+            )
             .builtin(),
             eval(code)
         );
@@ -313,11 +313,11 @@ mod tests {
     fn test_bool_op() {
         let code = "false || true";
         assert_eq!(
-            ExprType::from(ExprType::BinOp(
+            ExprType::BinOp(
                 ExprBinOp::LogOr,
                 ExprType::Value(TestValue::Bool(false)).builtin(),
                 ExprType::Value(TestValue::Bool(true)).builtin(),
-            ))
+            )
             .builtin(),
             eval(code)
         );
@@ -344,17 +344,14 @@ mod tests {
     #[test]
     fn test_parse_comment_line_only() {
         let code = "# this is a comment\n123";
-        assert_eq!(
-            ExprType::from(ExprType::Value(TestValue::Int(123))).builtin(),
-            eval(code)
-        );
+        assert_eq!(ExprType::Value(TestValue::Int(123)).builtin(), eval(code));
     }
 
     #[test]
     fn test_parse_comment_trailing() {
         let code = "let a = 21; b = 33; # this is ignored\nin 434";
         assert_eq!(
-            ExprType::from(ExprType::Let(
+            ExprType::Let(
                 vec![
                     (
                         Matcher::Ident("a".into()),
@@ -366,7 +363,7 @@ mod tests {
                     ),
                 ],
                 ExprType::Value(TestValue::Int(434)).builtin(),
-            ))
+            )
             .builtin(),
             eval(code)
         );
@@ -375,17 +372,14 @@ mod tests {
     #[test]
     fn test_parse_comment_eof() {
         let code = "123 # trailing comment with no newline";
-        assert_eq!(
-            ExprType::from(ExprType::Value(TestValue::Int(123))).builtin(),
-            eval(code)
-        );
+        assert_eq!(ExprType::Value(TestValue::Int(123)).builtin(), eval(code));
     }
 
     #[test]
     fn test_parse_hash_in_string() {
         let code = "\"abc#def\"";
         assert_eq!(
-            ExprType::from(ExprType::Value(TestValue::String("abc#def".into()))).builtin(),
+            ExprType::Value(TestValue::String("abc#def".into())).builtin(),
             eval(code)
         );
     }

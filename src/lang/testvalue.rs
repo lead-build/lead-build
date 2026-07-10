@@ -102,7 +102,7 @@ impl ExprOps<FRef> for TestValue {
                     }
                     (_, _) => Err(Error::new(
                         ErrorType::Type,
-                        format!("can't concatenate non-string value"),
+                        "can't concatenate non-string value".to_string(),
                     )),
                 }
             })

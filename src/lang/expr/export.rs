@@ -97,13 +97,12 @@ where
 
                 // Dot-identifier syntax is parsed into a string value; print it unquoted
                 // when it is a plain identifier so pretty output matches source style.
-                if let ExprType::Value(attr_value) = &attr.inner_ref().tok {
-                    if let Ok(name) = attr_value.as_string() {
-                        if is_ident(name.as_str()) {
-                            write!(f, ".{}", name)?;
-                            return Ok(());
-                        }
-                    }
+                if let ExprType::Value(attr_value) = &attr.inner_ref().tok
+                    && let Ok(name) = attr_value.as_string()
+                    && is_ident(name.as_str())
+                {
+                    write!(f, ".{}", name)?;
+                    return Ok(());
                 }
 
                 write!(f, ".{{")?;

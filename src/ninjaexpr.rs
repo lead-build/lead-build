@@ -1,7 +1,7 @@
-use crate::{Expr, Value};
 use crate::lang::{Error, ErrorType, ExprStorage, ExprType, Result};
 use crate::ninjawriter::NinjaFile;
 use crate::path::VirtPath;
+use crate::{Expr, Value};
 
 pub fn add_expr_to_ninjafile(
     expr: &Expr<Value, VirtPath>,
@@ -22,13 +22,10 @@ pub fn add_expr_to_ninjafile(
         } => {
             for item in list.iter() {
                 item.resolve()?;
-                let build = item
-                    .value()?
-                    .try_as_build()
-                    .ok_or_else(|| {
-                        Error::new(ErrorType::Custom, "Top-level list contains non-build")
-                            .reref(&item.get_loc())
-                    })?;
+                let build = item.value()?.try_as_build().ok_or_else(|| {
+                    Error::new(ErrorType::Custom, "Top-level list contains non-build")
+                        .reref(&item.get_loc())
+                })?;
                 build.populate_ninja_file(ninja_file, true);
             }
             Ok(())
@@ -39,16 +36,13 @@ pub fn add_expr_to_ninjafile(
         } => {
             for (name, value) in fields.iter() {
                 value.resolve()?;
-                let build = value
-                    .value()?
-                    .try_as_build()
-                    .ok_or_else(|| {
-                        Error::new(
-                            ErrorType::Custom,
-                            format!("Top-level field '{}' is not a build", name),
-                        )
-                        .reref(&value.get_loc())
-                    })?;
+                let build = value.value()?.try_as_build().ok_or_else(|| {
+                    Error::new(
+                        ErrorType::Custom,
+                        format!("Top-level field '{}' is not a build", name),
+                    )
+                    .reref(&value.get_loc())
+                })?;
 
                 build.populate_ninja_file(ninja_file, true);
 
