@@ -52,6 +52,7 @@ pub struct NinjaFile {
     rule_names: UniqueNames,
     rules: BTreeMap<usize, NinjaRule>,
     builds: BTreeMap<usize, NinjaBuild>,
+    aliases: Vec<NinjaBuild>,
 }
 
 /*
@@ -180,6 +181,9 @@ impl Display for NinjaFile {
         for (_, build) in self.builds.iter() {
             build.fmt(f)?;
         }
+        for alias in self.aliases.iter() {
+            alias.fmt(f)?;
+        }
         Ok(())
     }
 }
@@ -238,6 +242,10 @@ impl NinjaBuild {
         }
     }
 
+    fn alias() -> Self {
+        NinjaBuild::new(&NinjaRuleRef("phony".into()))
+    }
+
     pub fn output(&mut self, name: NinjaArg) -> &mut Self {
         self.outputs.push(name);
         self
@@ -283,6 +291,14 @@ impl NinjaFile {
         self.builds.get_mut(&id).unwrap()
     }
 
+    pub fn alias(&mut self, name: impl ToString) -> &mut NinjaBuild {
+        let mut alias = NinjaBuild::alias();
+        alias.output(NinjaArg::Const(name.to_string()));
+
+        self.aliases.push(alias);
+        self.aliases.last_mut().unwrap()
+    }
+
     pub fn get_rule_ref(&mut self, id: usize) -> Option<NinjaRuleRef> {
         self.rules.get(&id).map(|rule| rule.as_ref())
     }
@@ -292,23 +308,33 @@ impl NinjaFile {
 
         let mut errors: BTreeSet<String> = BTreeSet::new();
         let mut output_set = HashSet::new();
-        for (_, build) in self.builds.iter() {
+        for build in self
+            .builds
+            .values()
+            .chain(self.aliases.iter())
+        {
             for output in build.outputs.iter() {
-                if let NinjaArg::Path(file) = output {
-                    let fs_path = file.to_path_buf();
-                    if !output_set.insert(fs_path.clone()) {
-                        errors.insert(format!("Multiple builds generating: {}", fs_path.display()));
+                match output {
+                    NinjaArg::Path(file) => {
+                        let fs_path = file.to_path_buf();
+                        if !output_set.insert(fs_path.clone()) {
+                            errors.insert(format!("Multiple builds generating: {}", fs_path.display()));
+                        }
                     }
-                } else {
-                    errors.insert(format!("Non-path build output: {:?}", output));
+                    NinjaArg::Const(_) if build.rule == "phony" => {
+                        // Alias targets are expected to use symbolic names.
+                    }
+                    _ => {
+                        errors.insert(format!("Non-path build output: {:?}", output));
+                    }
                 }
             }
         }
         errors.into_iter().collect()
     }
 
-    pub fn has_build(&mut self, id: usize) -> bool {
-        self.builds.contains_key(&id)
+    pub fn get_build(&mut self, id: usize) -> Option<&mut NinjaBuild> {
+        self.builds.get_mut(&id)
     }
 }
 

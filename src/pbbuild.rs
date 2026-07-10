@@ -152,24 +152,37 @@ impl Display for PbBuild {
 }
 
 impl PbBuild {
-    pub fn populate_ninja_file(&self, nf: &mut NinjaFile) {
-        if !nf.has_build(self.id) {
-            for dep in self.deps.iter() {
-                /* TODO: Block duplicates */
-                dep.populate_ninja_file(nf);
-            }
+    pub fn ninja_outputs(&self) -> Vec<NinjaArg> {
+        self.output.clone()
+    }
 
-            let rule = self.rule.populate_ninja_file(nf);
-            let build = nf.build(self.id, &rule);
-            for inp in self.input.iter() {
-                build.input(inp.clone());
+    pub fn populate_ninja_file(&self, nf: &mut NinjaFile, is_default: bool) {
+        if let Some(build) = nf.get_build(self.id) {
+            if is_default {
+                build.set_default();
             }
-            for outp in self.output.iter() {
-                build.output(outp.clone());
-            }
-            for (var_name, var_attrs) in self.args.iter() {
-                build.var(var_name, var_attrs.clone());
-            }
+            return;
+        }
+
+        for dep in self.deps.iter() {
+            /* TODO: Block duplicates */
+            dep.populate_ninja_file(nf, false);
+        }
+
+        let rule = self.rule.populate_ninja_file(nf);
+        let build = nf.build(self.id, &rule);
+        for inp in self.input.iter() {
+            build.input(inp.clone());
+        }
+        for outp in self.output.iter() {
+            build.output(outp.clone());
+        }
+        for (var_name, var_attrs) in self.args.iter() {
+            build.var(var_name, var_attrs.clone());
+        }
+
+        if is_default {
+            build.set_default();
         }
     }
 }

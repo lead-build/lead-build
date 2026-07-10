@@ -1,0 +1,7 @@
+ninja_contains = [
+    "rule cp",
+    "build {{CASE_DIR}}/a.out: cp {{CASE_DIR}}/a.in",
+    "build {{CASE_DIR}}/b.out: cp {{CASE_DIR}}/b.in",
+    "build first: phony {{CASE_DIR}}/a.out",
+    "build second: phony {{CASE_DIR}}/b.out",
+]

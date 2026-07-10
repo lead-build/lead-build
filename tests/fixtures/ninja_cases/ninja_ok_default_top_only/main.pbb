@@ -1,0 +1,19 @@
+|{ cwd, pb, ... }|
+let
+    cp_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "cp", input, output ];
+        }
+    );
+
+    dep = pb.build {
+        rule = cp_rule;
+        input = cwd / "source.in";
+        output = cwd / "mid.out";
+    };
+in
+pb.build {
+    rule = cp_rule;
+    input = [ dep ];
+    output = cwd / "final.out";
+}

@@ -1,0 +1,9 @@
+ninja_contains = [
+    "build {{CASE_DIR}}/mid.out: cp {{CASE_DIR}}/source.in",
+    "build {{CASE_DIR}}/final.out: cp {{CASE_DIR}}/mid.out",
+    "default {{CASE_DIR}}/final.out",
+]
+
+ninja_not_contains = [
+    "default {{CASE_DIR}}/mid.out",
+]
