@@ -117,7 +117,7 @@ where
     fn op_string_concat(parts: Vec<Self>) -> Result<Self, F> {
         let mut parts_iter = parts.into_iter().peekable();
         let mut leading_path: Option<VirtPath> = None;
-        let mut out = String::new();
+        let mut out: Vec<Self> = Vec::new();
 
         if matches!(parts_iter.peek(), Some(Value::Path(_)))
             && let Some(Value::Path(path)) = parts_iter.next()
@@ -126,21 +126,38 @@ where
         }
 
         for part in parts_iter {
-            match part {
-                Value::String(value) => out.push_str(value.as_str()),
-                value => {
-                    return Err(Error::new(
-                        ErrorType::Type,
-                        format!("can't concatenate non-string value: {}", value),
-                    ));
+            match (out.pop(), part) {
+                (Some(Value::String(mut acc)), Value::String(value)) => {
+                    acc.push_str(&value);
+                    out.push(Value::String(acc));
+                }
+                (acc, Value::BuildConcat(mut parts)) => {
+                    if let Some(acc_val) = acc {
+                        out.push(acc_val);
+                    }
+                    out.append(&mut parts);
+                }
+                (acc, part) => {
+                    if let Some(acc_val) = acc {
+                        out.push(acc_val);
+                    }
+                    out.push(part);
                 }
             }
         }
 
-        if let Some(path) = leading_path {
-            Ok(Value::Path(path.apply(out.as_str())?))
+        if let Some(path) = leading_path
+            && out.len() == 1
+        {
+            Ok(Value::Path(
+                path.apply(out.pop().unwrap().as_string()?.as_str())?,
+            ))
         } else {
-            Ok(Value::String(out))
+            if out.len() == 1 {
+                Ok(out.pop().unwrap())
+            } else {
+                Ok(Value::BuildConcat(out))
+            }
         }
     }
 

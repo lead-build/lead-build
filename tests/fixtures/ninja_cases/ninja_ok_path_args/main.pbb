@@ -1,0 +1,21 @@
+|{ cwd, pb, ... }|
+let
+    gcc_rule = pb.rule (
+        |{ input, output }|{
+            command = [
+                "gcc",
+                "-c", input,
+                "-o", output,
+                "-MMD",
+                "-MF", "${output}.d",
+            ];
+            depfile = "${output}.d";
+            description = "compile";
+        }
+    );
+in
+pb.build {
+    rule = gcc_rule;
+    input = cwd / "src.c";
+    output = cwd / "out.o";
+}

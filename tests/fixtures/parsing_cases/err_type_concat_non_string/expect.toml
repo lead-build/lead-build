@@ -1,2 +1,0 @@
-kind = "err_type"
-error_contains = "can't concatenate non-string value"
