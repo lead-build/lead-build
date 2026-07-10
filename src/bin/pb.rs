@@ -1,7 +1,7 @@
 use clap::Parser;
 use lead_build::{
-    Expr, LangContext, Result, Value,
-    lang::{Error, ErrorType, ExprStorage, ExprType},
+    Expr, LangContext, Result, Value, add_expr_to_ninjafile,
+    lang::{Error, ErrorType},
     ninjawriter::NinjaFile,
     path::VirtPath,
 };
@@ -31,34 +31,6 @@ struct Args {
     /// Print evaluated output instead of generating build.ninja file
     #[arg(short = 'E', long)]
     eval: bool,
-}
-
-fn add_expr_to_ninjafile(
-    expr: &Expr<Value, VirtPath>,
-    ninja_file: &mut NinjaFile,
-) -> Result<(), VirtPath> {
-    expr.resolve()?;
-    match &*expr.inner_ref() {
-        ExprStorage {
-            tok: ExprType::Value(Value::Build(build)),
-            ..
-        } => {
-            build.populate_ninja_file(ninja_file);
-            Ok(())
-        }
-        ExprStorage {
-            tok: ExprType::List(list),
-            ..
-        } => {
-            for item in list.iter() {
-                add_expr_to_ninjafile(item, ninja_file)?;
-            }
-            Ok(())
-        }
-        ExprStorage { tok: _, loc } => {
-            Err(Error::new(ErrorType::Custom, "Not a valid build definition").reref(loc))
-        }
-    }
 }
 
 fn run(args: Args) -> Result<(), VirtPath> {

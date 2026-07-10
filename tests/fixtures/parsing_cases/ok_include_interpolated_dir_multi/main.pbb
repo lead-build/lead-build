@@ -1,0 +1,6 @@
+|{ cwd, include, ... }|
+let
+    pathvar = cwd;
+    dirname = "dir_a/subdir";
+in
+    include "${pathvar}/${dirname}/file.pbb"

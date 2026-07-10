@@ -1,0 +1,14 @@
+|{ cwd, pb, ... }|
+let
+    cc_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "cc", "-c", input, "-o", output ];
+            description = "compile";
+        }
+    );
+in
+pb.build {
+    rule = cc_rule;
+    input = cwd / "src.c";
+    output = cwd / "out.o";
+}

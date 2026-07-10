@@ -1,0 +1,39 @@
+|{ cwd, include, ... }|
+let
+    lib = include (cwd / "lib.pbb");
+    dir = "subdir";
+    nested = include "${cwd}/${dir}/more.pbb";
+
+    arithmetic_ok = (2 * 3 + 4 / 2 - 1) == 7;
+    bool_ok = (!false) && (true || false) && (true && true);
+
+    obj = { x = 1; y = 2; };
+    obj2 = obj // { y = 5; z = 9; };
+    obj_ok = (obj2.y == 5) && (obj2.{"z"} == 9);
+
+    list = [1, 2] ++ [3, 4];
+    sum = (|p f| p + f <- 0 .. list);
+    list_ok = sum == 10;
+
+    mapped = [ |a| (a*2) <- [1, 2, 3] ];
+    mapped_sum = (|p f| p + f <- 0 .. mapped);
+    map_ok = mapped_sum == 12;
+
+    switch_ok = (switch 2 {
+        1 => 10;
+        2 => 20;
+        _ => 30;
+    }) == 20;
+
+    include_ok =
+        (lib.value == 99)
+        && ((lib.inc 41) == 42)
+        && (nested.flag == true);
+in
+    arithmetic_ok
+    && bool_ok
+    && obj_ok
+    && list_ok
+    && map_ok
+    && switch_ok
+    && include_ok

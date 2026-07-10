@@ -1,0 +1,5 @@
+ninja_contains = [
+	"rule cc_c_o",
+	"command = cc -c ${in} -o ${out}",
+	"build {{CASE_DIR}}/out.o: cc_c_o {{CASE_DIR}}/src.c",
+]

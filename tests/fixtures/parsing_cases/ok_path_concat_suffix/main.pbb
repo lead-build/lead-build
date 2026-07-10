@@ -1,0 +1,5 @@
+|{ cwd, ... }|
+let
+    p = cwd / "out" / "file";
+in
+    ("${p}.o" == (cwd / "out" / "file.o"))
