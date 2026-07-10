@@ -72,7 +72,7 @@ where
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs + rhs)),
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::String(lhs.clone() + rhs)),
-            (Value::Path(lhs), Value::String(rhs)) => Ok(Value::Path(lhs.apply(rhs)?)),
+            (Value::Path(lhs), Value::String(rhs)) => Ok(Value::Path(lhs.add_suffix(rhs)?)),
             (Value::BuildConcat(vs), _) => {
                 let mut vs = vs.clone();
                 vs.push(rhs.clone());
@@ -111,6 +111,36 @@ where
                 ErrorType::Type,
                 format!("can't divide {} and {}", lhs, rhs),
             )),
+        }
+    }
+
+    fn op_string_concat(parts: Vec<Self>) -> Result<Self, F> {
+        let mut parts_iter = parts.into_iter().peekable();
+        let mut leading_path: Option<VirtPath> = None;
+        let mut out = String::new();
+
+        if matches!(parts_iter.peek(), Some(Value::Path(_))) {
+            if let Some(Value::Path(path)) = parts_iter.next() {
+                leading_path = Some(path);
+            }
+        }
+
+        for part in parts_iter {
+            match part {
+                Value::String(value) => out.push_str(value.as_str()),
+                value => {
+                    return Err(Error::new(
+                        ErrorType::Type,
+                        format!("can't concatenate non-string value: {}", value),
+                    ));
+                }
+            }
+        }
+
+        if let Some(path) = leading_path {
+            Ok(Value::Path(path.apply(out.as_str())?))
+        } else {
+            Ok(Value::String(out))
         }
     }
 

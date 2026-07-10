@@ -92,6 +92,22 @@ impl ExprOps<FRef> for TestValue {
         }
     }
 
+    fn op_string_concat(parts: Vec<Self>) -> Result<Self, FRef> {
+        parts
+            .into_iter()
+            .try_fold(Self::String("".to_string()), |acc, part| {
+                match (acc, part) {
+                    (TestValue::String(lhs), TestValue::String(rhs)) => {
+                        Ok(TestValue::String(lhs + &rhs))
+                    }
+                    (_, _) => Err(Error::new(
+                        ErrorType::Type,
+                        format!("can't concatenate non-string value"),
+                    )),
+                }
+            })
+    }
+
     fn op_lt(lhs: &Self, rhs: &Self) -> Result<Self, FRef> {
         match (lhs, rhs) {
             (TestValue::Int(lhs), TestValue::Int(rhs)) => Ok(TestValue::Bool(lhs < rhs)),

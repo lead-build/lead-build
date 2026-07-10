@@ -20,6 +20,7 @@ pub trait ExprOps<F>: Sized {
     fn op_sub(lhs: &Self, rhs: &Self) -> Result<Self, F>;
     fn op_mult(lhs: &Self, rhs: &Self) -> Result<Self, F>;
     fn op_div(lhs: &Self, rhs: &Self) -> Result<Self, F>;
+    fn op_string_concat(parts: Vec<Self>) -> Result<Self, F>;
     fn op_lt(lhs: &Self, rhs: &Self) -> Result<Self, F>;
     fn op_le(lhs: &Self, rhs: &Self) -> Result<Self, F>;
     fn op_gt(lhs: &Self, rhs: &Self) -> Result<Self, F>;
@@ -114,6 +115,7 @@ where
     Object(ExprSet<T, F>),
     List(Vec<Expr<T, F>>),
     Tuple(Vec<Expr<T, F>>),
+    Concat(Vec<Expr<T, F>>),
     AttrSel(Expr<T, F>, Expr<T, F>),
     Value(T),
     Var(String),
@@ -349,7 +351,7 @@ where
                 .values()
                 .flat_map(|field| field.referenced_vars().into_iter())
                 .collect(),
-            ExprType::List(items) | ExprType::Tuple(items) => items
+            ExprType::List(items) | ExprType::Tuple(items) | ExprType::Concat(items) => items
                 .iter()
                 .flat_map(|item| item.referenced_vars().into_iter())
                 .collect(),
@@ -435,6 +437,7 @@ where
             ExprType::Object(..) => false,
             ExprType::List(..) => false,
             ExprType::Tuple(..) => false,
+            ExprType::Concat(..) => true,
             ExprType::AttrSel(..) => true,
             ExprType::Value(..) => false,
             ExprType::Var(..) => true,
@@ -480,22 +483,24 @@ where
                     )
                     .loc(loc)),
                     ExprStorage {
-                        tok: ExprType::AttrSel(val, attr),
+                        tok: ExprType::Concat(parts),
                         ..
-                    } => Ok(ExprType::AttrSel(
-                        val.bind(&varspace),
-                        attr.bind(&varspace),
+                    } => Ok(ExprType::Concat(
+                        parts.iter().map(|part| part.bind(&varspace)).collect(),
                     )
                     .loc(loc)),
+                    ExprStorage {
+                        tok: ExprType::AttrSel(val, attr),
+                        ..
+                    } => Ok(ExprType::AttrSel(val.bind(&varspace), attr.bind(&varspace)).loc(loc)),
                     ExprStorage {
                         tok: ExprType::Let(fields, target_expr),
                         ..
                     } => {
                         let mut vars: ExprSet<T, F> = varspace;
                         for (field_matcher, field_expr) in fields {
-                            for (name, value) in field_matcher
-                                .run(field_expr.bind(&vars))?
-                                .into_iter()
+                            for (name, value) in
+                                field_matcher.run(field_expr.bind(&vars))?.into_iter()
                             {
                                 vars.insert(name.clone(), value).map_or_else(
                                     || Ok(()),
@@ -536,12 +541,9 @@ where
                     ExprStorage {
                         tok: ExprType::Map(typ, func, input),
                         ..
-                    } => Ok(ExprType::Map(
-                        *typ,
-                        func.bind(&varspace),
-                        input.bind(&varspace),
-                    )
-                    .loc(loc)),
+                    } => Ok(
+                        ExprType::Map(*typ, func.bind(&varspace), input.bind(&varspace)).loc(loc),
+                    ),
                     ExprStorage {
                         tok: ExprType::Var(name),
                         loc: vloc,
@@ -564,28 +566,19 @@ where
                     ExprStorage {
                         tok: ExprType::UnOp(op, expr),
                         ..
-                    } => Ok(ExprType::UnOp(
-                        *op,
-                        expr.bind(&varspace),
-                    )
-                    .loc(loc)),
+                    } => Ok(ExprType::UnOp(*op, expr.bind(&varspace)).loc(loc)),
                     ExprStorage {
                         tok: ExprType::BinOp(op, lhs, rhs),
                         ..
-                    } => Ok(ExprType::BinOp(
-                        *op,
-                        lhs.bind(&varspace),
-                        rhs.bind(&varspace),
-                    )
-                    .loc(loc)),
+                    } => {
+                        Ok(ExprType::BinOp(*op, lhs.bind(&varspace), rhs.bind(&varspace)).loc(loc))
+                    }
                     ExprStorage {
                         tok: ExprType::FuncCall(fargs, fexpr),
                         ..
-                    } => Ok(ExprType::FuncCall(
-                        fargs.bind(&varspace),
-                        fexpr.bind(&varspace),
-                    )
-                    .loc(loc)),
+                    } => Ok(
+                        ExprType::FuncCall(fargs.bind(&varspace), fexpr.bind(&varspace)).loc(loc),
+                    ),
                     ExprStorage {
                         tok: ExprType::Value(value),
                         ..
@@ -611,6 +604,16 @@ where
                         ..
                     } => panic!("Found null in expr tree"),
                 },
+                ExprStorage {
+                    tok: ExprType::Concat(parts),
+                    loc,
+                } => {
+                    let part_values = parts
+                        .iter()
+                        .map(|part| part.value().map_err(|e| e.reref(&loc)))
+                        .collect::<Result<Vec<T>, F>>()?;
+                    Ok(ExprType::Value(T::op_string_concat(part_values)?).loc(loc))
+                }
                 ExprStorage {
                     tok: ExprType::AttrSel(val, attr),
                     loc,
@@ -795,7 +798,11 @@ where
                             },
                         ) => {
                             let mut res_obj = lhs_obj.clone();
-                            res_obj.extend(rhs_obj.iter().map(|(key, value)| (key.clone(), value.clone())));
+                            res_obj.extend(
+                                rhs_obj
+                                    .iter()
+                                    .map(|(key, value)| (key.clone(), value.clone())),
+                            );
                             Ok(ExprType::Object(res_obj).loc(loc))
                         }
                         _ => Err(todo(loc.clone(), file!(), line!(), column!())),
@@ -959,11 +966,9 @@ where
                 ExprStorage {
                     tok: ExprType::Var(name),
                     loc,
-                } => Err(Error::new(
-                    ErrorType::Scope,
-                    format!("Unknown variable {}", name),
-                )
-                .reref(&loc)),
+                } => Err(
+                    Error::new(ErrorType::Scope, format!("Unknown variable {}", name)).reref(&loc),
+                ),
                 ExprStorage {
                     tok: ExprType::Null,
                     loc: _loc,
@@ -990,12 +995,12 @@ where
 
         let fields: Vec<Expr<T, F>> = match &self.inner_ref().tok {
             ExprType::Object(fields) => fields.values().cloned().collect(),
-            ExprType::List(fields) | ExprType::Tuple(fields) => fields.to_vec(),
+            ExprType::List(fields) | ExprType::Tuple(fields) | ExprType::Concat(fields) => {
+                fields.to_vec()
+            }
             ExprType::Bind(varspace, bound_expr) => {
-                let mut parts: Vec<Expr<T, F>> = varspace
-                    .values()
-                    .map(|part| part.bind(varspace))
-                    .collect();
+                let mut parts: Vec<Expr<T, F>> =
+                    varspace.values().map(|part| part.bind(varspace)).collect();
                 parts.push(bound_expr.clone());
                 parts
             }

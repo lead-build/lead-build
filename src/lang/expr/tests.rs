@@ -973,3 +973,19 @@ fn test_switch_none() {
         eval("3")
     );
 }
+
+
+#[test]
+fn test_string_concat() {
+    assert_eq!(
+        eval(
+            r#"
+            let
+                var = "foo";
+            in
+                "${var}aaa${var}bbb${var}"
+            "#
+        ),
+        eval("\"fooaaafoobbbfoo\"")
+    );
+}

@@ -83,6 +83,15 @@ where
                 write!(f, ")")?;
                 Ok(())
             }
+            ExprType::Concat(items) => {
+                for (idx, item) in items.iter().enumerate() {
+                    if idx != 0 {
+                        write!(f, " + ")?;
+                    }
+                    item.export(indent, f)?;
+                }
+                Ok(())
+            }
             ExprType::AttrSel(val, attr) => {
                 val.export(indent, f)?;
 

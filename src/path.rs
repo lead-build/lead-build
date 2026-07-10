@@ -101,6 +101,21 @@ impl VirtPath {
         Ok(out)
     }
 
+    pub fn add_suffix<F: Clone>(&self, suffix: &str) -> Result<VirtPath, F> {
+        let mut out = self.clone();
+        let last = out.parts.last_mut().ok_or_else(|| {
+            Error::new(
+                ErrorType::Custom,
+                format!(
+                    "can't add suffix to path without unlocked elements: {}",
+                    self
+                ),
+            )
+        })?;
+        last.push_str(suffix);
+        Ok(out)
+    }
+
     pub fn remove_suffix<F: Clone>(&self, suffix: &str) -> Result<VirtPath, F> {
         let mut out = self.clone();
         let last = out.parts.pop().ok_or_else(|| {
@@ -360,6 +375,36 @@ mod tests {
                 .step::<TestF>("test")
                 .unwrap()
                 .apply::<TestF>(".o")
+                .unwrap()
+        )
+    }
+
+    #[test]
+    fn test_add_suffix() {
+        assert_eq!(
+            VirtPath::new("root").step::<TestF>("test.o").unwrap(),
+            VirtPath::new("root")
+                .step::<TestF>("test")
+                .unwrap()
+                .add_suffix::<TestF>(".o")
+                .unwrap()
+        )
+    }
+
+    #[test]
+    fn test_add_suffix_only_last_element() {
+        assert_eq!(
+            VirtPath::new("root")
+                .step::<TestF>("dir")
+                .unwrap()
+                .step::<TestF>("file.o")
+                .unwrap(),
+            VirtPath::new("root")
+                .step::<TestF>("dir")
+                .unwrap()
+                .step::<TestF>("file")
+                .unwrap()
+                .add_suffix::<TestF>(".o")
                 .unwrap()
         )
     }

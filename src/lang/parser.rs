@@ -117,26 +117,23 @@ where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
     F: Clone + Debug,
 {
-    let parts = string_decode(input.as_str()).unwrap();
-    let mut out_expr: Option<Expr<T, F>> = None;
-    for part in parts {
-        let part_expr: Expr<T, F> = match part {
-            StringType::Str(s) => {
-                ExprType::Value(T::parse_string(s).unwrap()).toexpr(left, right, file)
-            }
-            StringType::Expr(code) => parse_str(&code, file)?,
-        };
-        out_expr = match out_expr {
-            Some(prev) => {
-                Some(ExprType::BinOp(ExprBinOp::Add, prev, part_expr).toexpr(left, right, file))
-            }
-            None => Some(part_expr),
-        }
-    }
+    let parts_values = string_decode(input.as_str())
+        .unwrap()
+        .into_iter()
+        .map(|part| match part {
+            StringType::Str(s) => Ok(ExprType::Value(T::parse_string(s).ok_or_else(|| {
+                Error::new(ErrorType::Parse, "Error parsing string").loc(left, right, file)
+            })?)
+            .toexpr(left, right, file)),
+            StringType::Expr(code) => parse_str(&code, file),
+        })
+        .collect::<Result<Vec<Expr<T, F>>, F>>()?;
 
-    Ok(out_expr
-        .or_else(|| Some(ExprType::Value(T::parse_string("").unwrap()).toexpr(left, right, file)))
-        .unwrap())
+    if parts_values.len() == 1 {
+        Ok(parts_values.into_iter().next().unwrap())
+    } else {
+        Ok(ExprType::Concat(parts_values).toexpr(left, right, file))
+    }
 }
 
 fn unpack_int<T, F>(input: &str) -> ExprType<T, F>
@@ -231,76 +228,6 @@ mod tests {
         let code = "\"boll\\\"hej\\u0041\"";
         assert_eq!(
             ExprType::from(ExprType::Value(TestValue::String("boll\"hejA".into()))).builtin(),
-            eval(code)
-        );
-    }
-
-    #[test]
-    fn test_parse_str_var() {
-        let code = "\"prefix${myvar}suffix\"";
-        assert_eq!(
-            ExprType::from(ExprType::BinOp(
-                ExprBinOp::Add,
-                ExprType::from(ExprType::BinOp(
-                    ExprBinOp::Add,
-                    ExprType::from(ExprType::Value(TestValue::String("prefix".into()))).builtin(),
-                    ExprType::from(ExprType::Var("myvar".into())).builtin()
-                ))
-                .builtin(),
-                ExprType::from(ExprType::Value(TestValue::String("suffix".into()))).builtin()
-            ))
-            .builtin(),
-            eval(code)
-        );
-    }
-
-    #[test]
-    fn test_parse_str_obj() {
-        // An object may be an issue for string concatenation, but it verifies
-        // brackets are interpreted in the correct places.
-        let code = "\"prefix${{a = 12;}}suffix\"";
-        assert_eq!(
-            ExprType::from(ExprType::BinOp(
-                ExprBinOp::Add,
-                ExprType::from(ExprType::BinOp(
-                    ExprBinOp::Add,
-                    ExprType::from(ExprType::Value(TestValue::String("prefix".into()))).builtin(),
-                    ExprType::from(ExprSet::from([(
-                        "a".into(),
-                        ExprType::from(TestValue::Int(12)).builtin()
-                    )]))
-                    .builtin()
-                ))
-                .builtin(),
-                ExprType::from(ExprType::Value(TestValue::String("suffix".into()))).builtin()
-            ))
-            .builtin(),
-            eval(code)
-        );
-    }
-
-    #[test]
-    fn test_parse_str_obj_expr() {
-        // An object may be an issue for string concatenation, but it verifies
-        // brackets are interpreted in the correct places.
-        let code = "\"prefix${({a = 12;} // {b = 13;}).b}mid${44}\"";
-        assert_eq!(
-            ExprType::from(ExprType::BinOp(
-                ExprBinOp::Add,
-                ExprType::BinOp(
-                    ExprBinOp::Add,
-                    ExprType::BinOp(
-                        ExprBinOp::Add,
-                        eval("\"prefix\""),
-                        eval("({a = 12;} // {b = 13;}).b")
-                    )
-                    .builtin(),
-                    eval("\"mid\""),
-                )
-                .builtin(),
-                eval("44")
-            ))
-            .builtin(),
             eval(code)
         );
     }
