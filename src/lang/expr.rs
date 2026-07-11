@@ -805,7 +805,14 @@ where
                             );
                             Ok(ExprType::Object(res_obj).loc(loc))
                         }
-                        _ => Err(todo(loc.clone(), file!(), line!(), column!())),
+                        (ExprBinOp::Update, ExprStorage { tok: rhs_tok, .. }) => {
+                            Err(Error::new(
+                                ErrorType::Type,
+                                format!("Object cannot be updated with {}", rhs_tok),
+                            )
+                            .reref(&loc))
+                        }
+                        _ => Err(todo(loc, file!(), line!(), column!())),
                     },
                     ExprStorage {
                         tok: ExprType::List(lhs_list),
@@ -1000,7 +1007,7 @@ where
             }
             ExprType::Bind(varspace, bound_expr) => {
                 let mut parts: Vec<Expr<T, F>> =
-                    varspace.values().map(|part| part.bind(varspace)).collect();
+                    varspace.values().cloned().collect();
                 parts.push(bound_expr.clone());
                 parts
             }

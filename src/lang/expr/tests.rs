@@ -749,9 +749,25 @@ fn test_attr_select_computed_from_expr() {
 }
 
 #[test]
-fn test_attr_select_ident_still_works() {
+fn test_attr_select_ident() {
     assert_eq!(
         eval("let obj = { field = 123; }; in obj.field"),
+        eval("123")
+    );
+}
+
+#[test]
+fn test_attr_select_var_in_selection() {
+    assert_eq!(
+        eval(
+            r#"
+            let
+                obj = { field = 123; incorrect = 4343; };
+                config = { name = "field"; };
+            in
+                obj.{config.name}
+        "#
+        ),
         eval("123")
     );
 }
