@@ -161,7 +161,7 @@ where
                 write!(f, " )")?;
                 Ok(())
             }
-            ExprType::Map(typ, func, input) => {
+            ExprType::Map(typ, func, input, filter) => {
                 match typ {
                     ExprMapType::List => write!(f, "[ ")?,
                     ExprMapType::Object => write!(f, "{{ ")?,
@@ -173,6 +173,12 @@ where
                 newline(indent + 1, f)?;
                 input.export(indent + 1, f)?;
                 newline(indent, f)?;
+                if let Some(filter_expr) = filter {
+                    write!(f, " if ")?;
+                    newline(indent + 1, f)?;
+                    filter_expr.export(indent + 1, f)?;
+                    newline(indent, f)?;
+                }
                 match typ {
                     ExprMapType::List => write!(f, " ]")?,
                     ExprMapType::Object => write!(f, " }}")?,

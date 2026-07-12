@@ -790,6 +790,11 @@ fn test_list_map_list_to_list() {
 }
 
 #[test]
+fn test_list_map_filter() {
+    assert_eq!(eval("[ |a| (a*2) <- [1, 2, 3] if |a| a<3 ]"), eval("[2, 4]"));
+}
+
+#[test]
 fn test_list_map_list_to_obj() {
     assert_eq!(
         eval("{ |a| (a, 3) <- [\"a\", \"b\", \"c\"] }"),

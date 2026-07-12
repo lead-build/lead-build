@@ -13,12 +13,55 @@ The basic idea is:
 ```lead
 [ |pattern| expression <- source ]
 { |pattern| expression <- source }
+[ |pattern| expression <- source if |pattern| predicate ]
+{ |pattern| expression <- source if |pattern| predicate }
 ```
 
 - Square brackets `[...]` produce a list.
 - Curly braces `{...}` produce an object.
 - The `pattern` is matched against each item in the source.
 - The `expression` is evaluated once per item, using the matched values.
+- The optional `if` clause filters input items before mapping.
+
+### Filtering during map
+
+Map expressions support an optional filter written after the source expression:
+
+```lead
+[ mapper <- source if predicate ]
+{ mapper <- source if predicate }
+```
+
+The filter is a function that receives the same input item as the mapper:
+
+- For list input, it receives each list element.
+- For object input, it receives a `(key, value)` tuple.
+
+Only items where the predicate evaluates to `true` are passed to the mapper.
+
+### Filter a list map
+
+```lead
+[ |a| a * 2 <- [1, 2, 3, 4] if |a| a < 3 ]
+```
+
+This evaluates to:
+
+```lead
+[2, 4]
+```
+
+### Filter an object map
+
+```lead
+{ |(k, v)| (k, v * 10) <- {a=1; b=2; c=3;} if |(k, v)| v >= 2 }
+```
+
+This evaluates to:
+
+```lead
+{b=20; c=30;}
+```
 
 ### Map over a list, returning a list
 

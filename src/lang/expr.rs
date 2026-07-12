@@ -125,7 +125,7 @@ where
     FuncDefBuiltin(ExprBuiltinWrapper<T, F>),
     Let(Vec<(Matcher<T, F>, Expr<T, F>)>, Expr<T, F>),
     Fold(Expr<T, F>, Expr<T, F>, Expr<T, F>),
-    Map(ExprMapType, Expr<T, F>, Expr<T, F>),
+    Map(ExprMapType, Expr<T, F>, Expr<T, F>, Option<Expr<T, F>>),
     FuncCall(Expr<T, F>, Expr<T, F>),
     Bind(ExprSet<T, F>, Expr<T, F>),
     Switch(
@@ -390,9 +390,12 @@ where
                 vars.extend(input.referenced_vars());
                 vars
             }
-            ExprType::Map(_, func, input) => {
+            ExprType::Map(_, func, input, filter) => {
                 let mut vars = func.referenced_vars();
                 vars.extend(input.referenced_vars());
+                if let Some(filter_expr) = filter {
+                    vars.extend(filter_expr.referenced_vars());
+                }
                 vars
             }
             ExprType::FuncCall(arg, func) => {
@@ -539,11 +542,15 @@ where
                     )
                     .loc(loc)),
                     ExprStorage {
-                        tok: ExprType::Map(typ, func, input),
+                        tok: ExprType::Map(typ, func, input, filter),
                         ..
-                    } => Ok(
-                        ExprType::Map(*typ, func.bind(&varspace), input.bind(&varspace)).loc(loc),
-                    ),
+                    } => Ok(ExprType::Map(
+                        *typ,
+                        func.bind(&varspace),
+                        input.bind(&varspace),
+                        filter.as_ref().map(|e| e.bind(&varspace)),
+                    )
+                    .loc(loc)),
                     ExprStorage {
                         tok: ExprType::Var(name),
                         loc: vloc,
@@ -698,7 +705,7 @@ where
                     }
                 }
                 ExprStorage {
-                    tok: ExprType::Map(typ, func, input),
+                    tok: ExprType::Map(typ, func, input, filter),
                     loc,
                 } => {
                     input.resolve().map_err(|e| e.reref(&loc))?;
@@ -730,7 +737,24 @@ where
                         .reref(&loc)),
                     }?;
 
-                    let output_items = input_items
+                    let mut filtered_items: Vec<Expr<T, F>>;
+                    if let Some(filter_expr) = filter {
+                        filtered_items = Vec::new();
+                        for item in input_items.iter() {
+                            let filter_result =
+                                ExprType::FuncCall(item.clone(), filter_expr.clone())
+                                    .reref(item.get_loc())
+                                    .value()?
+                                    .as_bool()?;
+                            if filter_result {
+                                filtered_items.push(item.clone());
+                            }
+                        }
+                    } else {
+                        filtered_items = input_items;
+                    };
+
+                    let output_items = filtered_items
                         .into_iter()
                         .map(|iel| {
                             let loc = iel.get_loc();

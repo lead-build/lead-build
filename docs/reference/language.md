@@ -160,12 +160,23 @@ The map construct has two variants:
 - generate a list: `[ func <- iterable ]`
 - generate an object: `{ func <- iterable }`
 
+Both forms also support an optional filter clause:
+
+- generate a filtered list: `[ func <- iterable if filter ]`
+- generate a filtered object: `{ func <- iterable if filter }`
+
 `iterable` can be either a list or object, and `func` is a function that
 transform each element in iterable to an output element.
+
+When present, `filter` is evaluated before `func` for each input element.
+Only elements where `filter` evaluates to `true` are kept.
 
 For lists, element is passed, or received directly. For objects, each element
 is represented to `func` as a tuple of `(key, value)`, both as argument and
 return value.
+
+The filter receives the same input representation as the mapper, meaning list
+elements for list input and `(key, value)` tuples for object input.
 
 This means four combinations:
 
@@ -175,6 +186,12 @@ This means four combinations:
 | List   | Object | `{ |input_val| (output_key, output_value) <- source_list }`                |
 | Object | List   | `[ |(input_key, input_val)| output_val <- input_object ]`                  |
 | Object | Object | `{ |(input_key, input_val)| (output_key, output_value) <- source_object }` |
+
+Example with filtering:
+
+```lead
+[ |a| a * 2 <- [1, 2, 3] if |a| a < 3 ]
+```
 
 ### Switch expressions
 
