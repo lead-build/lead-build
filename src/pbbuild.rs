@@ -138,7 +138,7 @@ impl Display for PbBuild {
                 write!(f, "??")?;
             }
         }
-        write!(f, " <-",)?;
+        write!(f, " for",)?;
         for i in self.input.iter() {
             if let NinjaArg::Path(ip) = i {
                 write!(f, " {}", ip.to_path_buf().display())?;

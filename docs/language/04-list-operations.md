@@ -11,10 +11,10 @@ The language also supports a map-like iteration form for transforming collection
 The basic idea is:
 
 ```lead
-[ |pattern| expression <- source ]
-{ |pattern| expression <- source }
-[ |pattern| expression <- source if |pattern| predicate ]
-{ |pattern| expression <- source if |pattern| predicate }
+[ |pattern| expression for source ]
+{ |pattern| expression for source }
+[ |pattern| expression for source if |pattern| predicate ]
+{ |pattern| expression for source if |pattern| predicate }
 ```
 
 - Square brackets `[...]` produce a list.
@@ -28,8 +28,8 @@ The basic idea is:
 Map expressions support an optional filter written after the source expression:
 
 ```lead
-[ mapper <- source if predicate ]
-{ mapper <- source if predicate }
+[ mapper for source if predicate ]
+{ mapper for source if predicate }
 ```
 
 The filter is a function that receives the same input item as the mapper:
@@ -42,7 +42,7 @@ Only items where the predicate evaluates to `true` are passed to the mapper.
 ### Filter a list map
 
 ```lead
-[ |a| a * 2 <- [1, 2, 3, 4] if |a| a < 3 ]
+[ |a| a * 2 for [1, 2, 3, 4] if |a| a < 3 ]
 ```
 
 This evaluates to:
@@ -54,7 +54,7 @@ This evaluates to:
 ### Filter an object map
 
 ```lead
-{ |(k, v)| (k, v * 10) <- {a=1; b=2; c=3;} if |(k, v)| v >= 2 }
+{ |(k, v)| (k, v * 10) for {a=1; b=2; c=3;} if |(k, v)| v >= 2 }
 ```
 
 This evaluates to:
@@ -66,7 +66,7 @@ This evaluates to:
 ### Map over a list, returning a list
 
 ```lead
-[ |v| v + 3 <- input_list ]
+[ |v| v + 3 for input_list ]
 ```
 
 This applies the function `|v| v + 3` to each element of `input_list`. The result is a new list whose values are each transformed by the expression.
@@ -74,7 +74,7 @@ This applies the function `|v| v + 3` to each element of `input_list`. The resul
 ### Map over an object, returning a list
 
 ```lead
-[ |(k, v)| v + 3 <- input_object ]
+[ |(k, v)| v + 3 for input_object ]
 ```
 
 When iterating over an object, each item is exposed as a pair of `(key, value)`. This form transforms each value and collects the results into a list.
@@ -82,7 +82,7 @@ When iterating over an object, each item is exposed as a pair of `(key, value)`.
 ### Map over a list, returning an object
 
 ```lead
-{ |v| (v, "value " + v) <- list }
+{ |v| (v, "value " + v) for list }
 ```
 
 This form turns each list element into a key/value pair. The first element of the pair becomes the object key, and the second becomes the object value.
@@ -90,7 +90,7 @@ This form turns each list element into a key/value pair. The first element of th
 ### Map over an object, returning an object
 
 ```lead
-{ |(k, v)| (k, v + 3) <- object }
+{ |(k, v)| (k, v + 3) for object }
 ```
 
 This iterates over an object, transforms each `(key, value)` pair, and builds a new object from the transformed pairs. The result must again be a `(key, value)` pair for each entry.
@@ -104,7 +104,7 @@ A fold reduces a collection to a single value by repeatedly combining an accumul
 The general form is:
 
 ```lead
-(|accumulator field| expression <- initial .. source)
+(|accumulator field| expression for initial .. source)
 ```
 
 - `initial` is the starting value of the accumulator.
@@ -115,7 +115,7 @@ The general form is:
 For example:
 
 ```lead
-(|prev field| prev * 10 + field <- 7 .. [1, 2, 3])
+(|prev field| prev * 10 + field for 7 .. [1, 2, 3])
 ```
 
 This evaluates as:
@@ -146,7 +146,7 @@ Because fold exposes both the accumulated state and the current item, it is well
 ```lead
 # sum: adds all numbers in a list
 let
-  sum = |lst| (|acc v| acc + v <- 0 .. lst);
+  sum = |lst| (|acc v| acc + v for 0 .. lst);
 in
   sum [1, 2, 3, 4]    # => 10
 ```
@@ -154,7 +154,7 @@ in
 ```lead
 # product: multiplies all numbers in a list
 let
-  product = |lst| (|acc v| acc * v <- 1 .. lst);
+  product = |lst| (|acc v| acc * v for 1 .. lst);
 in
   product [2, 3, 4]   # => 24
 ```

@@ -53,7 +53,7 @@ in
                     };
                     input = file;
                 })
-            <- sources
+            for sources
         ];
     };
 }

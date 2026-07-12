@@ -12,11 +12,11 @@ let
     obj_ok = (obj2.y == 5) && (obj2.{"z"} == 9);
 
     list = [1, 2] ++ [3, 4];
-    sum = (|p f| p + f <- 0 .. list);
+    sum = (|p f| p + f for 0 .. list);
     list_ok = sum == 10;
 
-    mapped = [ |a| (a*2) <- [1, 2, 3] ];
-    mapped_sum = (|p f| p + f <- 0 .. mapped);
+    mapped = [ |a| (a*2) for [1, 2, 3] ];
+    mapped_sum = (|p f| p + f for 0 .. mapped);
     map_ok = mapped_sum == 12;
 
     switch_ok = (switch 2 {

@@ -152,7 +152,7 @@ where
                 newline(indent + 1, f)?;
                 func.export(indent + 1, f)?;
                 newline(indent, f)?;
-                write!(f, " <- ")?;
+                write!(f, " for ")?;
                 newline(indent + 1, f)?;
                 init.export(indent + 1, f)?;
                 write!(f, " | ")?;
@@ -169,7 +169,7 @@ where
                 newline(indent + 1, f)?;
                 func.export(indent + 1, f)?;
                 newline(indent, f)?;
-                write!(f, " <- ")?;
+                write!(f, " for ")?;
                 newline(indent + 1, f)?;
                 input.export(indent + 1, f)?;
                 newline(indent, f)?;

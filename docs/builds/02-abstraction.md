@@ -118,8 +118,8 @@ let
 
 in
   [
-    native.link (cwd / "app") [ |src| native.cc src <- srcs ],
-    cross.link (cwd / "cross-app") [ |src| cross.cc src <- srcs ],
+    native.link (cwd / "app") [ |src| native.cc src for srcs ],
+    cross.link (cwd / "cross-app") [ |src| cross.cc src for srcs ],
   ]
 ```
 
@@ -253,10 +253,10 @@ let
       target_desc = include (cwd / "lib" / "targets" / "${target}.pbb");
       { cc, link } = lang_c target_desc srcdir (objdir / target);
     in
-      (link (cwd / "app-${target}") [ |src| cc src <- srcs ])
+      (link (cwd / "app-${target}") [ |src| cc src for srcs ])
   );
 in
-  ([ |target| build target <- targets ])
+  ([ |target| build target for targets ])
 ```
 
 We have now crated a working library implementation, where compiler, target and application specificaion is separated.

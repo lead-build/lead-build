@@ -764,7 +764,7 @@ fn test_list_commas() {
 #[test]
 fn test_list_fold() {
     assert_eq!(
-        eval("(|prev field| prev*10 + field <- 7 .. [1, 2, 3] )"),
+        eval("(|prev field| prev*10 + field for 7 .. [1, 2, 3] )"),
         eval("7123")
     );
 }
@@ -775,7 +775,7 @@ fn test_list_fold_concat_strings() {
         eval(
             r#"
             let
-                strconcat = |strs| (|p f| (p + f) <- "" .. strs );
+                strconcat = |strs| (|p f| (p + f) for "" .. strs );
             in
                 strconcat [ "hello", "rld" ]
             "#
@@ -786,18 +786,18 @@ fn test_list_fold_concat_strings() {
 
 #[test]
 fn test_list_map_list_to_list() {
-    assert_eq!(eval("[ |a| (a*2) <- [1, 2, 3] ]"), eval("[2, 4, 6]"));
+    assert_eq!(eval("[ |a| (a*2) for [1, 2, 3] ]"), eval("[2, 4, 6]"));
 }
 
 #[test]
 fn test_list_map_filter() {
-    assert_eq!(eval("[ |a| (a*2) <- [1, 2, 3] if |a| a<3 ]"), eval("[2, 4]"));
+    assert_eq!(eval("[ |a| (a*2) for [1, 2, 3] if |a| a<3 ]"), eval("[2, 4]"));
 }
 
 #[test]
 fn test_list_map_list_to_obj() {
     assert_eq!(
-        eval("{ |a| (a, 3) <- [\"a\", \"b\", \"c\"] }"),
+        eval("{ |a| (a, 3) for [\"a\", \"b\", \"c\"] }"),
         eval("{a=3; b=3; c=3;}")
     );
 }
@@ -805,7 +805,7 @@ fn test_list_map_list_to_obj() {
 #[test]
 fn test_list_map_obj_to_list() {
     assert_eq!(
-        eval("[ |(k, v)| v <- {a=1; b=2; c=3;} ]"),
+        eval("[ |(k, v)| v for {a=1; b=2; c=3;} ]"),
         eval("[1, 2, 3]")
     );
 }
@@ -813,7 +813,7 @@ fn test_list_map_obj_to_list() {
 #[test]
 fn test_list_map_obj_to_obj() {
     assert_eq!(
-        eval("{ |(k, v)| (k, v*3) <- {a=1; b=2; c=3;} }"),
+        eval("{ |(k, v)| (k, v*3) for {a=1; b=2; c=3;} }"),
         eval("{a=3; b=6; c=9;}")
     );
 }
@@ -871,7 +871,7 @@ fn test_builtin_func_laziness_within_obj_map() {
     // Invoked in code twice should only be evaluated once
     let code = r#"
                 let
-                    obj = {|(k,v)| (k, mybuiltin v) <- {a=2; b=3;} };
+                    obj = {|(k,v)| (k, mybuiltin v) for {a=2; b=3;} };
                 in
                 {
                     a = obj.a;
@@ -899,7 +899,7 @@ fn test_builtin_func_laziness_within_list_map() {
     // Invoked in code twice should only be evaluated once
     let code = r#"
                 let
-                    obj = {|k| (k, mybuiltin k) <- ["a", "b"] };
+                    obj = {|k| (k, mybuiltin k) for ["a", "b"] };
                 in
                 {
                     a = obj.a;

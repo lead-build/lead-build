@@ -100,35 +100,35 @@ A placeholder for a variable, available internally in the function defining a `p
 
 Following operators are available:
 
-| Operator                   | Precedence | Description                       |
-| -------------------------- | ---------- | --------------------------------- |
-| `let ... in ...`           | 1          | let block expression              |
-| `|matcher| expr`           | 1          | Function definition               |
-| `lhs -> rhs`               | 2          | Logical implication               |
-| `lhs || rhs`               | 3          | Logical or                        |
-| `lhs && rhs`               | 4          | Logical and                       |
-| `lhs == rhs`               | 5          | Equal                             |
-| `lhs != rhs`               | 5          | Not equal                         |
-| `lhs < rhs`                | 6          | Less than                         |
-| `lhs <= rhs`               | 6          | Less than or equal                |
-| `lhs > rhs`                | 6          | Greater than                      |
-| `lhs >= rhs`               | 6          | Greater than or equal             |
-| `lhs // rhs`               | 7          | Object update/merge               |
-| `!expr`                    | 8          | Logical not                       |
-| `lhs + rhs`                | 9          | Addition or string concatentation |
-| `lhs - rhs`                | 9          | Subtraction                       |
-| `lhs * rhs`                | 10         | Multiplication                    |
-| `lhs / rhs`                | 10         | Division or path extension        |
-| `lhs ++ rhs`               | 11         | List concactenation               |
-| `lhs ? rhs`                | 12         | Has attribute                     |
-| `-expr`                    | 13         | Numeric negation                  |
-| `func arg`                 | 14         | Function call                     |
-| `object.ident`             | 15         | attribute selection               |
-| `object.{expr}`            | 15         | computed attribute selection      |
-| `( func <- init .. list )` | 16         | list fold                         |
-| `[ func <- iterable ]`     | 16         | list map                          |
-| `{ func <- iterable }`     | 16         | object map                        |
-| `switch expr { ... }`      | 16         | switch expression                 |
+| Operator                     | Precedence | Description                       |
+| ---------------------------- | ---------- | --------------------------------- |
+| `let ... in ...`             | 1          | let block expression              |
+| `|matcher| expr`             | 1          | Function definition               |
+| `lhs -> rhs`                 | 2          | Logical implication               |
+| `lhs || rhs`                 | 3          | Logical or                        |
+| `lhs && rhs`                 | 4          | Logical and                       |
+| `lhs == rhs`                 | 5          | Equal                             |
+| `lhs != rhs`                 | 5          | Not equal                         |
+| `lhs < rhs`                  | 6          | Less than                         |
+| `lhs <= rhs`                 | 6          | Less than or equal                |
+| `lhs > rhs`                  | 6          | Greater than                      |
+| `lhs >= rhs`                 | 6          | Greater than or equal             |
+| `lhs // rhs`                 | 7          | Object update/merge               |
+| `!expr`                      | 8          | Logical not                       |
+| `lhs + rhs`                  | 9          | Addition or string concatentation |
+| `lhs - rhs`                  | 9          | Subtraction                       |
+| `lhs * rhs`                  | 10         | Multiplication                    |
+| `lhs / rhs`                  | 10         | Division or path extension        |
+| `lhs ++ rhs`                 | 11         | List concactenation               |
+| `lhs ? rhs`                  | 12         | Has attribute                     |
+| `-expr`                      | 13         | Numeric negation                  |
+| `func arg`                   | 14         | Function call                     |
+| `object.ident`               | 15         | attribute selection               |
+| `object.{expr}`              | 15         | computed attribute selection      |
+| `( func for init .. list )`  | 16         | list fold                         |
+| `[ func for iterable ]`      | 16         | list map                          |
+| `{ func for iterable }`      | 16         | object map                        |
+| `switch expr { ... }`        | 16         | switch expression                 |
 
 
 ### Function defintion
@@ -157,13 +157,13 @@ Lists and objects can be iterated over, using the *map* construct.
 
 The map construct has two variants:
 
-- generate a list: `[ func <- iterable ]`
-- generate an object: `{ func <- iterable }`
+- generate a list: `[ func for iterable ]`
+- generate an object: `{ func for iterable }`
 
 Both forms also support an optional filter clause:
 
-- generate a filtered list: `[ func <- iterable if filter ]`
-- generate a filtered object: `{ func <- iterable if filter }`
+- generate a filtered list: `[ func for iterable if filter ]`
+- generate a filtered object: `{ func for iterable if filter }`
 
 `iterable` can be either a list or object, and `func` is a function that
 transform each element in iterable to an output element.
@@ -180,17 +180,17 @@ elements for list input and `(key, value)` tuples for object input.
 
 This means four combinations:
 
-| From   | To     | representation |
-| ------ | ------ | -------------- |
-| List   | List   | `[ |input_val| output_val <- input_list ]`                                 |
-| List   | Object | `{ |input_val| (output_key, output_value) <- source_list }`                |
-| Object | List   | `[ |(input_key, input_val)| output_val <- input_object ]`                  |
-| Object | Object | `{ |(input_key, input_val)| (output_key, output_value) <- source_object }` |
+| From   | To     | Representation                                                             |
+| ------ | ------ | -------------------------------------------------------------------------- |
+| List   | List   | `[ |input_val| output_val for input_list ]`                               |
+| List   | Object | `{ |input_val| (output_key, output_value) for source_list }`              |
+| Object | List   | `[ |(input_key, input_val)| output_val for input_object ]`                |
+| Object | Object | `{ |(input_key, input_val)| (output_key, output_value) for source_object }` |
 
 Example with filtering:
 
 ```lead
-[ |a| a * 2 <- [1, 2, 3] if |a| a < 3 ]
+[ |a| a * 2 for [1, 2, 3] if |a| a < 3 ]
 ```
 
 ### Switch expressions
