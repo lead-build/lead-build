@@ -617,12 +617,21 @@ where
                 ExprStorage {
                     tok: ExprType::AttrSel(val, attr),
                     loc,
-                } => Ok(val
-                    .get_item(attr.value()?.as_string()?.as_str())?
-                    .inner_ref()
-                    .tok
-                    .clone()
-                    .loc(loc)),
+                } => {
+                    // TODO: Don't need to resolve here...
+                    // Need to resolve before clone here, so we guarantee that
+                    // an expression in an object is only evaluated at most once.
+                    // However, it may violate the laziness directive that if the
+                    // variable is not used, it doesn't need to be evaluated.
+                    //
+                    // To resolve this, a better combined Rc<RefCell<...>> that can
+                    // Merge two references is needed, to transfer a var resolution
+                    // to the next object.
+                    let value = val.get_item(attr.value()?.as_string()?.as_str())?;
+                    value.resolve()?;
+                    storref.loc = value.inner_ref().loc.clone();
+                    Ok(value.inner_ref().tok.clone().loc(loc))
+                }
                 ExprStorage {
                     tok: ExprType::FuncCall(fargs, fexpr),
                     loc,
@@ -693,7 +702,7 @@ where
                     loc,
                 } => {
                     input.resolve().map_err(|e| e.reref(&loc))?;
-                    let input_items = match &*input.inner_ref() {
+                    let input_items: Vec<Expr<T, F>> = match &*input.inner_ref() {
                         ExprStorage {
                             tok: ExprType::List(input_vec),
                             ..
@@ -805,13 +814,11 @@ where
                             );
                             Ok(ExprType::Object(res_obj).loc(loc))
                         }
-                        (ExprBinOp::Update, ExprStorage { tok: rhs_tok, .. }) => {
-                            Err(Error::new(
-                                ErrorType::Type,
-                                format!("Object cannot be updated with {}", rhs_tok),
-                            )
-                            .reref(&loc))
-                        }
+                        (ExprBinOp::Update, ExprStorage { tok: rhs_tok, .. }) => Err(Error::new(
+                            ErrorType::Type,
+                            format!("Object cannot be updated with {}", rhs_tok),
+                        )
+                        .reref(&loc)),
                         _ => Err(todo(loc, file!(), line!(), column!())),
                     },
                     ExprStorage {
@@ -1006,8 +1013,7 @@ where
                 fields.to_vec()
             }
             ExprType::Bind(varspace, bound_expr) => {
-                let mut parts: Vec<Expr<T, F>> =
-                    varspace.values().cloned().collect();
+                let mut parts: Vec<Expr<T, F>> = varspace.values().cloned().collect();
                 parts.push(bound_expr.clone());
                 parts
             }

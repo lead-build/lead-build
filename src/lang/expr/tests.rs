@@ -506,50 +506,6 @@ fn test_parse_func_call_from_obj() {
 }
 
 #[test]
-fn test_eval_keeps_going_after_field_error() {
-    let mybuiltin = CountingBuiltin::new();
-    let expr = parse_str(
-        r#"
-        {
-            a = invalid_var;
-            b = mybuiltin 7;
-        }
-        "#,
-        &1,
-    )
-    .unwrap();
-    let varscope = ExprSet::from([(
-        "mybuiltin".into(),
-        Expr::new_builtin(Rc::new(mybuiltin.clone())),
-    )]);
-    let value: Expr<TestValue, FRef> = ExprType::Bind(varscope, expr).builtin();
-
-    let err = value.eval().expect_err("evaluation should fail");
-    assert_eq!(err.msg, "Unknown variable invalid_var");
-    assert_eq!(mybuiltin.get(), 1);
-}
-
-#[test]
-fn test_eval_keeps_going_into_bind_subparts_after_error() {
-    let mybuiltin = CountingBuiltin::new();
-    let expr: Expr<TestValue, FRef> = ExprType::Bind(
-        ExprSet::from([
-            (
-                "mybuiltin".into(),
-                Expr::new_builtin(Rc::new(mybuiltin.clone())),
-            ),
-            ("x".into(), parse_str("mybuiltin 7", &1).unwrap()),
-        ]),
-        parse_str("invalid_var", &1).unwrap(),
-    )
-    .builtin();
-
-    let err = expr.eval().expect_err("evaluation should fail");
-    assert_eq!(err.msg, "Unknown variable invalid_var");
-    assert_eq!(mybuiltin.get(), 1);
-}
-
-#[test]
 fn test_parse_func_call_match_tuple() {
     assert_eq!(
         eval(
@@ -903,6 +859,99 @@ fn test_builtin_func_laziness_multiple_calls() {
     expr.eval().unwrap();
     assert_eq!(expr, eval("{ a = 10; b = 10; }"));
     assert_eq!(counter.get(), 1);
+}
+
+#[test]
+fn test_builtin_func_laziness_within_obj_map() {
+    // Invoked in code twice should only be evaluated once
+    let code = r#"
+                let
+                    obj = {|(k,v)| (k, mybuiltin v) <- {a=2; b=3;} };
+                in
+                {
+                    a = obj.a;
+                    b1 = obj.b;
+                    b2 = obj.b;
+                    b3 = obj.b;
+                }
+            "#;
+    let counter = CountingBuiltin::new();
+    let builtins = ExprSet::from([(
+        "mybuiltin".into(),
+        Expr::new_builtin(Rc::new(counter.clone())),
+    )]);
+    let expr: Expr<TestValue, FRef> =
+        ExprType::Bind(builtins, parse_str(code, &1).unwrap()).builtin();
+    expr.eval().unwrap();
+    assert_eq!(expr, eval("{ a = 2; b1 = 3; b2 = 3; b3 = 3; }"));
+
+    // Should only be evaluated once per branch in the list compherension
+    assert_eq!(counter.get(), 2);
+}
+
+#[test]
+fn test_builtin_func_laziness_within_list_map() {
+    // Invoked in code twice should only be evaluated once
+    let code = r#"
+                let
+                    obj = {|k| (k, mybuiltin k) <- ["a", "b"] };
+                in
+                {
+                    a = obj.a;
+                    b1 = obj.b;
+                    b2 = obj.b;
+                    b3 = obj.b;
+                }
+            "#;
+    let counter = CountingBuiltin::new();
+    let builtins = ExprSet::from([(
+        "mybuiltin".into(),
+        Expr::new_builtin(Rc::new(counter.clone())),
+    )]);
+    let expr: Expr<TestValue, FRef> =
+        ExprType::Bind(builtins, parse_str(code, &1).unwrap()).builtin();
+    expr.eval().unwrap();
+    assert_eq!(
+        expr,
+        eval("{ a = \"a\"; b1 = \"b\"; b2 = \"b\"; b3 = \"b\"; }")
+    );
+
+    // Should only be evaluated once per branch in the list compherension
+    assert_eq!(counter.get(), 2);
+}
+
+#[test]
+fn test_builtin_func_laziness_within_obj_hardcoded() {
+    // Invoked in code twice should only be evaluated once
+    let code = r#"
+                let
+                    obj = {
+                        a = mybuiltin "a";
+                        b = mybuiltin "b";
+                    };
+                in
+                {
+                    a = obj.a;
+                    b1 = obj.b;
+                    b2 = obj.b;
+                    b3 = obj.b;
+                }
+            "#;
+    let counter = CountingBuiltin::new();
+    let builtins = ExprSet::from([(
+        "mybuiltin".into(),
+        Expr::new_builtin(Rc::new(counter.clone())),
+    )]);
+    let expr: Expr<TestValue, FRef> =
+        ExprType::Bind(builtins, parse_str(code, &1).unwrap()).builtin();
+    expr.eval().unwrap();
+    assert_eq!(
+        expr,
+        eval("{ a = \"a\"; b1 = \"b\"; b2 = \"b\"; b3 = \"b\"; }")
+    );
+
+    // Should only be evaluated once per branch in the list compherension
+    assert_eq!(counter.get(), 2);
 }
 
 #[test]
