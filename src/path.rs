@@ -4,6 +4,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use pathdiff::diff_paths;
+
 use crate::lang::{Error, ErrorType, Referrable, Result};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
@@ -146,6 +148,19 @@ impl VirtPath {
             cur_path.push(part);
         }
         cur_path
+    }
+
+    pub fn to_path_buf_rebase<F: Clone>(&self, base: &VirtPath) -> Result<PathBuf, F> {
+        let self_path = self.to_path_buf();
+        let base_path = base.to_path_buf();
+        if let Some(relative_path) = diff_paths(self_path, base_path) {
+            Ok(relative_path)
+        } else {
+            Err(Error::new(
+                ErrorType::Custom,
+                format!("Failed to compute relative path from {} to {}", self, base),
+            ))
+        }
     }
 
     pub fn virtualize(path: &Path, name: impl ToString) -> VirtPath {

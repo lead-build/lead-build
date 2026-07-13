@@ -20,6 +20,7 @@ lalrpop = { version = "0.23.1" }
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
 lalrpop-util = { version = "0.23.1", features = ["lexer", "unicode"] }
+pathdiff = "0.2.3"
 strum = { version = "0.28.0", features = ["derive"] }
 
 [dev-dependencies]

@@ -1,0 +1,10 @@
+|{ cwd, pb, ... }|
+let
+    base = "${cwd}/lib";
+    out = "${cwd}/build";
+    relative = pb.rebase {
+        path = out;
+        base = base;
+    };
+in
+relative == "../build"

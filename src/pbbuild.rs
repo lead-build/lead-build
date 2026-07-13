@@ -468,6 +468,40 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbTranslate {
     }
 }
 
+#[derive(Debug)]
+pub struct BuiltinPbRebase;
+
+impl ExprBuiltin<Value, VirtPath> for BuiltinPbRebase {
+    fn get_name(&self) -> String {
+        "rebase".into()
+    }
+
+    fn call(&self, arg: Expr<Value, VirtPath>) -> Result<Expr<Value, VirtPath>, VirtPath> {
+        arg.resolve()?;
+        let loc = arg.get_loc();
+
+        let path = arg.get_item("path")?;
+        let base = arg.get_item("base")?;
+        // TODO: Verify no more args are available
+
+        let path = path
+            .value()?
+            .try_as_path()
+            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&path.get_loc()))?;
+        let base = base
+            .value()?
+            .try_as_path()
+            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&base.get_loc()))?;
+
+        // Clone here only to allow error message
+        let output = path.to_path_buf_rebase(&base)?;
+
+        // TODO: Handle this better than format!() and display()...
+        // Push relative directories to NinjaArg::Path?
+        Ok(ExprType::Value(Value::String(format!("{}", output.display()))).reref(loc))
+    }
+}
+
 pub fn get_pb_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
     let pbset = ExprSet::from([
         ("lock".into(), Expr::new_builtin(Rc::new(BuiltinPbLock))),
@@ -477,6 +511,7 @@ pub fn get_pb_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
             "translate".into(),
             Expr::new_builtin(Rc::new(BuiltinPbTranslate)),
         ),
+        ("rebase".into(), Expr::new_builtin(Rc::new(BuiltinPbRebase))),
     ]);
     Ok(ExprType::Object(pbset).builtin())
 }
