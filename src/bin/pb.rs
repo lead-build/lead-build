@@ -1,7 +1,7 @@
-use clap::Parser;
+use clap::{ArgAction, Parser};
 use lead_build::{
     Expr, LangContext, Result, Value, add_expr_to_ninjafile,
-    lang::{Error, ErrorType},
+    lang::{Error, ErrorType, ExprSet, ExprType},
     ninjawriter::NinjaFile,
     path::VirtPath,
 };
@@ -25,12 +25,40 @@ struct Args {
     output: Option<PathBuf>,
 
     /// Change directory before invoking command
-    #[arg(short = 'C', id = "PATH")]
+    #[arg(short = 'C', value_name = "DIR")]
     cd: Option<PathBuf>,
+
+    /// Add paths to the top level args object, which is accessible as file
+    /// arguments to the main pbb file.
+    #[arg(
+        short = 'P',
+        long = "path",
+        value_name = "NAME=PATH",
+        value_parser = parse_virt_path_mapping,
+        action = ArgAction::Append
+    )]
+    paths: Vec<(String, VirtPath)>,
 
     /// Print evaluated output instead of generating build.ninja file
     #[arg(short = 'E', long)]
     eval: bool,
+}
+
+fn parse_virt_path_mapping(s: &str) -> std::result::Result<(String, VirtPath), String> {
+    let (name, path) = s.split_once('=').ok_or("expected NAME=PATH".to_string())?;
+
+    Ok((
+        name.to_owned(),
+        VirtPath::from(VirtPath::from_dir(&PathBuf::from(path), name)),
+    ))
+}
+
+fn gen_args_object(args: Vec<(String, VirtPath)>) -> Expr<Value, VirtPath> {
+    let mut args_map = ExprSet::new();
+    for (name, path) in args {
+        args_map.insert(name, ExprType::Value(Value::Path(path)).builtin());
+    }
+    ExprType::Object(args_map).builtin()
 }
 
 fn run(args: Args) -> Result<(), VirtPath> {
@@ -47,8 +75,9 @@ fn run(args: Args) -> Result<(), VirtPath> {
 
     let input = args.input.unwrap_or_else(|| PathBuf::from("main.pbb"));
     let output = args.output.unwrap_or_else(|| PathBuf::from("build.ninja"));
-    let main_file = VirtPath::virtualize(&input, "root");
-    let expr: Expr<Value, VirtPath> = ctx.include(main_file)?;
+    let main_file = VirtPath::from_file(&input, "root");
+    let args_obj = gen_args_object(args.paths);
+    let expr: Expr<Value, VirtPath> = ctx.include(main_file, Some(args_obj))?;
 
     if args.eval {
         expr.eval()?;

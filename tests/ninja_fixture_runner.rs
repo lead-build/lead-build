@@ -44,11 +44,11 @@ fn run_ninja_fixture_cases() {
         let expect = parse_expect(&case_dir.join("expect.toml"));
         let main_file = case_dir.join("main.pbb");
 
-        let main_vpath = VirtPath::virtualize(&main_file, format!("ninja-case-{case_name}"));
+        let main_vpath = VirtPath::from_file(&main_file, format!("ninja-case-{case_name}"));
         let ctx = LangContext::new();
 
         let expr = ctx
-            .include(main_vpath)
+            .include(main_vpath, None)
             .unwrap_or_else(|e| panic!("ninja case '{}' include failed:\n{}", case_name, e));
 
         let mut ninja_file = NinjaFile::new();

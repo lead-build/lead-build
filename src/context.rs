@@ -25,7 +25,7 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinInclude {
         let file_path = file_value
             .try_as_path()
             .ok_or(Error::new(ErrorType::Type, "Include of non-path argument"))?;
-        let result = self.0.include(file_path)?;
+        let result = self.0.include(file_path, None)?;
         Ok(result)
     }
 }
@@ -59,7 +59,11 @@ impl LangContext {
             .insert(name.to_string(), value);
     }
 
-    fn setup_file_args(&self, file: VirtPath) -> Result<Expr<Value, VirtPath>, VirtPath> {
+    fn setup_file_args(
+        &self,
+        file: VirtPath,
+        args: Option<Expr<Value, VirtPath>>,
+    ) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let cwd = file.parent()?.lock();
         let mut builtins = self.0.builtins.clone();
         builtins.insert("cwd".into(), ExprType::from(Value::Path(cwd)).builtin());
@@ -67,6 +71,9 @@ impl LangContext {
             "include".to_string(),
             Expr::new_builtin(Rc::new(BuiltinInclude(self.clone()))),
         );
+        if let Some(args) = args {
+            builtins.insert("args".into(), args);
+        }
         Ok(ExprType::from(builtins).builtin())
     }
 
@@ -82,9 +89,13 @@ impl LangContext {
         Ok(expr)
     }
 
-    pub fn include(&self, file: VirtPath) -> Result<Expr<Value, VirtPath>, VirtPath> {
+    pub fn include(
+        &self,
+        file: VirtPath,
+        args: Option<Expr<Value, VirtPath>>,
+    ) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let file_expr = self.read_file(&file)?;
-        let file_args = self.setup_file_args(file)?;
+        let file_args = self.setup_file_args(file, args)?;
         let called_expr: Expr<Value, VirtPath> = ExprType::FuncCall(file_args, file_expr).builtin(); // TODO: Should this outermost builtin actually be a .loc()?
         Ok(called_expr)
     }

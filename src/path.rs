@@ -163,7 +163,16 @@ impl VirtPath {
         }
     }
 
-    pub fn virtualize(path: &Path, name: impl ToString) -> VirtPath {
+    pub fn from_dir(path: &Path, name: impl ToString) -> VirtPath {
+        VirtPath {
+            name: name.to_string(),
+            root: path.to_path_buf(),
+            locked_parts: vec![],
+            parts: vec![],
+        }
+    }
+
+    pub fn from_file(path: &Path, name: impl ToString) -> VirtPath {
         VirtPath {
             name: name.to_string(),
             root: path.parent().unwrap().to_path_buf(),
@@ -280,12 +289,12 @@ mod tests {
         let virtpath_b = PathBuf::from("./test_b");
 
         assert_eq!(
-            VirtPath::virtualize(&virtpath_a, "a").to_path_buf(),
+            VirtPath::from_file(&virtpath_a, "a").to_path_buf(),
             PathBuf::from("./test_a")
         );
 
         assert_eq!(
-            VirtPath::virtualize(&virtpath_a, "a")
+            VirtPath::from_file(&virtpath_a, "a")
                 .step::<TestF>("hej")
                 .unwrap()
                 .to_path_buf(),
@@ -293,7 +302,7 @@ mod tests {
         );
 
         assert_eq!(
-            VirtPath::virtualize(&virtpath_a, "a")
+            VirtPath::from_file(&virtpath_a, "a")
                 .step::<TestF>("hej")
                 .unwrap()
                 .lock()
@@ -302,7 +311,7 @@ mod tests {
         );
 
         assert_eq!(
-            VirtPath::virtualize(&virtpath_b, "b")
+            VirtPath::from_file(&virtpath_b, "b")
                 .step::<TestF>("hej")
                 .unwrap()
                 .parent::<TestF>()
@@ -315,7 +324,7 @@ mod tests {
     #[test]
     fn test_from_path() {
         let filepath = PathBuf::from("./test/file.txt");
-        let virtpath = VirtPath::virtualize(&filepath, "root");
+        let virtpath = VirtPath::from_file(&filepath, "root");
 
         assert_eq!(
             virtpath,
@@ -330,8 +339,8 @@ mod tests {
 
     #[test]
     fn test_translate() {
-        let src_dir = VirtPath::virtualize(&PathBuf::from("./src"), "src");
-        let build_dir = VirtPath::virtualize(&PathBuf::from("./build"), "build")
+        let src_dir = VirtPath::from_file(&PathBuf::from("./src"), "src");
+        let build_dir = VirtPath::from_file(&PathBuf::from("./build"), "build")
             .step::<TestF>("subproj")
             .unwrap();
 
@@ -353,8 +362,8 @@ mod tests {
 
     #[test]
     fn test_translate_invalid_root() {
-        let src_dir = VirtPath::virtualize(&PathBuf::from("./src"), "src");
-        let build_dir = VirtPath::virtualize(&PathBuf::from("./build"), "build")
+        let src_dir = VirtPath::from_file(&PathBuf::from("./src"), "src");
+        let build_dir = VirtPath::from_file(&PathBuf::from("./build"), "build")
             .step::<TestF>("subproj")
             .unwrap();
 

@@ -64,11 +64,11 @@ fn run_parsing_fixture_cases() {
         let expect = parse_expect(&case_dir.join("expect.toml"));
         let main_file = case_dir.join("main.pbb");
 
-        let main_vpath = VirtPath::virtualize(&main_file, format!("case-{case_name}"));
+        let main_vpath = VirtPath::from_file(&main_file, format!("case-{case_name}"));
         let ctx = LangContext::new();
 
         let result = (|| {
-            let expr = ctx.include(main_vpath)?;
+            let expr = ctx.include(main_vpath, None)?;
             expr.eval()?;
             expr.value()
         })();
