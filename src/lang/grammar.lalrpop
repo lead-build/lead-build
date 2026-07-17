@@ -109,7 +109,7 @@ ExprConcat: Expr<T, F> = {
 };
 
 ExprHasAttr: Expr<T, F> = {
-    <l: @L> <lhs:ExprNeg> "?" <rhs:ExprVar> <r: @R> => ExprType::BinOp(ExprBinOp::HasAttr, lhs, rhs).toexpr(l, r, f),
+    <l: @L> <lhs:ExprNeg> "?" <rhs:ExprNeg> <r: @R> => ExprType::BinOp(ExprBinOp::HasAttr, lhs, rhs).toexpr(l, r, f),
     <ExprNeg>,
 };
 

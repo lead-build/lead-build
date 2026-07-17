@@ -210,7 +210,7 @@ impl ExprOps<FRef> for TestValue {
         }
     }
 
-    fn new_from_bool(&self, value: bool) -> Self {
+    fn new_from_bool(value: bool) -> Self {
         TestValue::Bool(value)
     }
 

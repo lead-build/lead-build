@@ -31,7 +31,7 @@ pub trait ExprOps<F>: Sized {
     fn op_not(&self) -> Result<Self, F>;
     fn as_bool(&self) -> Result<bool, F>;
     fn as_string(&self) -> Result<String, F>;
-    fn new_from_bool(&self, value: bool) -> Self;
+    fn new_from_bool(value: bool) -> Self;
     fn new_from_string(value: impl ToString) -> Self;
 }
 
@@ -843,6 +843,31 @@ where
                             format!("Object cannot be updated with {}", rhs_tok),
                         )
                         .reref(&loc)),
+                        (
+                            ExprBinOp::HasAttr,
+                            ExprStorage {
+                                tok: ExprType::Value(rhs_val),
+                                ..
+                            },
+                        ) => match rhs_val.as_string() {
+                            Ok(attr_name) => match lhs_obj.get(attr_name.as_str()) {
+                                Some(_) => Ok(ExprType::Value(T::new_from_bool(true)).loc(loc)),
+                                None => Ok(ExprType::Value(T::new_from_bool(false)).loc(loc)),
+                            },
+                            Err(_) => Err(Error::new(
+                                ErrorType::Type,
+                                format!("Attribute name must be a string, got {}", rhs_val),
+                            )
+                            .reref(&loc)),
+                        },
+                        (ExprBinOp::HasAttr, ExprStorage { tok: rhs_tok, .. }) => Err(Error::new(
+                            ErrorType::Type,
+                            format!(
+                                " {{}} ? _ needs to have a string value as rhs, got {}",
+                                rhs_tok
+                            ),
+                        )
+                        .reref(&loc)),
                         _ => Err(todo(loc, file!(), line!(), column!())),
                     },
                     ExprStorage {
@@ -873,10 +898,10 @@ where
                                 .tok
                                 .clone()
                                 .loc(loc)),
-                            false => Ok(ExprType::Value(lhs_val.new_from_bool(false)).loc(loc)),
+                            false => Ok(ExprType::Value(T::new_from_bool(false)).loc(loc)),
                         },
                         ExprBinOp::LogOr => match lhs_val.as_bool()? {
-                            true => Ok(ExprType::Value(lhs_val.new_from_bool(true)).loc(loc)),
+                            true => Ok(ExprType::Value(T::new_from_bool(true)).loc(loc)),
                             false => Ok(rhs
                                 .res_type()
                                 .map_err(|e| e.reref(lhs_loc))?
@@ -885,7 +910,7 @@ where
                                 .loc(loc)),
                         },
                         ExprBinOp::LogImpl => match lhs_val.as_bool()? {
-                            false => Ok(ExprType::Value(lhs_val.new_from_bool(true)).loc(loc)),
+                            false => Ok(ExprType::Value(T::new_from_bool(true)).loc(loc)),
                             true => Ok(rhs
                                 .res_type()
                                 .map_err(|e| e.reref(lhs_loc))?
@@ -902,9 +927,6 @@ where
                                 tok: ExprType::Value(rhs_val),
                                 loc: _rhs_loc,
                             } => match op {
-                                ExprBinOp::HasAttr => {
-                                    Err(todo(loc.clone(), file!(), line!(), column!()))
-                                }
                                 ExprBinOp::ListConcat => {
                                     Err(todo(loc.clone(), file!(), line!(), column!()))
                                 }

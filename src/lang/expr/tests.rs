@@ -791,7 +791,10 @@ fn test_list_map_list_to_list() {
 
 #[test]
 fn test_list_map_filter() {
-    assert_eq!(eval("[ |a| (a*2) for [1, 2, 3] if |a| a<3 ]"), eval("[2, 4]"));
+    assert_eq!(
+        eval("[ |a| (a*2) for [1, 2, 3] if |a| a<3 ]"),
+        eval("[2, 4]")
+    );
 }
 
 #[test]
@@ -1057,4 +1060,14 @@ fn test_string_concat() {
         ),
         eval("\"fooaaafoobbbfoo\"")
     );
+}
+
+#[test]
+fn test_has_attr_true() {
+    assert_eq!(eval("{ a = 1; b = 2; } ? \"a\""), eval("true"));
+}
+
+#[test]
+fn test_has_attr_false() {
+    assert_eq!(eval("{ a = 1; b = 2; } ? \"c\""), eval("false"));
 }

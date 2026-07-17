@@ -253,7 +253,7 @@ where
         }
     }
 
-    fn new_from_bool(&self, value: bool) -> Self {
+    fn new_from_bool(value: bool) -> Self {
         Value::Bool(value)
     }
 
