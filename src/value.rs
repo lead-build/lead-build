@@ -73,6 +73,9 @@ where
             (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs + rhs)),
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::String(lhs.clone() + rhs)),
             (Value::Path(lhs), Value::String(rhs)) => Ok(Value::Path(lhs.add_suffix(rhs)?)),
+            (Value::Build(lhs), Value::String(rhs)) => {
+                Ok(Value::Path(lhs.get_output()?.add_suffix(rhs)?))
+            }
             (Value::BuildConcat(vs), _) => {
                 let mut vs = vs.clone();
                 vs.push(rhs.clone());
@@ -86,6 +89,9 @@ where
         match (lhs, rhs) {
             (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs - rhs)),
             (Value::Path(lhs), Value::String(rhs)) => Ok(Value::Path(lhs.remove_suffix(rhs)?)),
+            (Value::Build(lhs), Value::String(rhs)) => {
+                Ok(Value::Path(lhs.get_output()?.remove_suffix(rhs)?))
+            }
             _ => Err(Error::new(
                 ErrorType::Type,
                 format!("can't subtract {} and {}", lhs, rhs),
