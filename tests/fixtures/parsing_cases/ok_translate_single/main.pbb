@@ -1,0 +1,9 @@
+|{ cwd, pb, ... }|
+let
+    do_rebase = |path| pb.translate {
+        input = path;
+        from = "${cwd}/from";
+        to = "${cwd}/to";
+    };
+in
+(do_rebase "${cwd}/from/dir/file.txt") == "${cwd}/to/dir/file.txt"

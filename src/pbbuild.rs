@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     Expr,
-    lang::{Error, ErrorType, ExprBuiltin, ExprSet, ExprType, Matcher, Result},
+    lang::{Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Result},
     ninjawriter::{NinjaArg, NinjaFile, NinjaRuleRef},
     path::VirtPath,
     value::Value,
@@ -187,11 +187,10 @@ impl PbBuild {
     }
 
     pub fn get_output<F: Clone>(&self) -> Result<VirtPath, F> {
-        if self.output.len() == 1 {
-            if let NinjaArg::Path(p) = &self.output[0] {
+        if self.output.len() == 1
+            && let NinjaArg::Path(p) = &self.output[0] {
                 return Ok(p.clone());
             }
-        }
         Err(Error::new(
             ErrorType::Custom,
             "Expected exactly one output path",
@@ -455,25 +454,54 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbTranslate {
         // TODO: Verify no more args are available
 
         let input = input
-            .value()?
+            .value()
+            .map_err(|e| e.reref(&input.get_loc()))?
             .try_as_path()
             .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&input.get_loc()))?;
-        let from = from
-            .value()?
-            .try_as_path()
-            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&from.get_loc()))?;
         let to = to
-            .value()?
+            .value()
+            .map_err(|e| e.reref(&to.get_loc()))?
             .try_as_path()
             .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&to.get_loc()))?;
 
+        from.resolve()?;
+        let from = match &*from.inner_ref() {
+            ExprStorage {
+                tok: ExprType::Value(val),
+                ..
+            } => vec![val.clone().try_as_path().ok_or_else(|| {
+                Error::new(ErrorType::Type, "expected path").reref(&from.get_loc())
+            })?],
+            ExprStorage {
+                tok: ExprType::List(vals),
+                ..
+            } => vals
+                .iter()
+                .map(|val| {
+                    val.value()
+                        .map_err(|e| e.reref(&val.get_loc()))?
+                        .try_as_path()
+                        .ok_or_else(|| {
+                            Error::new(ErrorType::Type, "expected path").reref(&from.get_loc())
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+            _ => {
+                return Err(
+                    Error::new(ErrorType::Type, "expected path or list of paths")
+                        .reref(&from.get_loc()),
+                );
+            }
+        };
+
         // Clone here only to allow error message
-        let output = input.clone().translate(&from, &to).ok_or_else(|| {
-            Error::new(
-                ErrorType::Type,
-                format!("Can't translate {} from {} to {}", input, from, to),
-            )
-            .reref(&loc)
+
+        let output_path = from
+            .into_iter()
+            .find_map(|from_path| input.clone().translate(&from_path, &to));
+
+        let output = output_path.ok_or_else(|| {
+            Error::new(ErrorType::Type, format!("Can't translate {}", input)).reref(&loc)
         })?;
 
         Ok(ExprType::Value(Value::Path(output)).reref(loc))

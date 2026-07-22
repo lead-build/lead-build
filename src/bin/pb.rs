@@ -49,7 +49,7 @@ fn parse_virt_path_mapping(s: &str) -> std::result::Result<(String, VirtPath), S
 
     Ok((
         name.to_owned(),
-        VirtPath::from(VirtPath::from_dir(&PathBuf::from(path), name)),
+        VirtPath::from_dir(&PathBuf::from(path), name),
     ))
 }
 
