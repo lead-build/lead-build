@@ -455,6 +455,30 @@ where
                 let lhs_r = lhs.res_type().map_err(|e| e.reref(&lhs.get_loc()))?;
                 let rhs_r = rhs.res_type().map_err(|e| e.reref(&rhs.get_loc()))?;
 
+                fn list_eq<
+                    T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
+                    F: Clone + Debug,
+                >(
+                    lhs_els: &Vec<Expr<T, F>>,
+                    rhs_els: &Vec<Expr<T, F>>,
+                ) -> Result<ExprType<T, F>, F> {
+                    if lhs_els.len() != rhs_els.len() {
+                        Ok(ExprType::Value(T::new_from_bool(false)))
+                    } else {
+                        let mut all_equal: ExprType<T, F> = ExprType::Value(T::new_from_bool(true));
+                        for (lhs_item, rhs_item) in lhs_els.iter().zip(rhs_els.iter()) {
+                            let this_equal =
+                                ExprType::BinOp(ExprBinOp::Eq, lhs_item.clone(), rhs_item.clone());
+                            all_equal = ExprType::BinOp(
+                                ExprBinOp::LogAnd,
+                                all_equal.builtin(),
+                                this_equal.builtin(),
+                            );
+                        }
+                        Ok(all_equal)
+                    }
+                }
+
                 match (&lhs_r.tok, op, &rhs_r.tok) {
                     (ExprType::Value(lhs_val), op, ExprType::Value(rhs_val)) => match op {
                         ExprBinOp::Add => Ok(ExprType::Value(T::op_add(lhs_val, rhs_val)?)),
@@ -493,6 +517,9 @@ where
                                 .cloned()
                                 .collect::<Vec<_>>(),
                         )),
+                        ExprBinOp::Eq => list_eq(lhs_list, rhs_list),
+                        ExprBinOp::Neq => list_eq(lhs_list, rhs_list)
+                            .map(|eq| ExprType::UnOp(ExprUnOp::Not, eq.builtin())),
                         _ => Err(Error::new(
                             ErrorType::Eval,
                             format!("Unsupported binary operation: {:?} between lists", op),
@@ -510,31 +537,13 @@ where
                             ),
                         )),
                     },
-                    (ExprType::Tuple(lhs_tup), op, ExprType::Tuple(rhs_tup)) => match op {
-                        ExprBinOp::Eq => {
-                            if lhs_tup.len() != rhs_tup.len() {
-                                Ok(ExprType::Value(T::new_from_bool(false)))
-                            } else {
-                                let mut all_equal: ExprType<T, F> =
-                                    ExprType::Value(T::new_from_bool(true));
-                                for (lhs_item, rhs_item) in lhs_tup.iter().zip(rhs_tup.iter()) {
-                                    let this_equal = ExprType::BinOp(
-                                        ExprBinOp::Eq,
-                                        lhs_item.clone(),
-                                        rhs_item.clone(),
-                                    );
-                                    all_equal = ExprType::BinOp(
-                                        ExprBinOp::LogAnd,
-                                        all_equal.builtin(),
-                                        this_equal.builtin(),
-                                    );
-                                }
-                                Ok(all_equal)
-                            }
-                        }
+                    (ExprType::Tuple(lhs_list), op, ExprType::Tuple(rhs_list)) => match op {
+                        ExprBinOp::Eq => list_eq(lhs_list, rhs_list),
+                        ExprBinOp::Neq => list_eq(lhs_list, rhs_list)
+                            .map(|eq| ExprType::UnOp(ExprUnOp::Not, eq.builtin())),
                         _ => Err(Error::new(
                             ErrorType::Eval,
-                            format!("Unsupported binary operation: {:?} between tuples", op),
+                            format!("Unsupported binary operation: {:?} between lists", op),
                         )),
                     },
                     _ => Err(Error::new(

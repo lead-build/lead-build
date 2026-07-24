@@ -1077,6 +1077,19 @@ fn test_tuple_eq() {
     assert_eq!(eval("(1,2,(3,4)) == (1,2,(3,4))"), eval("true"));
     assert_eq!(eval("(1,2,(3,4)) == (1,2,(3,6))"), eval("false"));
 }
+#[test]
+fn test_tuple_neq() {
+    assert_eq!(eval("(1,2,3) != (1,2,3)"), eval("false"));
+    assert_eq!(eval("(1,2,3) != (1,2,4)"), eval("true"));
+    assert_eq!(eval("(1,2,3) != (1,2,3,4)"), eval("true"));
+    assert_eq!(eval("(1,2,3,4) != (1,2,3)"), eval("true"));
+    assert_eq!(eval("(1,) != (1,)"), eval("false"));
+    assert_eq!(eval("(,) != (,)"), eval("false"));
+    assert_eq!(eval("(,) != (1,)"), eval("true"));
+    assert_eq!(eval("(1,) != (,)"), eval("true"));
+    assert_eq!(eval("(1,2,(3,4)) != (1,2,(3,4))"), eval("false"));
+    assert_eq!(eval("(1,2,(3,4)) != (1,2,(3,6))"), eval("true"));
+}
 
 #[test]
 fn test_string_concat() {
