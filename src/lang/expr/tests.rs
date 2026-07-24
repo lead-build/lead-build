@@ -1048,6 +1048,37 @@ fn test_switch_none() {
 }
 
 #[test]
+fn test_switch_tuple() {
+    assert_eq!(
+        eval(
+            r#"
+            switch (true, false) {
+                (true, true) => 1;
+                (true, false) => 2;
+                (false, true) => 3;
+                # (false, false) can be an error and does not need to be used
+            }
+            "#
+        ),
+        eval("2")
+    );
+}
+
+#[test]
+fn test_tuple_eq() {
+    assert_eq!(eval("(1,2,3) == (1,2,3)"), eval("true"));
+    assert_eq!(eval("(1,2,3) == (1,2,4)"), eval("false"));
+    assert_eq!(eval("(1,2,3) == (1,2,3,4)"), eval("false"));
+    assert_eq!(eval("(1,2,3,4) == (1,2,3)"), eval("false"));
+    assert_eq!(eval("(1,) == (1,)"), eval("true"));
+    assert_eq!(eval("(,) == (,)"), eval("true"));
+    assert_eq!(eval("(,) == (1,)"), eval("false"));
+    assert_eq!(eval("(1,) == (,)"), eval("false"));
+    assert_eq!(eval("(1,2,(3,4)) == (1,2,(3,4))"), eval("true"));
+    assert_eq!(eval("(1,2,(3,4)) == (1,2,(3,6))"), eval("false"));
+}
+
+#[test]
 fn test_string_concat() {
     assert_eq!(
         eval(

@@ -425,16 +425,133 @@ where
         }
     }
 
+    fn resolve_binop(
+        lhs: &Expr<T, F>,
+        op: ExprBinOp,
+        rhs: &Expr<T, F>,
+    ) -> Result<ExprType<T, F>, F> {
+        match op {
+            ExprBinOp::LogAnd | ExprBinOp::LogOr | ExprBinOp::LogImpl => {
+                // Operators that can be lazy
+                let lhs_val = lhs.value().map_err(|e| e.reref(&lhs.get_loc()))?;
+                let rhs_val = || rhs.value().map_err(|e| e.reref(&rhs.get_loc()));
+                match op {
+                    ExprBinOp::LogAnd => Ok(match lhs_val.as_bool()? {
+                        true => ExprType::Value(rhs_val()?),
+                        false => ExprType::Value(lhs_val),
+                    }),
+                    ExprBinOp::LogOr => Ok(match lhs_val.as_bool()? {
+                        true => ExprType::Value(lhs_val),
+                        false => ExprType::Value(rhs_val()?),
+                    }),
+                    ExprBinOp::LogImpl => Ok(match lhs_val.as_bool()? {
+                        true => ExprType::Value(rhs_val()?),
+                        false => ExprType::Value(T::new_from_bool(true)),
+                    }),
+                    _ => unreachable!(),
+                }
+            }
+            _ => {
+                let lhs_r = lhs.res_type().map_err(|e| e.reref(&lhs.get_loc()))?;
+                let rhs_r = rhs.res_type().map_err(|e| e.reref(&rhs.get_loc()))?;
+
+                match (&lhs_r.tok, op, &rhs_r.tok) {
+                    (ExprType::Value(lhs_val), op, ExprType::Value(rhs_val)) => match op {
+                        ExprBinOp::Add => Ok(ExprType::Value(T::op_add(lhs_val, rhs_val)?)),
+                        ExprBinOp::Sub => Ok(ExprType::Value(T::op_sub(lhs_val, rhs_val)?)),
+                        ExprBinOp::Mult => Ok(ExprType::Value(T::op_mult(lhs_val, rhs_val)?)),
+                        ExprBinOp::Div => Ok(ExprType::Value(T::op_div(lhs_val, rhs_val)?)),
+                        ExprBinOp::Lt => Ok(ExprType::Value(T::op_lt(lhs_val, rhs_val)?)),
+                        ExprBinOp::Le => Ok(ExprType::Value(T::op_le(lhs_val, rhs_val)?)),
+                        ExprBinOp::Gt => Ok(ExprType::Value(T::op_gt(lhs_val, rhs_val)?)),
+                        ExprBinOp::Ge => Ok(ExprType::Value(T::op_ge(lhs_val, rhs_val)?)),
+                        ExprBinOp::Eq => Ok(ExprType::Value(T::op_eq(lhs_val, rhs_val)?)),
+                        ExprBinOp::Neq => Ok(ExprType::Value(T::op_neq(lhs_val, rhs_val)?)),
+                        _ => Err(Error::new(
+                            ErrorType::Eval,
+                            format!("Unsupported binary operation: {:?} between values", op),
+                        )),
+                    },
+                    (ExprType::Object(lhs_obj), op, ExprType::Object(rhs_obj)) => match op {
+                        ExprBinOp::Update => {
+                            let mut merged = lhs_obj.clone();
+                            for (k, v) in rhs_obj.iter() {
+                                merged.insert(k.clone(), v.clone());
+                            }
+                            Ok(ExprType::Object(merged))
+                        }
+                        _ => Err(Error::new(
+                            ErrorType::Eval,
+                            format!("Unsupported binary operation: {:?} between objects", op),
+                        )),
+                    },
+                    (ExprType::List(lhs_list), op, ExprType::List(rhs_list)) => match op {
+                        ExprBinOp::ListConcat => Ok(ExprType::List(
+                            lhs_list
+                                .iter()
+                                .chain(rhs_list.iter())
+                                .cloned()
+                                .collect::<Vec<_>>(),
+                        )),
+                        _ => Err(Error::new(
+                            ErrorType::Eval,
+                            format!("Unsupported binary operation: {:?} between lists", op),
+                        )),
+                    },
+                    (ExprType::Object(lhs_obj), op, ExprType::Value(rhs_val)) => match op {
+                        ExprBinOp::HasAttr => Ok(ExprType::Value(T::new_from_bool(
+                            lhs_obj.contains_key(&rhs_val.as_string()?),
+                        ))),
+                        _ => Err(Error::new(
+                            ErrorType::Eval,
+                            format!(
+                                "Unsupported binary operation: {:?} between objects and string",
+                                op
+                            ),
+                        )),
+                    },
+                    (ExprType::Tuple(lhs_tup), op, ExprType::Tuple(rhs_tup)) => match op {
+                        ExprBinOp::Eq => {
+                            if lhs_tup.len() != rhs_tup.len() {
+                                Ok(ExprType::Value(T::new_from_bool(false)))
+                            } else {
+                                let mut all_equal: ExprType<T, F> =
+                                    ExprType::Value(T::new_from_bool(true));
+                                for (lhs_item, rhs_item) in lhs_tup.iter().zip(rhs_tup.iter()) {
+                                    let this_equal = ExprType::BinOp(
+                                        ExprBinOp::Eq,
+                                        lhs_item.clone(),
+                                        rhs_item.clone(),
+                                    );
+                                    all_equal = ExprType::BinOp(
+                                        ExprBinOp::LogAnd,
+                                        all_equal.builtin(),
+                                        this_equal.builtin(),
+                                    );
+                                }
+                                Ok(all_equal)
+                            }
+                        }
+                        _ => Err(Error::new(
+                            ErrorType::Eval,
+                            format!("Unsupported binary operation: {:?} between tuples", op),
+                        )),
+                    },
+                    _ => Err(Error::new(
+                        ErrorType::Eval,
+                        format!(
+                            "Unsupported binary operation: {:?} between {:?} and {:?}",
+                            op, lhs_r.tok, rhs_r.tok
+                        ),
+                    )
+                    .reref(&lhs.get_loc())),
+                }
+            }
+        }
+    }
+
     pub fn resolve(&self) -> Result<(), F> {
         let mut storref: ExprStorage<T, F> = self.inner_ref().clone();
-
-        let todo = |loc, f, l, c| {
-            Error::new(
-                ErrorType::Type,
-                format!("not yet implemented {}:{}:{}", f, l, c),
-            )
-            .reref(&loc)
-        };
 
         while match &storref.tok {
             ExprType::Object(..) => false,
@@ -818,166 +935,7 @@ where
                 ExprStorage {
                     tok: ExprType::BinOp(op, lhs, rhs),
                     loc,
-                } => match &*lhs.res_type().map_err(|e| e.reref(&loc))? {
-                    ExprStorage {
-                        tok: ExprType::Object(lhs_obj),
-                        ..
-                    } => match (op, &*rhs.res_type().map_err(|e| e.reref(&loc))?) {
-                        (
-                            ExprBinOp::Update,
-                            ExprStorage {
-                                tok: ExprType::Object(rhs_obj),
-                                ..
-                            },
-                        ) => {
-                            let mut res_obj = lhs_obj.clone();
-                            res_obj.extend(
-                                rhs_obj
-                                    .iter()
-                                    .map(|(key, value)| (key.clone(), value.clone())),
-                            );
-                            Ok(ExprType::Object(res_obj).loc(loc))
-                        }
-                        (ExprBinOp::Update, ExprStorage { tok: rhs_tok, .. }) => Err(Error::new(
-                            ErrorType::Type,
-                            format!("Object cannot be updated with {}", rhs_tok),
-                        )
-                        .reref(&loc)),
-                        (
-                            ExprBinOp::HasAttr,
-                            ExprStorage {
-                                tok: ExprType::Value(rhs_val),
-                                ..
-                            },
-                        ) => match rhs_val.as_string() {
-                            Ok(attr_name) => match lhs_obj.get(attr_name.as_str()) {
-                                Some(_) => Ok(ExprType::Value(T::new_from_bool(true)).loc(loc)),
-                                None => Ok(ExprType::Value(T::new_from_bool(false)).loc(loc)),
-                            },
-                            Err(_) => Err(Error::new(
-                                ErrorType::Type,
-                                format!("Attribute name must be a string, got {}", rhs_val),
-                            )
-                            .reref(&loc)),
-                        },
-                        (ExprBinOp::HasAttr, ExprStorage { tok: rhs_tok, .. }) => Err(Error::new(
-                            ErrorType::Type,
-                            format!(
-                                " {{}} ? _ needs to have a string value as rhs, got {}",
-                                rhs_tok
-                            ),
-                        )
-                        .reref(&loc)),
-                        _ => Err(todo(loc, file!(), line!(), column!())),
-                    },
-                    ExprStorage {
-                        tok: ExprType::List(lhs_list),
-                        ..
-                    } => match (op, &*rhs.res_type().map_err(|e| e.reref(&loc))?) {
-                        (
-                            ExprBinOp::ListConcat,
-                            ExprStorage {
-                                tok: ExprType::List(rhs_list),
-                                ..
-                            },
-                        ) => {
-                            let mut res = lhs_list.clone();
-                            res.extend(rhs_list.iter().cloned());
-                            Ok(ExprType::List(res).loc(loc))
-                        }
-                        _ => Err(todo(loc, file!(), line!(), column!())),
-                    },
-                    ExprStorage {
-                        tok: ExprType::Value(lhs_val),
-                        loc: lhs_loc,
-                    } => match op {
-                        ExprBinOp::LogAnd => match lhs_val.as_bool()? {
-                            true => Ok(rhs
-                                .res_type()
-                                .map_err(|e| e.reref(lhs_loc))?
-                                .tok
-                                .clone()
-                                .loc(loc)),
-                            false => Ok(ExprType::Value(T::new_from_bool(false)).loc(loc)),
-                        },
-                        ExprBinOp::LogOr => match lhs_val.as_bool()? {
-                            true => Ok(ExprType::Value(T::new_from_bool(true)).loc(loc)),
-                            false => Ok(rhs
-                                .res_type()
-                                .map_err(|e| e.reref(lhs_loc))?
-                                .tok
-                                .clone()
-                                .loc(loc)),
-                        },
-                        ExprBinOp::LogImpl => match lhs_val.as_bool()? {
-                            false => Ok(ExprType::Value(T::new_from_bool(true)).loc(loc)),
-                            true => Ok(rhs
-                                .res_type()
-                                .map_err(|e| e.reref(lhs_loc))?
-                                .tok
-                                .clone()
-                                .loc(loc)),
-                        },
-                        _ => match &*rhs.res_type().map_err(|e| e.reref(lhs_loc))? {
-                            ExprStorage {
-                                tok: ExprType::Object(_rhs_obj),
-                                loc: rhs_loc,
-                            } => Err(todo(rhs_loc.clone(), file!(), line!(), column!())),
-                            ExprStorage {
-                                tok: ExprType::Value(rhs_val),
-                                loc: _rhs_loc,
-                            } => match op {
-                                ExprBinOp::ListConcat => {
-                                    Err(todo(loc.clone(), file!(), line!(), column!()))
-                                }
-                                ExprBinOp::Mult => {
-                                    Ok(ExprType::Value(T::op_mult(lhs_val, rhs_val)?).loc(loc))
-                                }
-                                ExprBinOp::Div => {
-                                    Ok(ExprType::Value(T::op_div(lhs_val, rhs_val)?).loc(loc))
-                                }
-                                ExprBinOp::Sub => {
-                                    Ok(ExprType::Value(T::op_sub(lhs_val, rhs_val)?).loc(loc))
-                                }
-                                ExprBinOp::Add => {
-                                    Ok(ExprType::Value(T::op_add(lhs_val, rhs_val)?).loc(loc))
-                                }
-                                ExprBinOp::Update => {
-                                    Err(todo(loc.clone(), file!(), line!(), column!()))
-                                }
-                                ExprBinOp::Lt => {
-                                    Ok(ExprType::Value(T::op_lt(lhs_val, rhs_val)?).loc(loc))
-                                }
-                                ExprBinOp::Le => {
-                                    Ok(ExprType::Value(T::op_le(lhs_val, rhs_val)?).loc(loc))
-                                }
-                                ExprBinOp::Gt => {
-                                    Ok(ExprType::Value(T::op_gt(lhs_val, rhs_val)?).loc(loc))
-                                }
-                                ExprBinOp::Ge => {
-                                    Ok(ExprType::Value(T::op_ge(lhs_val, rhs_val)?).loc(loc))
-                                }
-                                ExprBinOp::Eq => {
-                                    Ok(ExprType::Value(T::op_eq(lhs_val, rhs_val)?).loc(loc))
-                                }
-                                ExprBinOp::Neq => {
-                                    Ok(ExprType::Value(T::op_neq(lhs_val, rhs_val)?).loc(loc))
-                                }
-                                _ => unreachable!(),
-                            },
-                            ExprStorage { tok, loc: _ } => Err(Error::new(
-                                ErrorType::Eval,
-                                format!("Resolving unresolvable type {}", tok),
-                            )
-                            .reref(&loc)),
-                        },
-                    },
-                    ExprStorage { tok, .. } => Err(Error::new(
-                        ErrorType::Eval,
-                        format!("Resolving unresolvable type {}", tok),
-                    )
-                    .reref(&loc)),
-                },
+                } => Ok(Self::resolve_binop(&lhs, op, &rhs)?.loc(loc)),
                 ExprStorage {
                     tok: ExprType::Switch(ref_expr, cases, default_case),
                     loc,
