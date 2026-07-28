@@ -10,16 +10,34 @@ Syntax:
 ```lead
 pb.translate {
   input = path,
-  from = path,
+  from = path or [path, ...],
   to = path
 }
 ```
 
 - `input`: the path to rewrite
-- `from`: the base path prefix that must contain `input`
+- `from`: one path or a list of candidate base path prefixes that may contain `input`
 - `to`: the directory to use instead of `from`
 
-Returns a path where the `from` prefix is removed from `input` and replaced by `to`.
+Returns a path where the matching `from` prefix is removed from `input` and replaced by `to`.
+If `from` is a list, the first matching prefix is used.
+
+### `pb.rebase`
+
+Converts a Lead path into a path value rebased to another filesystem base path.
+
+Syntax:
+```lead
+pb.rebase {
+  path = path,
+  base = path
+}
+```
+
+- `path`: the path value to convert
+- `base`: the base directory to rebase the output against
+
+Returns a path value that keeps the internal relative location of `path`, but expressed under `base`.
 
 ### `pb.retype`
 

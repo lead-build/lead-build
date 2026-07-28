@@ -68,7 +68,7 @@ In this example, `locked` refers to the same directory as `cwd / "src"`, but its
 
 ## Path remapping
 
-Use the builtin `pb.translate` to rewrite a path by replacing one directory prefix with another. The argument is an object with `input`, `from`, and `to` fields. `input` is the path to rewrite, `from` is the existing base directory that must contain `input`, and `to` is the directory that should replace that prefix.
+Use the builtin `pb.translate` to rewrite a path by replacing one directory prefix with another. The argument is an object with `input`, `from`, and `to` fields. `input` is the path to rewrite, `from` is either one base directory or a list of base directories that may contain `input`, and `to` is the directory that should replace the matching prefix.
 
 ```lead
 |{cwd, pb, ...}|
@@ -84,6 +84,21 @@ in
 ```
 
 This produces a path rooted at `cwd / "build" / "main.c"`, where the `src` prefix has been replaced by `build`.
+
+When `from` is a list, `pb.translate` checks candidates in order and uses the first one that matches.
+
+```lead
+|{cwd, pb, ...}|
+let
+  file = cwd / "lib" / "src" / "main.c";
+  remapped = pb.translate {
+    input = file,
+    from = [cwd / "src", cwd / "lib" / "src"],
+    to = cwd / "build"
+  };
+in
+  remapped
+```
 
 ## File suffix rewriting
 
@@ -103,3 +118,21 @@ in
 ```
 
 This rewrites `main.c` to `main.o`.
+
+## Rebase paths
+
+Use the builtin `pb.rebase` to express a path under another base path while preserving its relative location.
+
+```lead
+|{cwd, pb, ...}|
+let
+  src = cwd / "src" / "main.c";
+  out = pb.rebase {
+    path = src,
+    base = cwd / "build"
+  };
+in
+  out
+```
+
+This is useful when handing paths to tools that need the same relative layout under another root.

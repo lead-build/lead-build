@@ -113,6 +113,12 @@ cargo install lead-build
 
 Or check out the git repository at [https://github.com/lead-build/lead-build](https://github.com/lead-build/lead-build)
 
+## Documentation status
+
+This documentation has been updated for Lead Build `v0.4.3`.
+
+Recent updates compared to `v0.4.0` are summarized in the [Changelog](reference/changelog.md).
+
 ## Getting started
 
 Start with the language itself, then move on to functions, iteration, and paths.
