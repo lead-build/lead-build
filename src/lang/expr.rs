@@ -459,8 +459,8 @@ where
                     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
                     F: Clone + Debug,
                 >(
-                    lhs_els: &Vec<Expr<T, F>>,
-                    rhs_els: &Vec<Expr<T, F>>,
+                    lhs_els: &[Expr<T, F>],
+                    rhs_els: &[Expr<T, F>],
                 ) -> Result<ExprType<T, F>, F> {
                     if lhs_els.len() != rhs_els.len() {
                         Ok(ExprType::Value(T::new_from_bool(false)))

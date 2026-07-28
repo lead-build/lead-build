@@ -188,9 +188,10 @@ impl PbBuild {
 
     pub fn get_output<F: Clone>(&self) -> Result<VirtPath, F> {
         if self.output.len() == 1
-            && let NinjaArg::Path(p) = &self.output[0] {
-                return Ok(p.clone());
-            }
+            && let NinjaArg::Path(p) = &self.output[0]
+        {
+            return Ok(p.clone());
+        }
         Err(Error::new(
             ErrorType::Custom,
             "Expected exactly one output path",
