@@ -182,6 +182,10 @@ where
         }))
     }
 
+    pub fn new_builtin(func: Rc<dyn ExprBuiltin<T, F>>) -> ExprType<T, F> {
+        ExprType::FuncDefBuiltin(ExprBuiltinWrapper(func.as_ref().get_name(), func))
+    }
+
     pub fn builtin(self: ExprType<T, F>) -> Expr<T, F> {
         self.reref(None)
     }
@@ -1088,7 +1092,7 @@ where
     }
 
     pub fn new_builtin(func: Rc<dyn ExprBuiltin<T, F>>) -> Expr<T, F> {
-        ExprType::FuncDefBuiltin(ExprBuiltinWrapper(func.as_ref().get_name(), func)).builtin()
+        ExprType::new_builtin(func).builtin()
     }
 
     pub fn from_builtins(value: Vec<Rc<dyn ExprBuiltin<T, F>>>) -> Expr<T, F> {

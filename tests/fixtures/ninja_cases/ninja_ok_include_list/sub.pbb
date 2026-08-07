@@ -7,13 +7,11 @@ let
     );
 in
 [
-    pb.build {
-        rule = cp_rule;
+    cp_rule {
         input = cwd / "a.in";
         output = cwd / "a.out";
     },
-    pb.build {
-        rule = cp_rule;
+    cp_rule {
         input = cwd / "b.in";
         output = cwd / "b.out";
     },

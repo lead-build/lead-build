@@ -86,11 +86,11 @@ in
 
 ### Builds
 
-Build objects are returned by internal `pb.build` represneting a build operation.
+Build objects are returned by calling the function produced by `pb.rule`, represneting a build operation.
 
 ### Build rules
 
-Build rule objects are returned by internal `pb.rule` represneting a build rule.
+Build rule functions are returned by internal `pb.rule` represneting a build rule.
 
 #### Build rule placeholder object
 

@@ -62,7 +62,7 @@ Returns a path with the file suffix rewritten from `from` to `to`.
 
 ### `pb.rule`
 
-Creates a build-rule object describing how a build step should be performed. A rule captures the relevant inputs, outputs, and execution behavior for a single build action.
+Creates a build-rule function describing how a build step should be performed. A rule captures the relevant inputs, outputs, and execution behavior for a single build action.
 
 ```lead
 pb.rule |{input, output, ...}| {
@@ -73,11 +73,20 @@ pb.rule |{input, output, ...}| {
 
 Note: In `pb.rule`, object matcher defaults (for example, `|{input ? fallback, ...}|`) are not supported.
 
+The return value of `pb.rule` is callable. Call it with a build argument object to produce a build value:
+
+```lead
+compile_rule {
+  input = [cwd / "src" / "main.c"];
+  output = cwd / "build" / "main.o";
+}
+```
+
 More information is available in the [builds](../builds/01-rules-and-builds.md) chapter.
 
 ### `pb.build`
 
-Creates a build operation from one or more rule definitions. A build object represents an actual build step that can be executed with the given inputs and outputs.
+Low-level constructor for a build value. In normal usage, prefer calling the function returned by `pb.rule`.
 
 ```lead
 pb.build {
@@ -90,6 +99,15 @@ pb.build {
 The optional variable `deps` adds any implicit depdendencies to the build. Can be either a single file/build or a list of files/builds.
 
 `rule_definition` is the output of `pb.rule`, and the rest of the variables are defined, except `deps`, from the arguments to the rule definition.
+
+Equivalent preferred form:
+
+```lead
+rule_definition {
+  input = [sources...];
+  output = output;
+}
+```
 
 More information is available in the [builds](../builds/01-rules-and-builds.md) chapter.
 

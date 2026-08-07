@@ -20,14 +20,12 @@ let
       command = ["gcc", "-o", output, input];
   });
 
-  cc = |src obj| pb.build {
-    rule = cc_rule;
+  cc = |src obj| cc_rule {
     input = [src];
     output = obj;
   };
 
-  link = |output objs| pb.build {
-    rule = link_rule;
+  link = |output objs| link_rule {
     input = objs;
     output = output;
   };
@@ -75,14 +73,12 @@ let
     };
 
   lang_c_rules = |target srcdir objdir| {
-    cc = |src| pb.build {
-      rule = target.cc_rule;
+    cc = |src| target.cc_rule {
       input = [src];
       output = remap_c_to_o srcdir objdir src;
     };
 
-    link = |output objs| (pb.build {
-      rule = target.link_rule;
+    link = |output objs| (target.link_rule {
       input = objs;
       output = output;
     });
@@ -194,14 +190,12 @@ let
     };
 in
 {
-    cc = |src| pb.build {
-      rule = cc_rule;
+    cc = |src| cc_rule {
       input = [src];
       output = remap_c_to_o srcdir objdir src;
     };
 
-    link = |output objs| (pb.build {
-      rule = link_rule;
+    link = |output objs| (link_rule {
       input = objs;
       output = output;
     });

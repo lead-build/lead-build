@@ -14,8 +14,7 @@ let
         }
     );
 in
-pb.build {
-    rule = gcc_rule;
+gcc_rule {
     input = cwd / "src.c";
     output = cwd / "out.o";
 }

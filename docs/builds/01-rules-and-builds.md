@@ -1,6 +1,6 @@
 # Rules and Builds
 
-Rules and builds are special value types in Lead. They are not ordinary literals; they are created using the builtin constructors `pb.rule` and `pb.build`.
+Rules and builds are special value types in Lead. They are not ordinary literals; they are created from `pb.rule` definitions and rule calls.
 
 ## Rules
 
@@ -38,11 +38,10 @@ where the name of the rule is generated from the command, and is guaranteed to b
 
 ## Builds
 
-A build is an instance of a rule applied to concrete inputs and outputs. In Lead, a build is constructed with `pb.build` and references a rule plus the relevant inputs, outputs, and parameters, which will generate a `build` statement in the output `ninja.build`.
+A build is an instance of a rule applied to concrete inputs and outputs. In Lead, a build is constructed by calling a rule returned from `pb.rule` with the relevant inputs, outputs, and parameters, which will generate a `build` statement in the output `ninja.build`.
 
-When constructing a build, set the following fields:
+When constructing a build, set the following fields in the rule call argument object:
 
-- `rule` - the rule object produced by `pb.rule`
 - `input` - the file or files needed by the build
 - `output` - the file or files produced by the build
 - `deps` - implicit depednecnies for the build. Handled as ninja build `| deps`. Optional.
@@ -58,8 +57,7 @@ let
     depfile = "${output}.d";
   });
 
-  my_build = pb.build {
-    rule = cc_rule;
+  my_build = cc_rule {
     input = [cwd / "src" / "main.c"];
     output = cwd / "build" / "main.o";
   };
@@ -79,7 +77,7 @@ build build/main.o: gcc_o_MMD_MF src/main.c
 
 ## Dependency chains
 
-The output produced by one `pb.build` can be used as the input to another `pb.build`. This creates a dependency chain, so the generated build graph ensures that the earlier build completes before the later one runs.
+The output produced by one rule invocation can be used as the input to another rule invocation. This creates a dependency chain, so the generated build graph ensures that the earlier build completes before the later one runs.
 
 ```lead
 |{pb, cwd, ...}|
@@ -94,15 +92,13 @@ let
   });
 
   objs = [
-    (pb.build {
-      rule = cc_rule;
+    (cc_rule {
       input = [cwd / "src" / "main.c"];
       output = cwd / "build" / "main.o";
     })
   ];
 
-  app = pb.build {
-    rule = link_rule;
+  app = link_rule {
     input = objs;
     output = cwd / "build" / "app";
   };

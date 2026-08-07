@@ -362,12 +362,23 @@ where
         }
 
         /* Wrap into a node */
-        Ok(ExprType::from(Value::BuildRule(PbBuildRule::new(rule_args, vars).into())).reref(loc))
+        Ok(
+            ExprType::new_builtin(Rc::new(BuiltinPbBuild::new(PbBuildRule::new(
+                rule_args, vars,
+            ))))
+            .reref(loc),
+        )
     }
 }
 
 #[derive(Debug)]
-pub struct BuiltinPbBuild;
+pub struct BuiltinPbBuild(Rc<PbBuildRule>);
+
+impl BuiltinPbBuild {
+    pub fn new(rule: PbBuildRule) -> Self {
+        BuiltinPbBuild(Rc::new(rule))
+    }
+}
 
 impl<F> ExprBuiltin<Value, F> for BuiltinPbBuild
 where
@@ -378,6 +389,8 @@ where
     }
 
     fn call(&self, arg: crate::lang::Expr<Value, F>) -> Result<crate::lang::Expr<Value, F>, F> {
+        let BuiltinPbBuild(rule) = &self;
+
         arg.resolve()?;
         let loc = arg.get_loc();
 
@@ -395,7 +408,6 @@ where
             .tok
             .try_as_object()
             .ok_or_else(opt_err)?;
-        let rule = expr_get_arg!(arg_obj, "rule", try_as_build_rule);
 
         /* Read all variables required by rule */
         let mut args: BTreeMap<String, Vec<NinjaArg>> = BTreeMap::new();
@@ -429,7 +441,7 @@ where
 
         Ok(ExprType::Value(Value::Build(Rc::new(PbBuild {
             id: unique_id(),
-            rule,
+            rule: rule.clone(),
             input,
             output,
             deps,
@@ -568,7 +580,6 @@ pub fn get_pb_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
     let pbset = ExprSet::from([
         ("lock".into(), Expr::new_builtin(Rc::new(BuiltinPbLock))),
         ("rule".into(), Expr::new_builtin(Rc::new(BuiltinPbRule))),
-        ("build".into(), Expr::new_builtin(Rc::new(BuiltinPbBuild))),
         (
             "translate".into(),
             Expr::new_builtin(Rc::new(BuiltinPbTranslate)),

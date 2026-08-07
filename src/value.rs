@@ -5,7 +5,7 @@ use strum::EnumTryAs;
 use crate::{
     lang::{Error, ErrorType, Exportable, ExprOps, ParsableValue, Result},
     path::VirtPath,
-    pbbuild::{PbBuild, PbBuildRule},
+    pbbuild::PbBuild,
 };
 
 #[derive(Clone, PartialEq, Debug, EnumTryAs)]
@@ -16,7 +16,6 @@ pub enum Value {
     Bool(bool),
 
     Build(Rc<PbBuild>),
-    BuildRule(Rc<PbBuildRule>),
     BuildVar(String),
     BuildConcat(Vec<Value>),
 }
@@ -29,7 +28,6 @@ impl Exportable for Value {
             Value::Path(v) => v.fmt(f),
             Value::Bool(v) => v.fmt(f),
             Value::Build(v) => v.fmt(f),
-            Value::BuildRule(v) => v.fmt(f),
             Value::BuildVar(v) => write!(f, "${}", v),
             Value::BuildConcat(vs) => {
                 for (i, v) in vs.iter().enumerate() {

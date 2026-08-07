@@ -6,14 +6,12 @@ let
         }
     );
 
-    dep = pb.build {
-        rule = cp_rule;
+    dep = cp_rule {
         input = cwd / "source.in";
         output = cwd / "mid.out";
     };
 in
-pb.build {
-    rule = cp_rule;
+cp_rule {
     input = [ dep ];
     output = cwd / "final.out";
 }

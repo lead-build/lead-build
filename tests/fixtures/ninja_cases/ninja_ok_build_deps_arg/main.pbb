@@ -5,14 +5,12 @@ let
             command = [ "cp", input, output ];
         }
     );
-    dep = pb.build {
-        rule = cp_rule;
+    dep = cp_rule {
         input = cwd / "dep.in";
         output = cwd / "dep.out";
     };
 in
-pb.build {
-    rule = cp_rule;
+cp_rule {
     input = cwd / "main.in";
     output = cwd / "main.out";
     deps = dep;
