@@ -124,8 +124,9 @@ pub struct PbBuild {
     rule: Rc<PbBuildRule>,
     input: Vec<NinjaArg>,
     output: Vec<NinjaArg>,
+    deps: Vec<NinjaArg>,
     args: BTreeMap<String, Vec<NinjaArg>>,
-    deps: Vec<Rc<PbBuild>>,
+    dep_builds: Vec<Rc<PbBuild>>,
 }
 
 impl Display for PbBuild {
@@ -164,7 +165,7 @@ impl PbBuild {
             return;
         }
 
-        for dep in self.deps.iter() {
+        for dep in self.dep_builds.iter() {
             /* TODO: Block duplicates */
             dep.populate_ninja_file(nf, false);
         }
@@ -176,6 +177,9 @@ impl PbBuild {
         }
         for outp in self.output.iter() {
             build.output(outp.clone());
+        }
+        for dep in self.deps.iter() {
+            build.dep(dep.clone());
         }
         for (var_name, var_attrs) in self.args.iter() {
             build.var(var_name, var_attrs.clone());
@@ -222,6 +226,43 @@ fn value_to_ninja_arg(attr: &Value) -> NinjaArg {
         ),
         _ => panic!("Rule attr is of invalid type: {}", attr),
     }
+}
+
+fn resolve_build_arg_to_ninja_values<F: Clone + Debug>(
+    build_arg: &Expr<Value, F>,
+    field_name: &str,
+    dep_builds: &mut Vec<Rc<PbBuild>>,
+) -> Result<Vec<NinjaArg>, F> {
+    build_arg.resolve()?;
+    let loc = build_arg.get_loc();
+
+    let elems: Vec<Expr<Value, F>> = match &build_arg.inner_ref().tok {
+        ExprType::List(exprs) => Ok(exprs.clone()),
+        ExprType::Value(value) => Ok(vec![ExprType::from(value.clone()).reref(loc.clone())]),
+        _ => Err(Error::new(
+            ErrorType::Type,
+            format!("field {} is not a list or value", field_name),
+        )),
+    }?;
+
+    elems
+        .into_iter()
+        .map(|elem| {
+            elem.resolve()?;
+            match &elem.inner_ref().tok {
+                ExprType::Value(attr) => {
+                    if let Value::Build(build) = attr {
+                        dep_builds.push(build.clone());
+                    }
+                    Ok(value_to_ninja_arg(attr))
+                }
+                _ => Err(Error::new(
+                    ErrorType::Type,
+                    format!("incompatible type in build arg {}", field_name),
+                )),
+            }
+        })
+        .collect()
 }
 
 #[derive(Debug)]
@@ -361,42 +402,21 @@ where
         /* Special treatment for input/output */
         let mut input: Vec<NinjaArg> = vec![];
         let mut output: Vec<NinjaArg> = vec![];
+        /* Optional implicit deps for ninja build target */
+        let mut deps: Vec<NinjaArg> = vec![];
         /* Track all dependent rules, that needs to be added to ninja file  */
-        let mut deps: Vec<Rc<PbBuild>> = vec![];
+        let mut dep_builds: Vec<Rc<PbBuild>> = vec![];
+
+        if !rule.rule_args.contains("deps")
+            && let Some(build_arg) = arg_obj.remove("deps")
+        {
+            deps = resolve_build_arg_to_ninja_values(&build_arg, "deps", &mut dep_builds)?;
+        }
 
         for arg_name in rule.rule_args.iter() {
             /* Read variable */
             let build_arg = expr_get_arg!(arg_obj, arg_name);
-            build_arg.resolve()?;
-
-            let mut value: Vec<NinjaArg> = vec![];
-
-            let elems: Vec<Expr<Value, F>> = match &build_arg.inner_ref().tok {
-                ExprType::List(exprs) => Ok(exprs.clone()),
-                ExprType::Value(value) => {
-                    Ok(vec![ExprType::from(value.clone()).reref(loc.clone())])
-                }
-                _ => Err(Error::new(
-                    ErrorType::Type,
-                    format!("field {} is not a list or value", arg_name),
-                )),
-            }?;
-
-            for elem in elems.into_iter() {
-                elem.resolve()?;
-                value.push(match &elem.inner_ref().tok {
-                    ExprType::Value(attr) => {
-                        if let Value::Build(build) = attr {
-                            deps.push(build.clone());
-                        }
-                        Ok(value_to_ninja_arg(attr))
-                    }
-                    _ => Err(Error::new(
-                        ErrorType::Type,
-                        format!("incompatible type in build arg {}", arg_name),
-                    )),
-                }?);
-            }
+            let value = resolve_build_arg_to_ninja_values(&build_arg, arg_name, &mut dep_builds)?;
 
             match arg_name.as_str() {
                 "input" => input = value,
@@ -412,8 +432,9 @@ where
             rule,
             input,
             output,
-            args,
             deps,
+            args,
+            dep_builds,
         })))
         .reref(loc))
     }

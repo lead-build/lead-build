@@ -87,7 +87,9 @@ pb.build {
 }
 ```
 
-`rule_definition` is the output of `pb.rule`, and the rest of the variables are defined from the arguments to the rule definition.
+The optional variable `deps` adds any implicit depdendencies to the build. Can be either a single file/build or a list of files/builds.
+
+`rule_definition` is the output of `pb.rule`, and the rest of the variables are defined, except `deps`, from the arguments to the rule definition.
 
 More information is available in the [builds](../builds/01-rules-and-builds.md) chapter.
 

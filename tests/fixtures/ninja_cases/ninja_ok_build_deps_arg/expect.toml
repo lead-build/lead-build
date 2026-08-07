@@ -1,0 +1,4 @@
+ninja_contains = [
+    "build {{CASE_DIR}}/dep.out: cp {{CASE_DIR}}/dep.in",
+    "build {{CASE_DIR}}/main.out: cp {{CASE_DIR}}/main.in | {{CASE_DIR}}/dep.out",
+]

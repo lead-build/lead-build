@@ -45,6 +45,8 @@ When constructing a build, set the following fields:
 - `rule` - the rule object produced by `pb.rule`
 - `input` - the file or files needed by the build
 - `output` - the file or files produced by the build
+- `deps` - implicit depednecnies for the build. Handled as ninja build `| deps`. Optional.
+- Custom variables, as used in the corresponding `pb.rule`.
 
 Minimal example:
 
