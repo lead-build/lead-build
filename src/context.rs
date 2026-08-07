@@ -69,7 +69,7 @@ impl LangContext {
         builtins.insert("cwd".into(), ExprType::from(Value::Path(cwd)).builtin());
         builtins.insert(
             "include".to_string(),
-            Expr::new_builtin(Rc::new(BuiltinInclude(self.clone()))),
+            Expr::new_builtin(BuiltinInclude(self.clone())),
         );
         if let Some(args) = args {
             builtins.insert("args".into(), args);

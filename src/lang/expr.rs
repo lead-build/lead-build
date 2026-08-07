@@ -182,8 +182,9 @@ where
         }))
     }
 
-    pub fn new_builtin(func: Rc<dyn ExprBuiltin<T, F>>) -> ExprType<T, F> {
-        ExprType::FuncDefBuiltin(ExprBuiltinWrapper(func.as_ref().get_name(), func))
+    pub fn new_builtin(func: impl ExprBuiltin<T, F> + 'static) -> ExprType<T, F> {
+        let func = Rc::new(func);
+        ExprType::FuncDefBuiltin(ExprBuiltinWrapper(func.get_name(), func))
     }
 
     pub fn builtin(self: ExprType<T, F>) -> Expr<T, F> {
@@ -1091,7 +1092,7 @@ where
         }
     }
 
-    pub fn new_builtin(func: Rc<dyn ExprBuiltin<T, F>>) -> Expr<T, F> {
+    pub fn new_builtin(func: impl ExprBuiltin<T, F> + 'static) -> Expr<T, F> {
         ExprType::new_builtin(func).builtin()
     }
 

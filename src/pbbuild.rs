@@ -363,10 +363,8 @@ where
 
         /* Wrap into a node */
         Ok(
-            ExprType::new_builtin(Rc::new(BuiltinPbBuild::new(PbBuildRule::new(
-                rule_args, vars,
-            ))))
-            .reref(loc),
+            ExprType::new_builtin(BuiltinPbBuild::new(PbBuildRule::new(rule_args, vars)))
+                .reref(loc),
         )
     }
 }
@@ -578,13 +576,10 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbRebase {
 
 pub fn get_pb_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
     let pbset = ExprSet::from([
-        ("lock".into(), Expr::new_builtin(Rc::new(BuiltinPbLock))),
-        ("rule".into(), Expr::new_builtin(Rc::new(BuiltinPbRule))),
-        (
-            "translate".into(),
-            Expr::new_builtin(Rc::new(BuiltinPbTranslate)),
-        ),
-        ("rebase".into(), Expr::new_builtin(Rc::new(BuiltinPbRebase))),
+        ("lock".into(), Expr::new_builtin(BuiltinPbLock)),
+        ("rule".into(), Expr::new_builtin(BuiltinPbRule)),
+        ("translate".into(), Expr::new_builtin(BuiltinPbTranslate)),
+        ("rebase".into(), Expr::new_builtin(BuiltinPbRebase)),
     ]);
     Ok(ExprType::Object(pbset).builtin())
 }

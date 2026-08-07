@@ -1,4 +1,4 @@
-use std::{fmt::Debug, rc::Rc};
+use std::fmt::Debug;
 
 use crate::{
     Expr,
@@ -39,8 +39,8 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinDbgBreak {
 
 pub fn get_dbg_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
     let dbgset = ExprSet::from([
-        ("trace".into(), Expr::new_builtin(Rc::new(BuiltinDbgTrace))),
-        ("break".into(), Expr::new_builtin(Rc::new(BuiltinDbgBreak))),
+        ("trace".into(), Expr::new_builtin(BuiltinDbgTrace)),
+        ("break".into(), Expr::new_builtin(BuiltinDbgBreak)),
     ]);
     Ok(ExprType::Object(dbgset).builtin())
 }
