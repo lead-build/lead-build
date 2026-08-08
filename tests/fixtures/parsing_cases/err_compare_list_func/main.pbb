@@ -1,0 +1,19 @@
+|{ cwd, include, ... }|
+ # This is a common concept in lead-lib module handling, and also a common
+ # error case. Make sure that it is correctly handled.
+let
+    mod = {
+        lhs = | l | [ "a" ];
+        rhs = | l |
+        let
+            {
+                lhs ? (| l | [ "def lhs" ]),
+                extra ? (| l | [ "def extra" ]),
+                ...
+            } = l;
+        in
+        ((lhs l) ++ extra); # This should be `l.lhs l`, which is the error here
+        out = | l | (l.lhs l) ++ (l.rhs l);
+    };
+in
+(mod.out mod)

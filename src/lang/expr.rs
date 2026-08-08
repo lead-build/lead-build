@@ -571,14 +571,20 @@ where
                             format!("Unsupported binary operation: {:?} between lists", op),
                         )),
                     },
-                    _ => Err(Error::new(
-                        ErrorType::Eval,
-                        format!(
-                            "Unsupported binary operation: {:?} between {:?} and {:?}",
-                            op, lhs_r.tok, rhs_r.tok
-                        ),
-                    )
-                    .reref(&lhs.get_loc())),
+                    _ => {
+                        /*
+                         * TODO: This error message needs to be improved.
+                         * Printing lhs_r.tok or rhs_r.tok means they can be
+                         * structures with infinite recursion, and thus block.
+                         * As a workaround, we just print the operation, which
+                         * is not enough in the long run...
+                         */
+                        Err(Error::new(
+                            ErrorType::Eval,
+                            format!("Unsupported binary operation: {:?}", op),
+                        )
+                        .reref(&lhs.get_loc()))
+                    }
                 }
             }
         }
@@ -590,7 +596,8 @@ where
         trace!(
             "Resolving {} at {}",
             storref.tok.get_message().unwrap(),
-            storref.loc
+            storref
+                .loc
                 .as_ref()
                 .map_or_else(|| "unknown location".to_string(), |loc| loc.to_string())
         );
