@@ -1,7 +1,7 @@
 mod export;
 pub mod matcher;
 
-use super::error::{Error, ErrorType, Loc, Result};
+use super::error::{Error, ErrorType, Loc, Referrable, Result};
 pub use export::Exportable;
 pub use matcher::Matcher;
 use std::{
@@ -10,7 +10,9 @@ use std::{
     fmt::{Debug, Display},
     rc::Rc,
 };
-use strum::EnumTryAs;
+use strum::{EnumMessage, EnumTryAs};
+
+use log::trace;
 
 #[cfg(test)]
 mod tests;
@@ -106,34 +108,52 @@ where
 }
 
 // Clone is needed since ExprType::Var is implemented via cloning of ExprType
-#[derive(Debug, PartialEq, Clone, Default, EnumTryAs)]
+#[derive(Debug, PartialEq, Clone, Default, EnumTryAs, EnumMessage)]
 pub enum ExprType<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F>,
     F: Clone,
 {
+    #[strum(message = "object expression")]
     Object(ExprSet<T, F>),
+    #[strum(message = "list expression")]
     List(Vec<Expr<T, F>>),
+    #[strum(message = "tuple expression")]
     Tuple(Vec<Expr<T, F>>),
+    #[strum(message = "concat expression")]
     Concat(Vec<Expr<T, F>>),
+    #[strum(message = "attribute selection")]
     AttrSel(Expr<T, F>, Expr<T, F>),
+    #[strum(message = "literal value")]
     Value(T),
+    #[strum(message = "variable reference")]
     Var(String),
+    #[strum(message = "unary operator expression")]
     UnOp(ExprUnOp, Expr<T, F>),
+    #[strum(message = "binary operator expression")]
     BinOp(ExprBinOp, Expr<T, F>, Expr<T, F>),
+    #[strum(message = "function definition")]
     FuncDef(Matcher<T, F>, Expr<T, F>),
+    #[strum(message = "builtin function definition")]
     FuncDefBuiltin(ExprBuiltinWrapper<T, F>),
+    #[strum(message = "let binding")]
     Let(Vec<(Matcher<T, F>, Expr<T, F>)>, Expr<T, F>),
+    #[strum(message = "fold expression")]
     Fold(Expr<T, F>, Expr<T, F>, Expr<T, F>),
+    #[strum(message = "map expression")]
     Map(ExprMapType, Expr<T, F>, Expr<T, F>, Option<Expr<T, F>>),
+    #[strum(message = "function call")]
     FuncCall(Expr<T, F>, Expr<T, F>),
+    #[strum(message = "bound expression")]
     Bind(ExprSet<T, F>, Expr<T, F>),
+    #[strum(message = "switch expression")]
     Switch(
         Expr<T, F>,
         Vec<(Expr<T, F>, Expr<T, F>)>,
         Option<Expr<T, F>>,
     ),
     #[default]
+    #[strum(message = "null expression")]
     Null,
 }
 
@@ -158,7 +178,7 @@ where
 impl<T, F> Expr<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     pub fn get_loc(&self) -> Option<Loc<F>> {
         self.inner_ref().loc.clone()
@@ -168,7 +188,7 @@ where
 impl<T, F> ExprType<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     pub fn reref(self: ExprType<T, F>, loc: Option<Loc<F>>) -> Expr<T, F> {
         Expr(Rc::new(RefCell::new(ExprStorage { tok: self, loc })))
@@ -245,7 +265,7 @@ impl Display for ExprUnOp {
 impl<T, F> Display for Expr<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.export(0, f)
@@ -255,7 +275,7 @@ where
 impl<T, F> Display for ExprType<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.export(0, f)
@@ -303,7 +323,7 @@ where
 impl<T, F> Default for ExprStorage<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     fn default() -> Self {
         Self {
@@ -334,7 +354,7 @@ where
 impl<T, F> Expr<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     pub fn bind(&self, varspace: &ExprSet<T, F>) -> Expr<T, F> {
         let referenced = self.referenced_vars();
@@ -462,7 +482,7 @@ where
 
                 fn list_eq<
                     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-                    F: Clone + Debug,
+                    F: Clone + Debug + Referrable,
                 >(
                     lhs_els: &[Expr<T, F>],
                     rhs_els: &[Expr<T, F>],
@@ -566,6 +586,14 @@ where
 
     pub fn resolve(&self) -> Result<(), F> {
         let mut storref: ExprStorage<T, F> = self.inner_ref().clone();
+
+        trace!(
+            "Resolving {} at {}",
+            storref.tok.get_message().unwrap(),
+            storref.loc
+                .as_ref()
+                .map_or_else(|| "unknown location".to_string(), |loc| loc.to_string())
+        );
 
         while match &storref.tok {
             ExprType::Object(..) => false,

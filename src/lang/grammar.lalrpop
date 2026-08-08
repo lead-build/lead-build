@@ -8,6 +8,7 @@ use super::{
     ExprMapType,
     Exportable,
     ParsableValue,
+    Referrable,
     Display,
     Matcher,
     ObjectMatch,
@@ -27,7 +28,7 @@ use std::{
 grammar<T, F>(f: &F)
 where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
-    F: Clone + Debug;
+    F: Clone + Debug + Referrable;
 
 match {
     r"[ \t\r\n]+" => { },

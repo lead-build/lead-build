@@ -35,7 +35,7 @@ pub trait Exportable {
 impl<T, F> Exportable for super::Expr<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     fn export(&self, indent: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.inner_ref().tok.export(indent, f)
@@ -45,7 +45,7 @@ where
 impl<T, F> Exportable for super::ExprType<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     fn export(&self, indent: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

@@ -19,7 +19,9 @@ lalrpop = { version = "0.23.1" }
 
 [dependencies]
 clap = { version = "4.6.1", features = ["derive"] }
+env_logger = "0.11.11"
 lalrpop-util = { version = "0.23.1", features = ["lexer", "unicode"] }
+log = "0.4.33"
 pathdiff = "0.2.3"
 strum = { version = "0.28.0", features = ["derive"] }
 

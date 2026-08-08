@@ -4,12 +4,24 @@ use strum::EnumTryAs;
 
 use super::{
     Exportable,
-    error::{Error, ErrorType, Result},
+    error::{Error, ErrorType, Referrable, Result},
     expr::ExprOps,
     parser::ParsableValue,
 };
 
-pub type FRef = i32;
+#[derive(Clone, Debug, PartialEq)]
+pub struct FRef;
+
+impl Referrable for FRef {
+    fn format_ref(
+        &self,
+        left: usize,
+        right: usize,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result {
+        write!(f, "FRef({},{})", left, right)
+    }
+}
 
 #[derive(Clone, PartialEq, Debug, EnumTryAs)]
 pub enum TestValue {

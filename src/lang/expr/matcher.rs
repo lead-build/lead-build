@@ -4,7 +4,7 @@ use std::{
     iter::zip,
 };
 
-use super::{Error, ErrorType, Exportable, Expr, ExprOps, ExprSet, ExprType, Result};
+use super::{Error, ErrorType, Exportable, Expr, ExprOps, ExprSet, ExprType, Referrable, Result};
 
 pub type ObjectMatch<T, F> = (String, Matcher<T, F>, Option<Expr<T, F>>);
 
@@ -24,7 +24,7 @@ where
 impl<T, F> Display for Matcher<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.export(0, f)
@@ -34,7 +34,7 @@ where
 impl<T, F> Exportable for Matcher<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     fn export(&self, indent: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -80,7 +80,7 @@ where
 impl<T, F> Matcher<T, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     pub fn bind_defaults(&self, varscope: &ExprSet<T, F>) -> Matcher<T, F> {
         match self {
@@ -146,7 +146,7 @@ where
     pub fn run(&self, expr: Expr<T, F>) -> Result<ExprSet<T, F>, F>
     where
         T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-        F: Clone + Debug,
+        F: Clone + Debug + Referrable,
     {
         match self {
             Matcher::Alias(matcher, name) => {

@@ -6,11 +6,7 @@ use std::{
 };
 
 use crate::{
-    Expr,
-    lang::{Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Result},
-    ninjawriter::{NinjaArg, NinjaFile, NinjaRuleRef},
-    path::VirtPath,
-    value::Value,
+    Expr, lang::{Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Referrable, Result}, ninjawriter::{NinjaArg, NinjaFile, NinjaRuleRef}, path::VirtPath, value::Value,
 };
 
 macro_rules! expr_get_arg (
@@ -228,7 +224,7 @@ fn value_to_ninja_arg(attr: &Value) -> NinjaArg {
     }
 }
 
-fn resolve_build_arg_to_ninja_values<F: Clone + Debug>(
+fn resolve_build_arg_to_ninja_values<F: Clone + Debug + Referrable>(
     build_arg: &Expr<Value, F>,
     field_name: &str,
     dep_builds: &mut Vec<Rc<PbBuild>>,
@@ -270,7 +266,7 @@ pub struct BuiltinPbRule;
 
 impl<F> ExprBuiltin<Value, F> for BuiltinPbRule
 where
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     fn get_name(&self) -> String {
         "build".into()
@@ -380,7 +376,7 @@ impl BuiltinPbBuild {
 
 impl<F> ExprBuiltin<Value, F> for BuiltinPbBuild
 where
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     fn get_name(&self) -> String {
         "build".into()

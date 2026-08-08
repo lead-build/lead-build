@@ -42,6 +42,10 @@ struct Args {
     /// Print evaluated output instead of generating build.ninja file
     #[arg(short = 'E', long)]
     eval: bool,
+
+    /// Set verbosity level. Pass many times for more log output (up to three)
+    #[arg(short, long, action = ArgAction::Count)]
+    verbose: u8,
 }
 
 fn parse_virt_path_mapping(s: &str) -> std::result::Result<(String, VirtPath), String> {
@@ -110,8 +114,22 @@ fn run(args: Args) -> Result<(), VirtPath> {
     }
 }
 
+fn setup_log(verbose: u8) {
+    let log_level = match verbose {
+        0 => log::LevelFilter::Warn,  // Default
+        1 => log::LevelFilter::Info,  // -v
+        2 => log::LevelFilter::Debug, // -vv
+        _ => log::LevelFilter::Trace, // -vvv or more
+    };
+
+    env_logger::Builder::new().filter_level(log_level).init();
+}
+
 fn main() {
-    match run(Args::parse()) {
+    let args = Args::parse();
+    setup_log(args.verbose);
+
+    match run(args) {
         Ok(_) => {
             exit(0);
         }

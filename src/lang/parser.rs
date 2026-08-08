@@ -1,3 +1,5 @@
+use crate::lang::Referrable;
+
 use super::error::{Error, ErrorType, Result};
 use super::expr::{
     Exportable, Expr, ExprBinOp, ExprMapType, ExprOps, ExprSet, ExprType, ExprUnOp,
@@ -66,7 +68,7 @@ where
 pub fn parse_str<T, F>(code: &str, file: &F) -> Result<Expr<T, F>, F>
 where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     let parser = grammar::ExprParser::new();
     let result = parser
@@ -115,7 +117,7 @@ fn unescape_str(input: &str) -> String {
 fn unpack_str<T, F>(input: String, left: usize, right: usize, file: &F) -> Result<Expr<T, F>, F>
 where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
-    F: Clone + Debug,
+    F: Clone + Debug + Referrable,
 {
     let parts_values = string_decode(input.as_str())
         .unwrap()
@@ -157,13 +159,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::super::testvalue::TestValue;
+    use super::super::testvalue::{FRef, TestValue};
     use super::*;
 
-    type FRef = i32;
-
     fn eval(code: &str) -> Expr<TestValue, FRef> {
-        parse_str(code, &1).unwrap()
+        parse_str(code, &FRef).unwrap()
     }
 
     #[test]
@@ -249,7 +249,7 @@ mod tests {
     fn test_parse_func_def_pattern_non_var_1() {
         let code = "{ hej, hopp, svej }: 12";
 
-        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str(code, &1);
+        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str(code, &FRef);
         // Should be an error, try to unwrap it. Panic otherwise
         let _ = res.unwrap_err();
     }
@@ -258,7 +258,7 @@ mod tests {
     fn test_parse_func_def_pattern_non_var_2() {
         let code = "{ hej, hopp, svej, }: 12";
 
-        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str(code, &1);
+        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str(code, &FRef);
         // Should be an error, try to unwrap it. Panic otherwise
         let _ = res.unwrap_err();
     }
@@ -325,19 +325,19 @@ mod tests {
 
     #[test]
     fn test_parse_list() {
-        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[]", &1);
+        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[]", &FRef);
         res.unwrap();
-        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[1]", &1);
+        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[1]", &FRef);
         res.unwrap();
-        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[1,2]", &1);
+        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[1,2]", &FRef);
         res.unwrap();
-        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[1,2,]", &1);
+        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[1,2,]", &FRef);
         res.unwrap();
-        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[,1,2]", &1);
+        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[,1,2]", &FRef);
         res.unwrap_err();
-        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[1,,2]", &1);
+        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[1,,2]", &FRef);
         res.unwrap_err();
-        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[1,2,,]", &1);
+        let res: Result<Expr<TestValue, FRef>, FRef> = parse_str("[1,2,,]", &FRef);
         res.unwrap_err();
     }
 
