@@ -1,0 +1,4 @@
+ninja_contains = [
+    "rule touch",
+    "build {{CASE_DIR}}/a.out {{CASE_DIR}}/b.out: touch {{CASE_DIR}}/src.in",
+]

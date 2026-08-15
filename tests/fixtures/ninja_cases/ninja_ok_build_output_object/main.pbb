@@ -1,0 +1,30 @@
+|{ cwd, pb, ... }|
+let
+    touch_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "touch", output ];
+        }
+    );
+    copy_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "cp", input, output ];
+        }
+    );
+    build_output = touch_rule {
+        input = cwd / "src.in";
+        output = {
+            first = cwd / "first.out";
+            second = cwd / "second.out";
+        };
+    };
+in
+[
+    copy_rule {
+        input = build_output.first;
+        output = cwd / "copied_first.out";
+    },
+    copy_rule {
+        input = build_output.second;
+        output = cwd / "copied_second.out";
+    },
+]

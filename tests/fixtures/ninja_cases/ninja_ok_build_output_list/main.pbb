@@ -1,0 +1,15 @@
+|{ cwd, pb, ... }|
+let
+    touch_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "touch", output ];
+        }
+    );
+in
+touch_rule {
+    input = cwd / "src.in";
+    output = [
+        cwd / "a.out",
+        cwd / "b.out",
+    ];
+}

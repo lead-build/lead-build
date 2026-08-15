@@ -1,0 +1,7 @@
+ninja_contains = [
+    "rule touch",
+    "rule cp",
+    "build {{CASE_DIR}}/first.out {{CASE_DIR}}/second.out: touch {{CASE_DIR}}/src.in",
+    "build {{CASE_DIR}}/copied_first.out: cp {{CASE_DIR}}/first.out",
+    "build {{CASE_DIR}}/copied_second.out: cp {{CASE_DIR}}/second.out",
+]

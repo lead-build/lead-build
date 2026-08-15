@@ -216,41 +216,51 @@ fn value_to_ninja_arg(attr: &Value) -> NinjaArg {
     }
 }
 
+enum BuildOutputFormat {
+    Value,
+    List,
+    Object(Vec<String>),
+}
+
+fn resolve_path_value_from_expr<F: Clone + Debug + Referrable>(
+    expr: &Expr<Value, F>,
+    field_name: &str,
+    dep_builds: &mut Vec<Rc<PbBuild>>,
+) -> Result<VirtPath, F> {
+    expr.resolve()?;
+    match &expr.inner_ref().tok {
+        ExprType::Value(Value::Path { path, depends }) => {
+            for dep_build in depends.iter() {
+                dep_builds.push(dep_build.clone());
+            }
+            Ok(path.clone())
+        }
+        _ => Err(Error::new(
+            ErrorType::Type,
+            format!("incompatible type in build arg {}", field_name),
+        )),
+    }
+}
+
 fn resolve_build_arg_to_paths<F: Clone + Debug + Referrable>(
     build_arg: &Expr<Value, F>,
     field_name: &str,
     dep_builds: &mut Vec<Rc<PbBuild>>,
 ) -> Result<Vec<VirtPath>, F> {
     build_arg.resolve()?;
-    let loc = build_arg.get_loc();
-
     let elems: Vec<Expr<Value, F>> = match &build_arg.inner_ref().tok {
-        ExprType::List(exprs) => Ok(exprs.clone()),
-        ExprType::Value(value) => Ok(vec![ExprType::from(value.clone()).reref(loc.clone())]),
+        ExprType::Value(value) => vec![ExprType::from(value.clone()).reref(build_arg.get_loc())],
+        ExprType::List(exprs) => exprs.clone(),
+        ExprType::Object(fields) => fields.values().cloned().collect(),
         _ => Err(Error::new(
             ErrorType::Type,
-            format!("field {} is not a list or value", field_name),
-        )),
-    }?;
+            format!("field {} is not a value, list, or object", field_name),
+        ))?,
+    };
 
     elems
-        .into_iter()
-        .map(|elem| {
-            elem.resolve()?;
-            match &elem.inner_ref().tok {
-                ExprType::Value(Value::Path { path, depends }) => {
-                    for dep_build in depends.iter() {
-                        assert_eq!(dep_build.ninja_outputs().len(), 1);
-                        dep_builds.push(dep_build.clone());
-                    }
-                    Ok(path.clone())
-                }
-                _ => Err(Error::new(
-                    ErrorType::Type,
-                    format!("incompatible type in build arg {}", field_name),
-                )),
-            }
-        })
+        .iter()
+        .map(|expr| resolve_path_value_from_expr(expr, field_name, dep_builds))
         .collect()
 }
 
@@ -279,7 +289,6 @@ fn resolve_build_arg_to_ninja_values<F: Clone + Debug + Referrable>(
                 ExprType::Value(attr) => {
                     if let Value::Path { depends, .. } = attr {
                         for dep_build in depends.iter() {
-                            assert_eq!(dep_build.ninja_outputs().len(), 1);
                             dep_builds.push(dep_build.clone());
                         }
                     }
@@ -441,6 +450,7 @@ where
         /* Special treatment for input/output */
         let mut input: Vec<VirtPath> = vec![];
         let mut output: Vec<VirtPath> = vec![];
+        let mut output_format: Option<BuildOutputFormat> = None;
         /* Optional implicit deps for ninja build target */
         let mut deps: Vec<VirtPath> = vec![];
         /* Track all dependent rules, that needs to be added to ninja file  */
@@ -460,6 +470,21 @@ where
                     input = resolve_build_arg_to_paths(&build_arg, arg_name, &mut dep_builds)?
                 }
                 "output" => {
+                    build_arg.resolve()?;
+                    output_format = match &build_arg.inner_ref().tok {
+                        ExprType::Value(_) => Some(BuildOutputFormat::Value),
+                        ExprType::List(_) => Some(BuildOutputFormat::List),
+                        ExprType::Object(fields) => {
+                            Some(BuildOutputFormat::Object(fields.keys().cloned().collect()))
+                        }
+                        _ => {
+                            return Err(Error::new(
+                                ErrorType::Type,
+                                "output must be a value, list, or object",
+                            )
+                            .reref(&build_arg.get_loc()));
+                        }
+                    };
                     output = resolve_build_arg_to_paths(&build_arg, arg_name, &mut dep_builds)?
                 }
                 name => {
@@ -479,13 +504,53 @@ where
             args,
             dep_builds,
         });
-        assert_eq!(build.ninja_outputs().len(), 1);
 
-        Ok(ExprType::Value(Value::Path {
-            path: build.ninja_outputs()[0].clone(),
-            depends: vec![build],
-        })
-        .reref(loc))
+        let output_format = output_format.ok_or_else(|| {
+            Error::new(ErrorType::Type, "missing required output field").reref(&arg.get_loc())
+        })?;
+
+        match output_format {
+            BuildOutputFormat::Value => {
+                assert_eq!(build.ninja_outputs().len(), 1);
+                Ok(ExprType::Value(Value::Path {
+                    path: build.ninja_outputs()[0].clone(),
+                    depends: vec![build],
+                })
+                .reref(loc))
+            }
+            BuildOutputFormat::List => {
+                let out_list = build
+                    .ninja_outputs()
+                    .iter()
+                    .map(|path| {
+                        ExprType::Value(Value::Path {
+                            path: path.clone(),
+                            depends: vec![build.clone()],
+                        })
+                        .reref(loc.clone())
+                    })
+                    .collect();
+                Ok(ExprType::List(out_list).reref(loc))
+            }
+            BuildOutputFormat::Object(field_names) => {
+                assert_eq!(field_names.len(), build.ninja_outputs().len());
+                let fields = field_names
+                    .into_iter()
+                    .zip(build.ninja_outputs().iter())
+                    .map(|(name, path)| {
+                        (
+                            name,
+                            ExprType::Value(Value::Path {
+                                path: path.clone(),
+                                depends: vec![build.clone()],
+                            })
+                            .reref(loc.clone()),
+                        )
+                    })
+                    .collect::<ExprSet<Value, F>>();
+                Ok(ExprType::Object(fields).reref(loc))
+            }
+        }
     }
 }
 
