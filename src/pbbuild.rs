@@ -10,7 +10,7 @@ use crate::{
     lang::{
         Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Referrable, Result,
     },
-    ninjawriter::{NinjaArg, NinjaFile, NinjaRuleRef},
+    ninjawriter::{NinjaArg, NinjaFile, NinjaRule, NinjaRuleRef},
     path::VirtPath,
     value::Value,
 };
@@ -47,7 +47,6 @@ fn unique_id() -> usize {
 
 #[derive(PartialEq, Debug)]
 pub struct PbBuildRule {
-    id: usize,
     name: String,
     rule_args: BTreeSet<String>,
     rule_vars: Vec<(String, Vec<NinjaArg>)>,
@@ -62,7 +61,6 @@ impl Display for PbBuildRule {
 impl PbBuildRule {
     fn new(rule_args: BTreeSet<String>, rule_vars: Vec<(String, Vec<NinjaArg>)>) -> Self {
         PbBuildRule {
-            id: unique_id(),
             name: Self::get_name(&rule_vars),
             rule_args,
             rule_vars,
@@ -104,19 +102,13 @@ impl PbBuildRule {
     }
 
     fn populate_ninja_file(&self, nf: &mut NinjaFile) -> NinjaRuleRef {
-        if let Some(ruleref) = nf.get_rule_ref(self.id) {
-            ruleref
-        } else {
-            /* Create rule base */
-            // TODO: More than just index numbers of ninja rules
-            let rule = nf.rule(self.id, &self.name);
+        let mut rule = NinjaRule::new(&self.name);
 
-            for (var_name, var_args) in self.rule_vars.iter() {
-                rule.var(var_name, var_args.clone());
-            }
-            /* Sore reference and write back */
-            rule.as_ref()
+        for (var_name, var_args) in self.rule_vars.iter() {
+            rule.var(var_name, var_args.clone());
         }
+
+        nf.add_rule(rule)
     }
 }
 
@@ -498,7 +490,10 @@ where
                                 ExprType::Value(Value::Path { path, .. }) => Ok(path.clone()),
                                 _ => Err(Error::new(
                                     ErrorType::Type,
-                                    format!("incompatible type in build arg {}", arg_name),
+                                    format!(
+                                        "incompatible type in build arg '{}' - {}",
+                                        arg_name, expr
+                                    ),
                                 )),
                             }
                         })
