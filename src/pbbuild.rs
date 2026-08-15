@@ -199,11 +199,7 @@ fn value_to_ninja_arg(attr: &Value) -> NinjaArg {
     match attr {
         Value::Int(value) => NinjaArg::Const(format!("{}", value)),
         Value::String(value) => NinjaArg::Const(value.clone()),
-        Value::Path(path) => NinjaArg::Path(path.clone()),
-        Value::Build(build) => {
-            assert_eq!(build.output.len(), 1); // TODO: generic handling of builds
-            NinjaArg::Path(build.output[0].clone())
-        }
+        Value::Path { path, .. } => NinjaArg::Path(path.clone()),
         Value::BuildVar(value) => NinjaArg::Var(value.clone()),
         Value::BuildConcat(vs) => NinjaArg::Concat(
             vs.iter()
@@ -211,7 +207,7 @@ fn value_to_ninja_arg(attr: &Value) -> NinjaArg {
                     Value::Int(value) => NinjaArg::Const(format!("{}", value)),
                     Value::String(value) => NinjaArg::Const(value.clone()),
                     Value::BuildVar(value) => NinjaArg::Var(value.clone()),
-                    Value::Path(path) => NinjaArg::Path(path.clone()),
+                    Value::Path { path, .. } => NinjaArg::Path(path.clone()),
                     _ => unreachable!(),
                 })
                 .collect(),
@@ -242,10 +238,12 @@ fn resolve_build_arg_to_paths<F: Clone + Debug + Referrable>(
         .map(|elem| {
             elem.resolve()?;
             match &elem.inner_ref().tok {
-                ExprType::Value(Value::Path(path)) => Ok(path.clone()),
-                ExprType::Value(Value::Build(build)) => {
-                    dep_builds.push(build.clone());
-                    build.get_output()
+                ExprType::Value(Value::Path { path, depends }) => {
+                    for dep_build in depends.iter() {
+                        assert_eq!(dep_build.ninja_outputs().len(), 1);
+                        dep_builds.push(dep_build.clone());
+                    }
+                    Ok(path.clone())
                 }
                 _ => Err(Error::new(
                     ErrorType::Type,
@@ -279,8 +277,11 @@ fn resolve_build_arg_to_ninja_values<F: Clone + Debug + Referrable>(
             elem.resolve()?;
             match &elem.inner_ref().tok {
                 ExprType::Value(attr) => {
-                    if let Value::Build(build) = attr {
-                        dep_builds.push(build.clone());
+                    if let Value::Path { depends, .. } = attr {
+                        for dep_build in depends.iter() {
+                            assert_eq!(dep_build.ninja_outputs().len(), 1);
+                            dep_builds.push(dep_build.clone());
+                        }
                     }
                     Ok(value_to_ninja_arg(attr))
                 }
@@ -469,7 +470,7 @@ where
             }
         }
 
-        Ok(ExprType::Value(Value::Build(Rc::new(PbBuild {
+        let build = Rc::new(PbBuild {
             id: unique_id(),
             rule: rule.clone(),
             input,
@@ -477,7 +478,13 @@ where
             deps,
             args,
             dep_builds,
-        })))
+        });
+        assert_eq!(build.ninja_outputs().len(), 1);
+
+        Ok(ExprType::Value(Value::Path {
+            path: build.ninja_outputs()[0].clone(),
+            depends: vec![build],
+        })
         .reref(loc))
     }
 }
@@ -496,7 +503,7 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbLock {
             Error::new(ErrorType::Type, format!("expected path, got {}", arg))
                 .reref(&arg.get_loc()),
         )?;
-        Ok(ExprType::Value(Value::Path(path.lock())).reref(arg.get_loc()))
+        Ok(ExprType::Value(Value::path(path.lock())).reref(arg.get_loc()))
     }
 }
 
@@ -568,7 +575,7 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbTranslate {
             Error::new(ErrorType::Type, format!("Can't translate {}", input)).reref(&loc)
         })?;
 
-        Ok(ExprType::Value(Value::Path(output)).reref(loc))
+        Ok(ExprType::Value(Value::path(output)).reref(loc))
     }
 }
 

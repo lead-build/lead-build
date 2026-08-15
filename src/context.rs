@@ -66,7 +66,7 @@ impl LangContext {
     ) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let cwd = file.parent()?.lock();
         let mut builtins = self.0.builtins.clone();
-        builtins.insert("cwd".into(), ExprType::from(Value::Path(cwd)).builtin());
+        builtins.insert("cwd".into(), ExprType::from(Value::path(cwd)).builtin());
         builtins.insert(
             "include".to_string(),
             Expr::new_builtin(BuiltinInclude(self.clone())),
