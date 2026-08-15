@@ -1,4 +1,5 @@
 use crate::lang::{Error, ErrorType, ExprStorage, ExprType, Result};
+use crate::ninjawriter::NinjaArg;
 use crate::ninjawriter::NinjaFile;
 use crate::path::VirtPath;
 use crate::{Expr, Value};
@@ -47,8 +48,8 @@ pub fn add_expr_to_ninjafile(
                 build.populate_ninja_file(ninja_file, true);
 
                 let alias = ninja_file.alias(name);
-                for output in build.ninja_outputs().into_iter() {
-                    alias.input(output);
+                for output in build.ninja_outputs().iter() {
+                    alias.input(NinjaArg::Path(output.clone()));
                 }
             }
             Ok(())

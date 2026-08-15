@@ -6,7 +6,13 @@ use std::{
 };
 
 use crate::{
-    Expr, lang::{Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Referrable, Result}, ninjawriter::{NinjaArg, NinjaFile, NinjaRuleRef}, path::VirtPath, value::Value,
+    Expr,
+    lang::{
+        Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Referrable, Result,
+    },
+    ninjawriter::{NinjaArg, NinjaFile, NinjaRuleRef},
+    path::VirtPath,
+    value::Value,
 };
 
 macro_rules! expr_get_arg (
@@ -118,9 +124,9 @@ impl PbBuildRule {
 pub struct PbBuild {
     id: usize,
     rule: Rc<PbBuildRule>,
-    input: Vec<NinjaArg>,
-    output: Vec<NinjaArg>,
-    deps: Vec<NinjaArg>,
+    input: Vec<VirtPath>,
+    output: Vec<VirtPath>,
+    deps: Vec<VirtPath>,
     args: BTreeMap<String, Vec<NinjaArg>>,
     dep_builds: Vec<Rc<PbBuild>>,
 }
@@ -129,19 +135,11 @@ impl Display for PbBuild {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}(", self.rule.name)?;
         for o in self.output.iter() {
-            if let NinjaArg::Path(op) = o {
-                write!(f, " {}", op.to_path_buf().display())?;
-            } else {
-                write!(f, "??")?;
-            }
+            write!(f, " {}", o.to_path_buf().display())?;
         }
         write!(f, " for",)?;
         for i in self.input.iter() {
-            if let NinjaArg::Path(ip) = i {
-                write!(f, " {}", ip.to_path_buf().display())?;
-            } else {
-                write!(f, "??")?;
-            }
+            write!(f, " {}", i.to_path_buf().display())?;
         }
         write!(f, " )")?;
         Ok(())
@@ -149,8 +147,8 @@ impl Display for PbBuild {
 }
 
 impl PbBuild {
-    pub fn ninja_outputs(&self) -> Vec<NinjaArg> {
-        self.output.clone()
+    pub fn ninja_outputs(&self) -> &Vec<VirtPath> {
+        &self.output
     }
 
     pub fn populate_ninja_file(&self, nf: &mut NinjaFile, is_default: bool) {
@@ -169,13 +167,13 @@ impl PbBuild {
         let rule = self.rule.populate_ninja_file(nf);
         let build = nf.build(self.id, &rule);
         for inp in self.input.iter() {
-            build.input(inp.clone());
+            build.input(NinjaArg::Path(inp.clone()));
         }
         for outp in self.output.iter() {
-            build.output(outp.clone());
+            build.output(NinjaArg::Path(outp.clone()));
         }
         for dep in self.deps.iter() {
-            build.dep(dep.clone());
+            build.dep(NinjaArg::Path(dep.clone()));
         }
         for (var_name, var_attrs) in self.args.iter() {
             build.var(var_name, var_attrs.clone());
@@ -187,10 +185,8 @@ impl PbBuild {
     }
 
     pub fn get_output<F: Clone>(&self) -> Result<VirtPath, F> {
-        if self.output.len() == 1
-            && let NinjaArg::Path(p) = &self.output[0]
-        {
-            return Ok(p.clone());
+        if self.output.len() == 1 {
+            return Ok(self.output[0].clone());
         }
         Err(Error::new(
             ErrorType::Custom,
@@ -206,7 +202,7 @@ fn value_to_ninja_arg(attr: &Value) -> NinjaArg {
         Value::Path(path) => NinjaArg::Path(path.clone()),
         Value::Build(build) => {
             assert_eq!(build.output.len(), 1); // TODO: generic handling of builds
-            build.output[0].clone()
+            NinjaArg::Path(build.output[0].clone())
         }
         Value::BuildVar(value) => NinjaArg::Var(value.clone()),
         Value::BuildConcat(vs) => NinjaArg::Concat(
@@ -222,6 +218,42 @@ fn value_to_ninja_arg(attr: &Value) -> NinjaArg {
         ),
         _ => panic!("Rule attr is of invalid type: {}", attr),
     }
+}
+
+fn resolve_build_arg_to_paths<F: Clone + Debug + Referrable>(
+    build_arg: &Expr<Value, F>,
+    field_name: &str,
+    dep_builds: &mut Vec<Rc<PbBuild>>,
+) -> Result<Vec<VirtPath>, F> {
+    build_arg.resolve()?;
+    let loc = build_arg.get_loc();
+
+    let elems: Vec<Expr<Value, F>> = match &build_arg.inner_ref().tok {
+        ExprType::List(exprs) => Ok(exprs.clone()),
+        ExprType::Value(value) => Ok(vec![ExprType::from(value.clone()).reref(loc.clone())]),
+        _ => Err(Error::new(
+            ErrorType::Type,
+            format!("field {} is not a list or value", field_name),
+        )),
+    }?;
+
+    elems
+        .into_iter()
+        .map(|elem| {
+            elem.resolve()?;
+            match &elem.inner_ref().tok {
+                ExprType::Value(Value::Path(path)) => Ok(path.clone()),
+                ExprType::Value(Value::Build(build)) => {
+                    dep_builds.push(build.clone());
+                    build.get_output()
+                }
+                _ => Err(Error::new(
+                    ErrorType::Type,
+                    format!("incompatible type in build arg {}", field_name),
+                )),
+            }
+        })
+        .collect()
 }
 
 fn resolve_build_arg_to_ninja_values<F: Clone + Debug + Referrable>(
@@ -406,28 +438,32 @@ where
         /* Read all variables required by rule */
         let mut args: BTreeMap<String, Vec<NinjaArg>> = BTreeMap::new();
         /* Special treatment for input/output */
-        let mut input: Vec<NinjaArg> = vec![];
-        let mut output: Vec<NinjaArg> = vec![];
+        let mut input: Vec<VirtPath> = vec![];
+        let mut output: Vec<VirtPath> = vec![];
         /* Optional implicit deps for ninja build target */
-        let mut deps: Vec<NinjaArg> = vec![];
+        let mut deps: Vec<VirtPath> = vec![];
         /* Track all dependent rules, that needs to be added to ninja file  */
         let mut dep_builds: Vec<Rc<PbBuild>> = vec![];
 
         if !rule.rule_args.contains("deps")
             && let Some(build_arg) = arg_obj.remove("deps")
         {
-            deps = resolve_build_arg_to_ninja_values(&build_arg, "deps", &mut dep_builds)?;
+            deps = resolve_build_arg_to_paths(&build_arg, "deps", &mut dep_builds)?;
         }
 
         for arg_name in rule.rule_args.iter() {
             /* Read variable */
             let build_arg = expr_get_arg!(arg_obj, arg_name);
-            let value = resolve_build_arg_to_ninja_values(&build_arg, arg_name, &mut dep_builds)?;
-
             match arg_name.as_str() {
-                "input" => input = value,
-                "output" => output = value,
+                "input" => {
+                    input = resolve_build_arg_to_paths(&build_arg, arg_name, &mut dep_builds)?
+                }
+                "output" => {
+                    output = resolve_build_arg_to_paths(&build_arg, arg_name, &mut dep_builds)?
+                }
                 name => {
+                    let value =
+                        resolve_build_arg_to_ninja_values(&build_arg, arg_name, &mut dep_builds)?;
                     args.insert(name.to_string(), value);
                 }
             }
