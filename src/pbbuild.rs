@@ -467,16 +467,20 @@ where
             let build_arg = expr_get_arg!(arg_obj, arg_name);
             match arg_name.as_str() {
                 "input" => {
-                    input = resolve_build_arg_to_paths(&build_arg, arg_name, &mut dep_builds)?
+                    input = resolve_build_arg_to_paths(&build_arg, "input", &mut dep_builds)?
                 }
                 "output" => {
                     build_arg.resolve()?;
-                    output_format = match &build_arg.inner_ref().tok {
-                        ExprType::Value(_) => Some(BuildOutputFormat::Value),
-                        ExprType::List(_) => Some(BuildOutputFormat::List),
-                        ExprType::Object(fields) => {
-                            Some(BuildOutputFormat::Object(fields.keys().cloned().collect()))
-                        }
+                    let (output_exprs, output_format_type) = match &build_arg.inner_ref().tok {
+                        ExprType::Value(value) => (
+                            vec![ExprType::from(value.clone()).reref(build_arg.get_loc())],
+                            BuildOutputFormat::Value,
+                        ),
+                        ExprType::List(exprs) => (exprs.clone(), BuildOutputFormat::List),
+                        ExprType::Object(fields) => (
+                            fields.values().cloned().collect(),
+                            BuildOutputFormat::Object(fields.keys().cloned().collect()),
+                        ),
                         _ => {
                             return Err(Error::new(
                                 ErrorType::Type,
@@ -485,7 +489,20 @@ where
                             .reref(&build_arg.get_loc()));
                         }
                     };
-                    output = resolve_build_arg_to_paths(&build_arg, arg_name, &mut dep_builds)?
+                    output_format = Some(output_format_type);
+                    output = output_exprs
+                        .into_iter()
+                        .map(|expr| {
+                            expr.resolve()?;
+                            match &expr.inner_ref().tok {
+                                ExprType::Value(Value::Path { path, .. }) => Ok(path.clone()),
+                                _ => Err(Error::new(
+                                    ErrorType::Type,
+                                    format!("incompatible type in build arg {}", arg_name),
+                                )),
+                            }
+                        })
+                        .collect::<Result<Vec<_>, _>>()?;
                 }
                 name => {
                     let value =
