@@ -2,7 +2,6 @@ use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::{Debug, Display},
     rc::Rc,
-    sync::atomic::{AtomicUsize, Ordering},
 };
 
 use crate::{
@@ -30,16 +29,6 @@ macro_rules! expr_get_arg (
             .ok_or_else(|| Error::new(ErrorType::Type, format!("Can't unpack {}", stringify!($name))))?
     };
 );
-
-/*
- * Generate unique ID
- */
-
-static NEXT_ID: AtomicUsize = AtomicUsize::new(0);
-
-fn unique_id() -> usize {
-    NEXT_ID.fetch_add(1, Ordering::Relaxed)
-}
 
 /*
  * Build
@@ -78,7 +67,6 @@ impl PbBuildRule {
 
 #[derive(PartialEq, Debug)]
 pub struct PbBuild {
-    id: usize,
     rule: Rc<PbBuildRule>,
     input: Vec<VirtPath>,
     output: Vec<VirtPath>,
@@ -475,7 +463,6 @@ where
         }
 
         let build = Rc::new(PbBuild {
-            id: unique_id(),
             rule: rule.clone(),
             input,
             output,
@@ -665,19 +652,4 @@ pub fn get_pb_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
         ("rebase".into(), Expr::new_builtin(BuiltinPbRebase)),
     ]);
     Ok(ExprType::Object(pbset).builtin())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_unique_id() {
-        /* Just guard against obvious errors with static var here... */
-        let mut set: BTreeSet<usize> = BTreeSet::new();
-        for _ in 0..1000 {
-            let id = unique_id();
-            assert!(set.insert(id));
-        }
-    }
 }
