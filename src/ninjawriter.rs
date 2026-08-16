@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::path::VirtPath;
+use log::debug;
 
 /*
  * Model
@@ -356,17 +357,32 @@ impl NinjaFile {
     }
 
     pub fn add_rule(&mut self, rule: NinjaRule) -> NinjaRuleRef {
+        let requested_name = rule.name_template();
+
         if let Some(existing) = self.rules.get(&rule) {
+            debug!("DUP rule {}", existing);
             return NinjaRuleRef(existing.clone());
         }
 
-        let rule_name = self.rule_names.get(rule.name_template());
+        let rule_name = self.rule_names.get(requested_name);
+        debug!("new rule {}", rule_name);
         let ruleref = NinjaRuleRef(rule_name.clone());
         self.rules.insert(rule, rule_name);
         ruleref
     }
 
     pub fn add_build(&mut self, build: NinjaBuild) -> Result<NinjaBuildRef, String> {
+        debug!(
+            "build {}: {}",
+            build
+                .outputs
+                .iter()
+                .map(|output| output.to_path_buf().display().to_string())
+                .collect::<Vec<_>>()
+                .join(" "),
+            build.rule
+        );
+
         if let Some(existing) = self.builds.get(&build) {
             return Ok(existing.build_ref());
         }
@@ -448,10 +464,18 @@ impl NinjaFile {
     }
 
     pub fn add_alias(&mut self, name: impl ToString, inputs: Vec<VirtPath>) -> &mut Self {
-        self.aliases
-            .entry(name.to_string())
-            .or_default()
-            .extend(inputs);
+        let name = name.to_string();
+        debug!(
+            "alias {}: phony {}",
+            name,
+            inputs
+                .iter()
+                .map(|input| input.to_path_buf().display().to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+
+        self.aliases.entry(name).or_default().extend(inputs);
         self
     }
 
@@ -460,6 +484,16 @@ impl NinjaFile {
     }
 
     pub fn set_build_default(&mut self, build_ref: &NinjaBuildRef) -> &mut Self {
+        debug!(
+            "default {}",
+            build_ref
+                .0
+                .iter()
+                .map(|outp| outp.to_path_buf().display().to_string())
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+
         for outp in build_ref.0.iter() {
             self.default_targets.insert(outp.clone());
         }
