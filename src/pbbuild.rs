@@ -10,7 +10,7 @@ use crate::{
     lang::{
         Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Referrable, Result,
     },
-    ninjawriter::{NinjaArg, NinjaFile, NinjaRule, NinjaRuleRef},
+    ninjawriter::{NinjaArg, NinjaBuild, NinjaFile, NinjaRule, NinjaRuleRef},
     path::VirtPath,
     value::Value,
 };
@@ -143,37 +143,40 @@ impl PbBuild {
         &self.output
     }
 
-    pub fn populate_ninja_file(&self, nf: &mut NinjaFile, is_default: bool) {
-        if let Some(build) = nf.get_build(self.id) {
-            if is_default {
-                build.set_default();
-            }
-            return;
-        }
-
+    pub fn populate_ninja_file<F: Clone + Debug + Referrable>(
+        &self,
+        nf: &mut NinjaFile,
+        is_default: bool,
+    ) -> Result<(), F> {
         for dep in self.dep_builds.iter() {
             /* TODO: Block duplicates */
-            dep.populate_ninja_file(nf, false);
+            dep.populate_ninja_file(nf, false)?;
         }
 
         let rule = self.rule.populate_ninja_file(nf);
-        let build = nf.build(self.id, &rule);
+        let mut build = NinjaBuild::new(&rule);
         for inp in self.input.iter() {
-            build.input(NinjaArg::Path(inp.clone()));
+            build.input(inp.clone());
         }
         for outp in self.output.iter() {
-            build.output(NinjaArg::Path(outp.clone()));
+            build.output(outp.clone());
         }
         for dep in self.deps.iter() {
-            build.dep(NinjaArg::Path(dep.clone()));
+            build.dep(dep.clone());
         }
         for (var_name, var_attrs) in self.args.iter() {
             build.var(var_name, var_attrs.clone());
         }
 
+        let build_ref = nf
+            .add_build(build)
+            .map_err(|message| Error::new(ErrorType::Custom, message))?;
+
         if is_default {
-            build.set_default();
+            nf.set_build_default(&build_ref);
         }
+
+        Ok(())
     }
 
     pub fn get_output<F: Clone>(&self) -> Result<VirtPath, F> {

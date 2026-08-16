@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     fmt::Display,
 };
 
@@ -37,22 +37,26 @@ pub struct NinjaRule {
 #[derive(Debug, PartialEq, Clone)]
 pub struct NinjaRuleRef(String);
 
-#[derive(Debug, Default)]
+#[derive(Debug, PartialEq, Clone, Hash, Eq)]
+pub struct NinjaBuildRef(Vec<VirtPath>);
+
+#[derive(Debug, Default, PartialEq, Hash, Eq)]
 pub struct NinjaBuild {
     rule: String,
-    outputs: Vec<NinjaArg>,
-    inputs: Vec<NinjaArg>,
-    deps: Vec<NinjaArg>,
+    outputs: Vec<VirtPath>,
+    inputs: Vec<VirtPath>,
+    deps: Vec<VirtPath>,
     vars: Vec<NinjaVar>,
-    is_default: bool,
 }
 
 #[derive(Debug, Default)]
 pub struct NinjaFile {
     rule_names: UniqueNames,
     rules: HashSet<NinjaRule>,
-    builds: BTreeMap<usize, NinjaBuild>,
-    aliases: Vec<NinjaBuild>,
+    builds: HashSet<NinjaBuild>,
+    build_outputs: HashSet<VirtPath>,
+    aliases: HashMap<String, Vec<VirtPath>>,
+    default_targets: HashSet<VirtPath>,
 }
 
 /*
@@ -108,6 +112,10 @@ impl NinjaArg {
     }
 }
 
+fn write_ninja_path(path: &VirtPath, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    write!(f, "{}", path.clone().to_path_buf().display())
+}
+
 impl NinjaVar {
     fn write(&self, indent: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         ninja_indent(f, indent)?;
@@ -140,19 +148,19 @@ impl Display for NinjaBuild {
         write!(f, "build")?;
         for outp in self.outputs.iter() {
             write!(f, " ")?;
-            outp.write(1, f)?;
+            write_ninja_path(outp, f)?;
         }
         write!(f, ": ")?;
         ninja_esc_string(f, 1, &self.rule)?;
         for inp in self.inputs.iter() {
             write!(f, " ")?;
-            inp.write(1, f)?;
+            write_ninja_path(inp, f)?;
         }
         if !self.deps.is_empty() {
             write!(f, " |")?;
             for dep in self.deps.iter() {
                 write!(f, " ")?;
-                dep.write(1, f)?;
+                write_ninja_path(dep, f)?;
             }
         }
         writeln!(f)?;
@@ -160,15 +168,6 @@ impl Display for NinjaBuild {
             var.write(1, f)?;
         }
         writeln!(f)?;
-        if self.is_default {
-            write!(f, "default")?;
-            for outp in self.outputs.iter() {
-                write!(f, " ")?;
-                outp.write(1, f)?;
-            }
-            writeln!(f)?;
-            writeln!(f)?;
-        }
         Ok(())
     }
 }
@@ -181,11 +180,42 @@ impl Display for NinjaFile {
         for rule in rules {
             rule.fmt(f)?;
         }
-        for (_, build) in self.builds.iter() {
+
+        let mut builds = self.builds.iter().collect::<Vec<_>>();
+        builds.sort_by(|left, right| format!("{:?}", left).cmp(&format!("{:?}", right)));
+
+        for build in builds {
             build.fmt(f)?;
         }
-        for alias in self.aliases.iter() {
-            alias.fmt(f)?;
+
+        if !self.aliases.is_empty() {
+            let mut aliases = self.aliases.iter().collect::<Vec<_>>();
+            aliases.sort_by(|left, right| left.0.cmp(right.0));
+
+            for (name, inputs) in aliases {
+                write!(f, "build ")?;
+                ninja_esc_string(f, 1, name)?;
+                write!(f, ": phony")?;
+                for input in inputs.iter() {
+                    write!(f, " ")?;
+                    write_ninja_path(input, f)?;
+                }
+                writeln!(f)?;
+                writeln!(f)?;
+            }
+        }
+
+        if !self.default_targets.is_empty() {
+            let mut defaults = self.default_targets.iter().collect::<Vec<_>>();
+            defaults.sort_by(|left, right| format!("{:?}", left).cmp(&format!("{:?}", right)));
+
+            write!(f, "default")?;
+            for outp in defaults {
+                write!(f, " ")?;
+                write_ninja_path(outp, f)?;
+            }
+            writeln!(f)?;
+            writeln!(f)?;
         }
         Ok(())
     }
@@ -237,29 +267,24 @@ impl NinjaRule {
 }
 
 impl NinjaBuild {
-    fn new(rule: &NinjaRuleRef) -> Self {
+    pub fn new(rule: &NinjaRuleRef) -> Self {
         NinjaBuild {
             rule: rule.0.clone(),
-            is_default: false,
             ..Default::default()
         }
     }
 
-    fn alias() -> Self {
-        NinjaBuild::new(&NinjaRuleRef("phony".into()))
-    }
-
-    pub fn output(&mut self, name: NinjaArg) -> &mut Self {
+    pub fn output(&mut self, name: VirtPath) -> &mut Self {
         self.outputs.push(name);
         self
     }
 
-    pub fn input(&mut self, name: NinjaArg) -> &mut Self {
+    pub fn input(&mut self, name: VirtPath) -> &mut Self {
         self.inputs.push(name);
         self
     }
 
-    pub fn dep(&mut self, name: NinjaArg) -> &mut Self {
+    pub fn dep(&mut self, name: VirtPath) -> &mut Self {
         self.deps.push(name);
         self
     }
@@ -272,9 +297,8 @@ impl NinjaBuild {
         self
     }
 
-    pub fn set_default(&mut self) -> &mut Self {
-        self.is_default = true;
-        self
+    pub fn build_ref(&self) -> NinjaBuildRef {
+        NinjaBuildRef(self.outputs.clone())
     }
 }
 
@@ -294,21 +318,69 @@ impl NinjaFile {
         ruleref
     }
 
-    pub fn build(&mut self, id: usize, rule: &NinjaRuleRef) -> &mut NinjaBuild {
-        self.builds.insert(id, NinjaBuild::new(rule));
-        self.builds.get_mut(&id).unwrap()
+    pub fn add_build(&mut self, build: NinjaBuild) -> Result<NinjaBuildRef, String> {
+        if let Some(existing) = self.builds.get(&build) {
+            return Ok(existing.build_ref());
+        }
+
+        let conflicting_outputs: Vec<VirtPath> = build
+            .outputs
+            .iter()
+            .filter(|output| self.build_outputs.contains(*output))
+            .cloned()
+            .collect();
+
+        if !conflicting_outputs.is_empty() {
+            let existing_conflicts: Vec<String> = self
+                .builds
+                .iter()
+                .filter(|existing| {
+                    existing
+                        .outputs
+                        .iter()
+                        .any(|output| conflicting_outputs.contains(output))
+                })
+                .map(|existing| format!("{}", existing))
+                .collect();
+
+            let conflicing_formatted: Vec<String> = conflicting_outputs
+                .iter()
+                .map(|output| format!("{}", output))
+                .collect();
+
+            return Err(format!(
+                "different builds generating same file:\n\noutputs:\n - {}\n\nexisting:\n - {}\nnew:\n - {}",
+                conflicing_formatted.join(" - "),
+                existing_conflicts.join(" - "),
+                build
+            ));
+        }
+
+        for output in build.outputs.iter() {
+            self.build_outputs.insert(output.clone());
+        }
+        let build_ref = build.build_ref();
+        self.builds.insert(build);
+        Ok(build_ref)
     }
 
-    pub fn alias(&mut self, name: impl ToString) -> &mut NinjaBuild {
-        let mut alias = NinjaBuild::alias();
-        alias.output(NinjaArg::Const(name.to_string()));
-
-        self.aliases.push(alias);
-        self.aliases.last_mut().unwrap()
+    pub fn add_alias(&mut self, name: impl ToString, inputs: Vec<VirtPath>) -> &mut Self {
+        self.aliases
+            .entry(name.to_string())
+            .or_default()
+            .extend(inputs);
+        self
     }
 
     pub fn get_rule_ref(&self, rule: &NinjaRule) -> Option<NinjaRuleRef> {
         self.rules.get(rule).map(NinjaRule::rule_ref)
+    }
+
+    pub fn set_build_default(&mut self, build_ref: &NinjaBuildRef) -> &mut Self {
+        for outp in build_ref.0.iter() {
+            self.default_targets.insert(outp.clone());
+        }
+        self
     }
 
     pub fn validate(&self) -> Vec<String> {
@@ -316,32 +388,15 @@ impl NinjaFile {
 
         let mut errors: BTreeSet<String> = BTreeSet::new();
         let mut output_set = HashSet::new();
-        for build in self.builds.values().chain(self.aliases.iter()) {
+        for build in self.builds.iter() {
             for output in build.outputs.iter() {
-                match output {
-                    NinjaArg::Path(file) => {
-                        let fs_path = file.to_path_buf();
-                        if !output_set.insert(fs_path.clone()) {
-                            errors.insert(format!(
-                                "Multiple builds generating: {}",
-                                fs_path.display()
-                            ));
-                        }
-                    }
-                    NinjaArg::Const(_) if build.rule == "phony" => {
-                        // Alias targets are expected to use symbolic names.
-                    }
-                    _ => {
-                        errors.insert(format!("Non-path build output: {:?}", output));
-                    }
+                let fs_path = output.to_path_buf();
+                if !output_set.insert(fs_path.clone()) {
+                    errors.insert(format!("Multiple builds generating: {}", fs_path.display()));
                 }
             }
         }
         errors.into_iter().collect()
-    }
-
-    pub fn get_build(&mut self, id: usize) -> Option<&mut NinjaBuild> {
-        self.builds.get_mut(&id)
     }
 }
 
@@ -354,6 +409,10 @@ mod tests {
     use super::*;
 
     type TestF = i32;
+
+    fn test_path(name: &str) -> VirtPath {
+        VirtPath::new("root").step::<TestF>(name).unwrap()
+    }
 
     macro_rules! lines (
         ($line:expr) => ($line);
@@ -406,10 +465,10 @@ mod tests {
             .var("b", vec!["a\nb".into(), "a:b".into()]);
         let mut build = NinjaBuild::new(&rule.rule_ref());
         build
-            .input(NinjaArg::Const("boll".into()))
-            .input(NinjaArg::Const("hej".into()))
-            .output(NinjaArg::Const("dest".into()))
-            .output(NinjaArg::Const("destb".into()))
+            .input(test_path("boll"))
+            .input(test_path("hej"))
+            .output(test_path("dest"))
+            .output(test_path("destb"))
             .var("tjo", vec!["xx".into()]);
         let output = format!("{}{}", rule, build);
         assert_eq!(
@@ -420,7 +479,7 @@ mod tests {
                 "  b = a$",
                 "    b a$:b",
                 "",
-                "build dest destb: r$$a boll hej",
+                "build ./dest ./destb: r$$a ./boll ./hej",
                 "  tjo = xx",
                 "",
                 ""
@@ -433,16 +492,16 @@ mod tests {
         let rule = NinjaRule::new("rule");
         let mut build = NinjaBuild::new(&rule.rule_ref());
         build
-            .input(NinjaArg::Const("in".into()))
-            .output(NinjaArg::Const("out".into()))
-            .dep(NinjaArg::Const("dep".into()));
+            .input(test_path("in"))
+            .output(test_path("out"))
+            .dep(test_path("dep"));
         let output = format!("{}{}", rule, build);
         assert_eq!(
             output.as_str(),
             lines! {
                 "rule rule",
                 "",
-                "build out: rule in | dep",
+                "build ./out: rule ./in | ./dep",
                 "",
                 ""
             }
@@ -451,21 +510,21 @@ mod tests {
 
     #[test]
     fn test_build_default() {
-        let rule = NinjaRule::new("rule");
-        let mut build = NinjaBuild::new(&rule.rule_ref());
-        build
-            .input(NinjaArg::Const("in".into()))
-            .output(NinjaArg::Const("out".into()))
-            .set_default();
-        let output = format!("{}{}", rule, build);
+        let mut file = NinjaFile::new();
+        let rule = file.add_rule(NinjaRule::new("rule"));
+        let mut build = NinjaBuild::new(&rule);
+        build.input(test_path("in")).output(test_path("out"));
+        let build_ref = file.add_build(build).unwrap();
+        file.set_build_default(&build_ref);
+        let output = format!("{}", file);
         assert_eq!(
             output.as_str(),
             lines! {
                 "rule rule",
                 "",
-                "build out: rule in",
+                "build ./out: rule ./in",
                 "",
-                "default out",
+                "default ./out",
                 "",
                 ""
             }
@@ -484,10 +543,12 @@ mod tests {
         rule2.var("y", vec!["stuff".into()]);
         let _rule2 = file.add_rule(rule2);
 
-        file.build(3, &rule1)
-            .input(NinjaArg::Const("in1_1".into()))
-            .input(NinjaArg::Const("in1_2".into()))
-            .output(NinjaArg::Const("out1".into()));
+        let mut build = NinjaBuild::new(&rule1);
+        build
+            .input(test_path("in1_1"))
+            .input(test_path("in1_2"))
+            .output(test_path("out1"));
+        file.add_build(build).unwrap();
 
         assert_eq!(
             format!("{}", file),
@@ -498,7 +559,7 @@ mod tests {
                 "rule test2",
                 "  y = stuff",
                 "",
-                "build out1: test1 in1_1 in1_2",
+                "build ./out1: test1 ./in1_1 ./in1_2",
                 "",
                 ""
             }
@@ -542,14 +603,14 @@ mod tests {
         rule2.var("kind", vec!["two".into()]);
         let rule2 = file.add_rule(rule2);
 
-        file.build(4, &rule1)
-            .output(NinjaArg::Path(
-                VirtPath::new("root").step::<TestF>("out1").unwrap(),
-            ))
-            .set_default();
-        file.build(5, &rule2).output(NinjaArg::Path(
-            VirtPath::new("root").step::<TestF>("out2").unwrap(),
-        ));
+        let mut build1 = NinjaBuild::new(&rule1);
+        build1.output(test_path("out1"));
+        let build1_ref = file.add_build(build1).unwrap();
+        file.set_build_default(&build1_ref);
+
+        let mut build2 = NinjaBuild::new(&rule2);
+        build2.output(test_path("out2"));
+        file.add_build(build2).unwrap();
 
         assert_eq!(file.validate(), Vec::<String>::new());
 
@@ -566,9 +627,9 @@ mod tests {
                 "",
                 "build ./out1: test1",
                 "",
-                "default ./out1",
-                "",
                 "build ./out2: test2",
+                "",
+                "default ./out1",
                 "",
                 ""
             }
@@ -578,24 +639,64 @@ mod tests {
     #[test]
     fn test_variable_output_name() {
         let mut file = NinjaFile::new();
-        let rule = file.add_rule(NinjaRule::new("test"));
-        file.build(2, &rule).output(NinjaArg::Var("out1".into()));
-        assert_eq!(file.validate().len(), 1);
+        file.add_alias("out1", vec![test_path("real_out")]);
+
+        assert_eq!(format!("{}", file), "build out1: phony ./real_out\n\n");
+    }
+
+    #[test]
+    fn test_aliases_are_grouped_in_file() {
+        let mut file = NinjaFile::new();
+        file.add_alias("bundle", vec![test_path("first")]);
+        file.add_alias("bundle", vec![test_path("second")]);
+        file.add_alias("app", vec![test_path("binary")]);
+
+        assert_eq!(
+            format!("{}", file),
+            lines! {
+                "build app: phony ./binary",
+                "",
+                "build bundle: phony ./first ./second",
+                "",
+                ""
+            }
+        );
     }
 
     #[test]
     fn test_multiple_same_targets() {
         let mut file = NinjaFile::new();
         let rule = file.add_rule(NinjaRule::new("test"));
-        file.build(2, &rule).output(NinjaArg::Path(
-            VirtPath::new("root").step::<TestF>("file").unwrap(),
-        ));
-        file.build(3, &rule).output(NinjaArg::Path(
-            VirtPath::new("root").step::<TestF>("file").unwrap(),
-        ));
+        let mut build1 = NinjaBuild::new(&rule);
+        build1.output(test_path("file"));
+        file.add_build(build1).unwrap();
+
+        let mut build2 = NinjaBuild::new(&rule);
+        build2.output(test_path("file"));
         assert_eq!(
-            file.validate(),
-            vec!["Multiple builds generating: ./file".to_string()]
+            file.add_build(build2),
+            Ok(NinjaBuildRef(vec![test_path("file")]))
         );
+
+        assert_eq!(file.validate(), Vec::<String>::new());
+    }
+
+    #[test]
+    fn test_conflicting_targets() {
+        let mut file = NinjaFile::new();
+        let rule1 = file.add_rule(NinjaRule::new("test1"));
+        let rule2 = file.add_rule(NinjaRule::new("test2"));
+
+        let mut build1 = NinjaBuild::new(&rule1);
+        build1.output(test_path("file"));
+        file.add_build(build1).unwrap();
+
+        let mut build2 = NinjaBuild::new(&rule2);
+        build2.output(test_path("file"));
+        let err = file.add_build(build2).unwrap_err();
+        assert!(err.contains("different builds generating same file"));
+        assert!(err.contains("./file"));
+        assert!(err.contains("build ./file: test1"));
+        assert!(err.contains("build ./file: test2"));
     }
 }

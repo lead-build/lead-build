@@ -1,5 +1,4 @@
 use crate::lang::{Error, ErrorType, ExprStorage, ExprType, Result};
-use crate::ninjawriter::NinjaArg;
 use crate::ninjawriter::NinjaFile;
 use crate::path::VirtPath;
 use crate::{Expr, Value};
@@ -23,7 +22,7 @@ pub fn add_expr_to_ninjafile(
                     .reref(&expr.get_loc()));
                 }
                 for build in depends.iter() {
-                    build.populate_ninja_file(ninja_file, true);
+                    build.populate_ninja_file(ninja_file, true)?;
                 }
             } else {
                 return Err(
@@ -49,7 +48,7 @@ pub fn add_expr_to_ninjafile(
                         .reref(&item.get_loc()));
                     }
                     for build in depends.iter() {
-                        build.populate_ninja_file(ninja_file, true);
+                        build.populate_ninja_file(ninja_file, true)?;
                     }
                 } else {
                     return Err(
@@ -77,11 +76,10 @@ pub fn add_expr_to_ninjafile(
                     }
 
                     for build in depends.iter() {
-                        build.populate_ninja_file(ninja_file, true);
+                        build.populate_ninja_file(ninja_file, true)?;
                     }
 
-                    let alias = ninja_file.alias(name);
-                    alias.input(NinjaArg::Path(path));
+                    ninja_file.add_alias(name, vec![path]);
                 } else {
                     return Err(Error::new(
                         ErrorType::Custom,
