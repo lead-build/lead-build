@@ -30,7 +30,6 @@ pub struct NinjaVar {
 
 #[derive(Debug, Default, PartialEq, Hash, Eq)]
 pub struct NinjaRule {
-    name: String,
     vars: Vec<NinjaVar>,
 }
 
@@ -52,7 +51,7 @@ pub struct NinjaBuild {
 #[derive(Debug, Default)]
 pub struct NinjaFile {
     rule_names: UniqueNames,
-    rules: HashSet<NinjaRule>,
+    rules: HashMap<NinjaRule, String>,
     builds: HashSet<NinjaBuild>,
     build_outputs: HashSet<VirtPath>,
     aliases: HashMap<String, Vec<VirtPath>>,
@@ -130,12 +129,17 @@ impl NinjaVar {
     }
 }
 
-impl Display for NinjaRule {
+struct NamedNinjaRule<'a> {
+    rule: &'a NinjaRule,
+    name: &'a str,
+}
+
+impl Display for NamedNinjaRule<'_> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "rule ")?;
-        ninja_esc_string(f, 1, &self.name)?;
+        ninja_esc_string(f, 1, self.name)?;
         writeln!(f)?;
-        for var in self.vars.iter() {
+        for var in self.rule.vars.iter() {
             var.write(1, f)?;
         }
         writeln!(f)?;
@@ -175,10 +179,10 @@ impl Display for NinjaBuild {
 impl Display for NinjaFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut rules = self.rules.iter().collect::<Vec<_>>();
-        rules.sort_by(|left, right| left.name.cmp(&right.name));
+        rules.sort_by(|left, right| left.1.cmp(right.1));
 
-        for rule in rules {
-            rule.fmt(f)?;
+        for (rule, name) in rules {
+            NamedNinjaRule { rule, name }.fmt(f)?;
         }
 
         let mut builds = self.builds.iter().collect::<Vec<_>>();
@@ -246,10 +250,47 @@ impl UniqueNames {
  */
 
 impl NinjaRule {
-    pub fn new(name: impl ToString) -> Self {
-        NinjaRule {
-            name: name.to_string(),
-            ..Default::default()
+    pub fn new() -> Self {
+        Default::default()
+    }
+
+    fn name_template(&self) -> String {
+        if let Some(command) = self.vars.iter().find(|var| var.name == "command") {
+            let command_hint = command
+                .args
+                .iter()
+                .take(5)
+                .filter_map(|part| match part {
+                    NinjaArg::Const(text) => {
+                        let cleaned = text.replace(|c: char| !c.is_alphabetic(), "");
+                        if cleaned.is_empty() {
+                            None
+                        } else {
+                            Some(cleaned)
+                        }
+                    }
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                .join("_");
+
+            if !command_hint.is_empty() {
+                return command_hint;
+            }
+        }
+
+        let var_hint = self
+            .vars
+            .iter()
+            .map(|var| var.name.as_str())
+            .take(3)
+            .collect::<Vec<_>>()
+            .join("_");
+
+        if var_hint.is_empty() {
+            "rule".to_string()
+        } else {
+            var_hint
         }
     }
 
@@ -259,10 +300,6 @@ impl NinjaRule {
             args,
         });
         self
-    }
-
-    pub fn rule_ref(&self) -> NinjaRuleRef {
-        NinjaRuleRef(self.name.clone())
     }
 }
 
@@ -307,14 +344,25 @@ impl NinjaFile {
         Default::default()
     }
 
-    pub fn add_rule(&mut self, mut rule: NinjaRule) -> NinjaRuleRef {
+    fn find_rule_by_name(&self, name: &str) -> Option<(&NinjaRule, &str)> {
+        self.rules
+            .iter()
+            .find(|(_, rule_name)| rule_name.as_str() == name)
+            .map(|(rule, rule_name)| (rule, rule_name.as_str()))
+    }
+
+    fn find_build_rule(&self, build: &NinjaBuild) -> Option<(&NinjaRule, &str)> {
+        self.find_rule_by_name(&build.rule)
+    }
+
+    pub fn add_rule(&mut self, rule: NinjaRule) -> NinjaRuleRef {
         if let Some(existing) = self.rules.get(&rule) {
-            return existing.rule_ref();
+            return NinjaRuleRef(existing.clone());
         }
 
-        rule.name = self.rule_names.get(&rule.name);
-        let ruleref = rule.rule_ref();
-        self.rules.insert(rule);
+        let rule_name = self.rule_names.get(rule.name_template());
+        let ruleref = NinjaRuleRef(rule_name.clone());
+        self.rules.insert(rule, rule_name);
         ruleref
     }
 
@@ -331,7 +379,7 @@ impl NinjaFile {
             .collect();
 
         if !conflicting_outputs.is_empty() {
-            let existing_conflicts: Vec<String> = self
+            let conflicting_builds: Vec<&NinjaBuild> = self
                 .builds
                 .iter()
                 .filter(|existing| {
@@ -340,8 +388,39 @@ impl NinjaFile {
                         .iter()
                         .any(|output| conflicting_outputs.contains(output))
                 })
+                .collect();
+
+            let existing_conflicts: Vec<String> = conflicting_builds
+                .iter()
                 .map(|existing| format!("{}", existing))
                 .collect();
+
+            let existing_rules: Vec<String> = self
+                .builds
+                .iter()
+                .filter(|existing| {
+                    existing
+                        .outputs
+                        .iter()
+                        .any(|output| conflicting_outputs.contains(output))
+                })
+                .map(|existing| existing.rule.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+
+            let existing_rule_defs: Vec<String> = conflicting_builds
+                .iter()
+                .filter_map(|existing| self.find_build_rule(existing))
+                .map(|(rule, name)| format!("{}", NamedNinjaRule { rule, name }))
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect();
+
+            let new_rule_def = self
+                .find_build_rule(&build)
+                .map(|(rule, name)| format!("{}", NamedNinjaRule { rule, name }))
+                .unwrap_or_else(|| format!("<missing rule: {}>", build.rule));
 
             let conflicing_formatted: Vec<String> = conflicting_outputs
                 .iter()
@@ -349,8 +428,12 @@ impl NinjaFile {
                 .collect();
 
             return Err(format!(
-                "different builds generating same file:\n\noutputs:\n - {}\n\nexisting:\n - {}\nnew:\n - {}",
+                "different builds generating same file:\n\noutputs:\n - {}\n\nexisting rules:\n - {}\nnew rule:\n - {}\n\nexisting rule definitions:\n{}new rule definition:\n{}\nexisting:\n - {}\nnew:\n - {}",
                 conflicing_formatted.join(" - "),
+                existing_rules.join("\n - "),
+                build.rule,
+                existing_rule_defs.join(""),
+                new_rule_def,
                 existing_conflicts.join(" - "),
                 build
             ));
@@ -373,7 +456,7 @@ impl NinjaFile {
     }
 
     pub fn get_rule_ref(&self, rule: &NinjaRule) -> Option<NinjaRuleRef> {
-        self.rules.get(rule).map(NinjaRule::rule_ref)
+        self.rules.get(rule).map(|name| NinjaRuleRef(name.clone()))
     }
 
     pub fn set_build_default(&mut self, build_ref: &NinjaBuildRef) -> &mut Self {
@@ -410,6 +493,10 @@ mod tests {
 
     type TestF = i32;
 
+    fn test_rule(name: &str, rule: &NinjaRule) -> String {
+        format!("{}", NamedNinjaRule { rule, name })
+    }
+
     fn test_path(name: &str) -> VirtPath {
         VirtPath::new("root").step::<TestF>(name).unwrap()
     }
@@ -422,14 +509,14 @@ mod tests {
 
     #[test]
     fn test_write_rule() {
-        let mut rule = NinjaRule::new("test");
+        let mut rule = NinjaRule::new();
         rule.var("deps", vec!["boll".into(), "something".into()])
             .var(
                 "something",
                 vec!["stuff".into(), "stuff".into(), NinjaArg::Var("in".into())],
             );
         assert_eq!(
-            format!("{}", rule).as_str(),
+            test_rule("test", &rule).as_str(),
             lines! {
                 "rule test",
                 "  deps = boll something",
@@ -442,11 +529,11 @@ mod tests {
 
     #[test]
     fn test_esc_string() {
-        let mut rule = NinjaRule::new("r$a");
+        let mut rule = NinjaRule::new();
         rule.var("a b", vec!["a$b".into(), "a b".into()])
             .var("b", vec!["a\nb".into(), "a:b".into()]);
         assert_eq!(
-            format!("{}", rule).as_str(),
+            test_rule("r$a", &rule).as_str(),
             lines! {
                 "rule r$$a",
                 "  a$ b = a$$b a$ b",
@@ -460,17 +547,17 @@ mod tests {
 
     #[test]
     fn test_build() {
-        let mut rule = NinjaRule::new("r$a");
+        let mut rule = NinjaRule::new();
         rule.var("a b", vec!["a$b".into(), "a b".into()])
             .var("b", vec!["a\nb".into(), "a:b".into()]);
-        let mut build = NinjaBuild::new(&rule.rule_ref());
+        let mut build = NinjaBuild::new(&NinjaRuleRef("r$a".into()));
         build
             .input(test_path("boll"))
             .input(test_path("hej"))
             .output(test_path("dest"))
             .output(test_path("destb"))
             .var("tjo", vec!["xx".into()]);
-        let output = format!("{}{}", rule, build);
+        let output = format!("{}{}", test_rule("r$a", &rule), build);
         assert_eq!(
             output.as_str(),
             lines! {
@@ -489,13 +576,13 @@ mod tests {
 
     #[test]
     fn test_build_deps() {
-        let rule = NinjaRule::new("rule");
-        let mut build = NinjaBuild::new(&rule.rule_ref());
+        let rule = NinjaRule::new();
+        let mut build = NinjaBuild::new(&NinjaRuleRef("rule".into()));
         build
             .input(test_path("in"))
             .output(test_path("out"))
             .dep(test_path("dep"));
-        let output = format!("{}{}", rule, build);
+        let output = format!("{}{}", test_rule("rule", &rule), build);
         assert_eq!(
             output.as_str(),
             lines! {
@@ -511,7 +598,7 @@ mod tests {
     #[test]
     fn test_build_default() {
         let mut file = NinjaFile::new();
-        let rule = file.add_rule(NinjaRule::new("rule"));
+        let rule = file.add_rule(NinjaRule::new());
         let mut build = NinjaBuild::new(&rule);
         build.input(test_path("in")).output(test_path("out"));
         let build_ref = file.add_build(build).unwrap();
@@ -535,11 +622,11 @@ mod tests {
     fn test_file() {
         let mut file = NinjaFile::new();
 
-        let mut rule1 = NinjaRule::new("test1");
+        let mut rule1 = NinjaRule::new();
         rule1.var("x", vec!["stuff".into()]);
         let rule1 = file.add_rule(rule1);
 
-        let mut rule2 = NinjaRule::new("test2");
+        let mut rule2 = NinjaRule::new();
         rule2.var("y", vec!["stuff".into()]);
         let _rule2 = file.add_rule(rule2);
 
@@ -553,13 +640,13 @@ mod tests {
         assert_eq!(
             format!("{}", file),
             lines! {
-                "rule test1",
+                "rule x",
                 "  x = stuff",
                 "",
-                "rule test2",
+                "rule y",
                 "  y = stuff",
                 "",
-                "build ./out1: test1 ./in1_1 ./in1_2",
+                "build ./out1: x ./in1_1 ./in1_2",
                 "",
                 ""
             }
@@ -570,36 +657,36 @@ mod tests {
     fn test_file_unique_rules() {
         let mut file = NinjaFile::new();
 
-        let r1 = file.add_rule(NinjaRule::new("test"));
-        let r2 = file.add_rule(NinjaRule::new("test"));
-        let r3 = file.add_rule(NinjaRule::new("x"));
+        let r1 = file.add_rule(NinjaRule::new());
+        let r2 = file.add_rule(NinjaRule::new());
+        let r3 = file.add_rule(NinjaRule::new());
 
-        let mut r4 = NinjaRule::new("test");
+        let mut r4 = NinjaRule::new();
         r4.var("v", vec!["1".into()]);
         let r4 = file.add_rule(r4);
 
-        let mut r5 = NinjaRule::new("x");
+        let mut r5 = NinjaRule::new();
         r5.var("v", vec!["2".into()]);
         let r5 = file.add_rule(r5);
 
-        assert_eq!(r1, NinjaRuleRef("test".into()));
-        assert_eq!(r2, NinjaRuleRef("test".into()));
-        assert_eq!(r3, NinjaRuleRef("x".into()));
-        assert_eq!(r4, NinjaRuleRef("test1".into()));
-        assert_eq!(r5, NinjaRuleRef("x1".into()));
+        assert_eq!(r1, NinjaRuleRef("rule".into()));
+        assert_eq!(r2, NinjaRuleRef("rule".into()));
+        assert_eq!(r3, NinjaRuleRef("rule".into()));
+        assert_eq!(r4, NinjaRuleRef("v".into()));
+        assert_eq!(r5, NinjaRuleRef("v1".into()));
     }
 
     #[test]
     fn test_ref_unique_name() {
         let mut file = NinjaFile::new();
 
-        let _rule = file.add_rule(NinjaRule::new("test"));
+        let _rule = file.add_rule(NinjaRule::new());
 
-        let mut rule1 = NinjaRule::new("test");
+        let mut rule1 = NinjaRule::new();
         rule1.var("kind", vec!["one".into()]);
         let rule1 = file.add_rule(rule1);
 
-        let mut rule2 = NinjaRule::new("test");
+        let mut rule2 = NinjaRule::new();
         rule2.var("kind", vec!["two".into()]);
         let rule2 = file.add_rule(rule2);
 
@@ -617,17 +704,17 @@ mod tests {
         assert_eq!(
             format!("{}", file),
             lines! {
-                "rule test",
-                "",
-                "rule test1",
+                "rule kind",
                 "  kind = one",
                 "",
-                "rule test2",
+                "rule kind1",
                 "  kind = two",
                 "",
-                "build ./out1: test1",
+                "rule rule",
                 "",
-                "build ./out2: test2",
+                "build ./out1: kind",
+                "",
+                "build ./out2: kind1",
                 "",
                 "default ./out1",
                 "",
@@ -666,7 +753,7 @@ mod tests {
     #[test]
     fn test_multiple_same_targets() {
         let mut file = NinjaFile::new();
-        let rule = file.add_rule(NinjaRule::new("test"));
+        let rule = file.add_rule(NinjaRule::new());
         let mut build1 = NinjaBuild::new(&rule);
         build1.output(test_path("file"));
         file.add_build(build1).unwrap();
@@ -684,8 +771,13 @@ mod tests {
     #[test]
     fn test_conflicting_targets() {
         let mut file = NinjaFile::new();
-        let rule1 = file.add_rule(NinjaRule::new("test1"));
-        let rule2 = file.add_rule(NinjaRule::new("test2"));
+        let mut rule1 = NinjaRule::new();
+        rule1.var("kind", vec!["one".into()]);
+        let rule1 = file.add_rule(rule1);
+
+        let mut rule2 = NinjaRule::new();
+        rule2.var("kind", vec!["two".into()]);
+        let rule2 = file.add_rule(rule2);
 
         let mut build1 = NinjaBuild::new(&rule1);
         build1.output(test_path("file"));
@@ -696,7 +788,11 @@ mod tests {
         let err = file.add_build(build2).unwrap_err();
         assert!(err.contains("different builds generating same file"));
         assert!(err.contains("./file"));
-        assert!(err.contains("build ./file: test1"));
-        assert!(err.contains("build ./file: test2"));
+        assert!(err.contains("existing rules:\n - kind"));
+        assert!(err.contains("new rule:\n - kind1"));
+        assert!(err.contains("existing rule definitions:\nrule kind\n  kind = one\n\n"));
+        assert!(err.contains("new rule definition:\nrule kind1\n  kind = two\n\n"));
+        assert!(err.contains("build ./file: kind"));
+        assert!(err.contains("build ./file: kind1"));
     }
 }

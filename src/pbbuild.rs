@@ -47,62 +47,26 @@ fn unique_id() -> usize {
 
 #[derive(PartialEq, Debug)]
 pub struct PbBuildRule {
-    name: String,
     rule_args: BTreeSet<String>,
     rule_vars: Vec<(String, Vec<NinjaArg>)>,
 }
 
 impl Display for PbBuildRule {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "BuildRule({})", self.name)
+        write!(f, "BuildRule")
     }
 }
 
 impl PbBuildRule {
     fn new(rule_args: BTreeSet<String>, rule_vars: Vec<(String, Vec<NinjaArg>)>) -> Self {
         PbBuildRule {
-            name: Self::get_name(&rule_vars),
             rule_args,
             rule_vars,
         }
     }
 
-    fn get_name(rule_vars: &[(String, Vec<NinjaArg>)]) -> String {
-        // Generate a descriptive name
-        //
-        // This name should be somewhat unique and descriptive, to simplify
-        // debugging of the ninja files. However, they do not have to be
-        // guaranteed to be unique, since NinjaWriter adds a sequence numbers
-        // when adding to guarantee uniqueness.
-        if let Some((_, args)) = rule_vars
-            .iter()
-            .find(|(name, _)| name.as_str() == "command")
-        {
-            let out = args
-                .iter()
-                .take(5)
-                .map(|part| {
-                    if let NinjaArg::Const(x) = part {
-                        x.replace(|c: char| !c.is_alphabetic(), "")
-                    } else {
-                        "".to_string()
-                    }
-                })
-                .filter(|el| !el.is_empty())
-                .collect::<Vec<String>>()
-                .join("_");
-            if out.is_empty() {
-                "rule".to_string()
-            } else {
-                out
-            }
-        } else {
-            "rule".to_string()
-        }
-    }
-
     fn populate_ninja_file(&self, nf: &mut NinjaFile) -> NinjaRuleRef {
-        let mut rule = NinjaRule::new(&self.name);
+        let mut rule = NinjaRule::new();
 
         for (var_name, var_args) in self.rule_vars.iter() {
             rule.var(var_name, var_args.clone());
@@ -125,7 +89,7 @@ pub struct PbBuild {
 
 impl Display for PbBuild {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}(", self.rule.name)?;
+        write!(f, "{}(", self.rule)?;
         for o in self.output.iter() {
             write!(f, " {}", o.to_path_buf().display())?;
         }
