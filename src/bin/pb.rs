@@ -109,6 +109,7 @@ fn run(args: Args) -> Result<(), VirtPath> {
         let mut writer = BufWriter::new(&output_file);
         write!(writer, "{}", ninja_file)
             .or_else(|e| Err(Error::new(ErrorType::Custom, e.to_string())))?;
+        ninja_file.log_summary();
 
         Ok(())
     }

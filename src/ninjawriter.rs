@@ -4,6 +4,7 @@ use std::{
 };
 
 use crate::path::VirtPath;
+use crate::stats::NinjaFileStats;
 use log::debug;
 
 /*
@@ -57,6 +58,7 @@ pub struct NinjaFile {
     build_outputs: HashSet<VirtPath>,
     aliases: HashMap<String, Vec<VirtPath>>,
     default_targets: HashSet<VirtPath>,
+    stats: NinjaFileStats,
 }
 
 /*
@@ -361,11 +363,13 @@ impl NinjaFile {
 
         if let Some(existing) = self.rules.get(&rule) {
             debug!("DUP rule {}", existing);
+            self.stats.record_rule_addition(existing);
             return NinjaRuleRef(existing.clone());
         }
 
         let rule_name = self.rule_names.get(requested_name);
         debug!("new rule {}", rule_name);
+        self.stats.record_rule_addition(&rule_name);
         let ruleref = NinjaRuleRef(rule_name.clone());
         self.rules.insert(rule, rule_name);
         ruleref
@@ -382,6 +386,10 @@ impl NinjaFile {
                 .join(" "),
             build.rule
         );
+
+        for output in build.outputs.iter() {
+            self.stats.record_output_addition(output);
+        }
 
         if let Some(existing) = self.builds.get(&build) {
             return Ok(existing.build_ref());
@@ -514,6 +522,10 @@ impl NinjaFile {
             }
         }
         errors.into_iter().collect()
+    }
+
+    pub fn log_summary(&self) {
+        self.stats.log_summary();
     }
 }
 
