@@ -1062,6 +1062,48 @@ fn test_tuple_eq() {
     assert_eq!(eval("(1,2,(3,4)) == (1,2,(3,4))"), eval("true"));
     assert_eq!(eval("(1,2,(3,4)) == (1,2,(3,6))"), eval("false"));
 }
+
+#[test]
+fn test_object_eq() {
+    assert_eq!(
+        eval("{ a = 1; b = 2; c = 7; } == { b = 2; a = 1; c = 7; }"),
+        eval("true")
+    );
+    assert_eq!(
+        eval("{ a = 1; b = 2; c = 7; } == { a = 1; b = 3; c = 7; }"),
+        eval("false")
+    );
+    assert_eq!(
+        eval("{ a = 1; b = 2; c = 7; } == { a = 1; c = 2; c = 7; }"),
+        eval("false")
+    );
+    assert_eq!(
+        eval("{ a = 1; b = 2; c = 3; } == { x = 1; y = 2; z = 3; }"),
+        eval("false")
+    );
+    assert_eq!(
+        eval("{ a = 1; b = 2; c = 3; } == { a = 1; b = 2; z = 3; }"),
+        eval("false")
+    );
+    assert_eq!(
+        eval("{ a = 1; b = 1; c = 2; } == { x = 1; y = 1; z = 2; }"),
+        eval("false")
+    );
+    assert_eq!(
+        eval("{ left = { n = 7; }; right = [1, 2]; } == { x = { n = 7; }; y = [1, 2]; }"),
+        eval("false")
+    );
+    assert_eq!(
+        eval("{ a = 1; b = 1; c = 2; } == { a = 1; b = 1; }"),
+        eval("false")
+    );
+    assert_eq!(eval("{ a = 1; b = 1; c = 2; } == { }"), eval("false"));
+    assert_eq!(
+        eval("{ a = 1; b = 2; c = 3; } == { a = 1; c = 3; b = 2; }"),
+        eval("true")
+    );
+}
+
 #[test]
 fn test_tuple_neq() {
     assert_eq!(eval("(1,2,3) != (1,2,3)"), eval("false"));

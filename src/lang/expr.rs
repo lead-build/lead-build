@@ -529,6 +529,26 @@ where
                             }
                             Ok(ExprType::Object(merged))
                         }
+                        ExprBinOp::Eq => {
+                            let lhs_keys: HashSet<&String> = lhs_obj.keys().collect();
+                            let rhs_keys: HashSet<&String> = rhs_obj.keys().collect();
+
+                            if lhs_keys != rhs_keys {
+                                Ok(ExprType::Value(T::new_from_bool(false)))
+                            } else {
+                                // After key-set equality, both BTreeMap iterators walk keys in
+                                // the same sorted order, so values line up by matching key.
+                                let lhs_vals =
+                                    ExprType::List(lhs_obj.values().cloned().collect::<Vec<_>>());
+                                let rhs_vals =
+                                    ExprType::List(rhs_obj.values().cloned().collect::<Vec<_>>());
+                                Ok(ExprType::BinOp(
+                                    ExprBinOp::Eq,
+                                    lhs_vals.builtin(),
+                                    rhs_vals.builtin(),
+                                ))
+                            }
+                        }
                         _ => Err(Error::new(
                             ErrorType::Eval,
                             format!("Unsupported binary operation: {:?} between objects", op),
