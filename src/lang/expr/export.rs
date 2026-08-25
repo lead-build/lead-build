@@ -53,7 +53,7 @@ where
                 write!(f, "{{")?;
                 for (key, value) in varscope.iter() {
                     newline(indent + 1, f)?;
-                    write!(f, "{} = ", key)?;
+                    write!(f, "{} = ", key.as_string())?;
                     value.export(indent + 1, f)?;
                     write!(f, ";")?;
                 }
@@ -201,7 +201,7 @@ where
                 write!(f, "bind")?;
                 for (var_name, var_expr) in scope.iter() {
                     newline(indent + 1, f)?;
-                    write!(f, "{} = ", var_name)?;
+                    write!(f, "{} = ", var_name.as_string())?;
                     var_expr.export(indent + 1, f)?;
                     write!(f, ";")?;
                 }

@@ -4,6 +4,7 @@ use lead_build::{
     lang::{Error, ErrorType, ExprSet, ExprType},
     ninjawriter::NinjaFile,
     path::VirtPath,
+    strkey::StrKey,
 };
 use std::{
     env::set_current_dir,
@@ -60,7 +61,10 @@ fn parse_virt_path_mapping(s: &str) -> std::result::Result<(String, VirtPath), S
 fn gen_args_object(args: Vec<(String, VirtPath)>) -> Expr<Value, VirtPath> {
     let mut args_map = ExprSet::new();
     for (name, path) in args {
-        args_map.insert(name, ExprType::Value(Value::path(path)).builtin());
+        args_map.insert(
+            StrKey::from(&name),
+            ExprType::Value(Value::path(path)).builtin(),
+        );
     }
     ExprType::Object(args_map).builtin()
 }

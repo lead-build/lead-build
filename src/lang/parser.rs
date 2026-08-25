@@ -161,6 +161,7 @@ where
 mod tests {
     use super::super::testvalue::{FRef, TestValue};
     use super::*;
+    use crate::strkey::StrKey;
 
     fn eval(code: &str) -> Expr<TestValue, FRef> {
         parse_str(code, &FRef).unwrap()
@@ -185,10 +186,13 @@ mod tests {
         assert_eq!(
             ExprType::Object(ExprSet::from([
                 (
-                    "boll".into(),
+                    StrKey::from("boll"),
                     ExprType::Value(TestValue::Int(123)).builtin()
                 ),
-                ("hej".into(), ExprType::Value(TestValue::Int(323)).builtin())
+                (
+                    StrKey::from("hej"),
+                    ExprType::Value(TestValue::Int(323)).builtin()
+                )
             ]))
             .builtin(),
             eval(code)
@@ -206,14 +210,20 @@ mod tests {
         assert_eq!(
             ExprType::Object(ExprSet::from([
                 (
-                    "boll".into(),
+                    StrKey::from("boll"),
                     ExprType::Value(TestValue::Int(123)).builtin()
                 ),
                 (
-                    "hej".into(),
+                    StrKey::from("hej"),
                     ExprType::Object(ExprSet::from([
-                        ("a".into(), ExprType::Value(TestValue::Int(2)).builtin()),
-                        ("b".into(), ExprType::Value(TestValue::Int(3)).builtin()),
+                        (
+                            StrKey::from("a"),
+                            ExprType::Value(TestValue::Int(2)).builtin()
+                        ),
+                        (
+                            StrKey::from("b"),
+                            ExprType::Value(TestValue::Int(3)).builtin()
+                        ),
                     ]))
                     .builtin()
                 )

@@ -6,6 +6,7 @@ pub mod ninjawriter;
 pub mod path;
 pub mod pbbuild;
 pub mod stats;
+pub mod strkey;
 pub mod value;
 
 pub use crate::ninjaexpr::add_expr_to_ninjafile;

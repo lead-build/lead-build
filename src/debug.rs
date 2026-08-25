@@ -4,6 +4,7 @@ use crate::{
     Expr,
     lang::{Error, ErrorType, ExprBuiltin, ExprSet, ExprType, Result},
     path::VirtPath,
+    strkey::StrKey,
     value::Value,
 };
 
@@ -39,8 +40,8 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinDbgBreak {
 
 pub fn get_dbg_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
     let dbgset = ExprSet::from([
-        ("trace".into(), Expr::new_builtin(BuiltinDbgTrace)),
-        ("break".into(), Expr::new_builtin(BuiltinDbgBreak)),
+        (StrKey::from("trace"), Expr::new_builtin(BuiltinDbgTrace)),
+        (StrKey::from("break"), Expr::new_builtin(BuiltinDbgBreak)),
     ]);
     Ok(ExprType::Object(dbgset).builtin())
 }

@@ -2,6 +2,7 @@ mod export;
 pub mod matcher;
 
 use super::error::{Error, ErrorType, Loc, Referrable, Result};
+use crate::strkey::StrKey;
 pub use export::Exportable;
 pub use matcher::Matcher;
 use std::{
@@ -57,7 +58,7 @@ where
     F: Clone;
 
 // TODO: Better implementation of ExprSet... This probably takes time to clone.
-pub type ExprSet<T, F> = BTreeMap<String, Expr<T, F>>;
+pub type ExprSet<T, F> = BTreeMap<StrKey, Expr<T, F>>;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum ExprBinOp {
@@ -357,11 +358,11 @@ where
     F: Clone + Debug + Referrable,
 {
     pub fn bind(&self, varspace: &ExprSet<T, F>) -> Expr<T, F> {
-        let referenced = self.referenced_vars();
+        let referenced: HashSet<StrKey> = self.referenced_vars();
         let filtered_varspace = varspace
             .iter()
-            .filter(|(name, _)| referenced.contains(*name))
-            .map(|(name, expr)| (name.clone(), expr.clone()))
+            .filter(|(key, _)| referenced.contains(*key))
+            .map(|(key, expr)| (*key, expr.clone()))
             .collect();
         ExprType::Bind(filtered_varspace, self.clone()).reref(self.get_loc())
     }
@@ -370,7 +371,7 @@ where
         self.0.as_ref().borrow()
     }
 
-    pub fn referenced_vars(&self) -> HashSet<String> {
+    pub fn referenced_vars(&self) -> HashSet<StrKey> {
         match self.inner_ref().tok.clone() {
             ExprType::Object(fields) => fields
                 .values()
@@ -386,7 +387,7 @@ where
                 vars
             }
             ExprType::Value(_) | ExprType::FuncDefBuiltin(_) | ExprType::Null => HashSet::new(),
-            ExprType::Var(name) => HashSet::from([name]),
+            ExprType::Var(name) => HashSet::from([StrKey::from(&name)]),
             ExprType::UnOp(_, inner) => inner.referenced_vars(),
             ExprType::BinOp(_, lhs, rhs) => {
                 let mut vars = lhs.referenced_vars();
@@ -429,7 +430,7 @@ where
                 vars
             }
             ExprType::Bind(varspace, bound_expr) => {
-                let mut vars: HashSet<String> = varspace
+                let mut vars: HashSet<StrKey> = varspace
                     .values()
                     .flat_map(|value| value.referenced_vars().into_iter())
                     .collect();
@@ -525,13 +526,13 @@ where
                         ExprBinOp::Update => {
                             let mut merged = lhs_obj.clone();
                             for (k, v) in rhs_obj.iter() {
-                                merged.insert(k.clone(), v.clone());
+                                merged.insert(*k, v.clone());
                             }
                             Ok(ExprType::Object(merged))
                         }
                         ExprBinOp::Eq => {
-                            let lhs_keys: HashSet<&String> = lhs_obj.keys().collect();
-                            let rhs_keys: HashSet<&String> = rhs_obj.keys().collect();
+                            let lhs_keys: HashSet<&StrKey> = lhs_obj.keys().collect();
+                            let rhs_keys: HashSet<&StrKey> = rhs_obj.keys().collect();
 
                             if lhs_keys != rhs_keys {
                                 Ok(ExprType::Value(T::new_from_bool(false)))
@@ -572,7 +573,7 @@ where
                     },
                     (ExprType::Object(lhs_obj), op, ExprType::Value(rhs_val)) => match op {
                         ExprBinOp::HasAttr => Ok(ExprType::Value(T::new_from_bool(
-                            lhs_obj.contains_key(&rhs_val.as_string()?),
+                            lhs_obj.contains_key(&StrKey::from(&rhs_val.as_string()?)),
                         ))),
                         _ => Err(Error::new(
                             ErrorType::Eval,
@@ -653,7 +654,7 @@ where
                     } => Ok(ExprType::Object(
                         fields
                             .iter()
-                            .map(|(k, val)| (k.clone(), val.bind(&varspace)))
+                            .map(|(k, val)| (*k, val.bind(&varspace)))
                             .collect(),
                     )
                     .loc(loc)),
@@ -691,9 +692,9 @@ where
                             for (name, value) in
                                 field_matcher.run(field_expr.bind(&vars))?.into_iter()
                             {
-                                vars.insert(name.clone(), value).map_or_else(
+                                vars.insert(name, value).map_or_else(
                                     || Ok(()),
-                                    |_| Err(Error::new(ErrorType::DupKey, name.clone())),
+                                    |_| Err(Error::new(ErrorType::DupKey, name.as_string())),
                                 )?;
                             }
                         }
@@ -740,7 +741,7 @@ where
                     ExprStorage {
                         tok: ExprType::Var(name),
                         loc: vloc,
-                    } => match &varspace.get(name) {
+                    } => match &varspace.get(&StrKey::from(name)) {
                         Some(value) => {
                             storref.loc = value.get_loc();
                             Ok(value
@@ -908,7 +909,8 @@ where
                                 .iter()
                                 .map(|(k, v)| {
                                     ExprType::Tuple(vec![
-                                        ExprType::Value(T::new_from_string(k)).reref(v.get_loc()),
+                                        ExprType::Value(T::new_from_string(k.as_string()))
+                                            .reref(v.get_loc()),
                                         v.clone(),
                                     ])
                                     .reref(v.get_loc())
@@ -957,16 +959,17 @@ where
                                     ExprStorage {
                                         tok: ExprType::Tuple(els),
                                         ..
-                                    } if els.len() == 2 => {
-                                        Ok((els[0].value()?.as_string()?, els[1].clone()))
-                                    }
+                                    } if els.len() == 2 => Ok((
+                                        StrKey::from(&els[0].value()?.as_string()?),
+                                        els[1].clone(),
+                                    )),
                                     _ => Err(Error::new(
                                         ErrorType::Type,
                                         "Expecting tuple of 2 elements",
                                     )
                                     .reref(&el.get_loc())),
                                 })
-                                .collect::<Result<BTreeMap<String, Expr<T, F>>, F>>()?,
+                                .collect::<Result<ExprSet<T, F>, F>>()?,
                         ),
                     };
                     Ok(output.loc(loc))
@@ -1137,7 +1140,7 @@ where
         let node = self.inner_ref();
         match &node.tok {
             ExprType::Object(vars) => Ok(vars
-                .get(name)
+                .get(&StrKey::from(name))
                 .ok_or_else(|| Error::new(ErrorType::NoValue, format!("Invalid field '{}'", name)))?
                 .clone()),
             _ => Err(Error::new(
@@ -1158,7 +1161,7 @@ where
             let name = bi.get_name();
             exprset
                 .insert(
-                    name.clone(),
+                    StrKey::from(&name),
                     ExprType::FuncDefBuiltin(ExprBuiltinWrapper(name, bi)).builtin(),
                 )
                 .unwrap();

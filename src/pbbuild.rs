@@ -11,6 +11,7 @@ use crate::{
     },
     ninjawriter::{NinjaArg, NinjaBuild, NinjaFile, NinjaRule, NinjaRuleRef},
     path::VirtPath,
+    strkey::StrKey,
     value::Value,
 };
 
@@ -294,7 +295,7 @@ where
 
                     /* Generate element */
                     Ok((
-                        name.clone(),
+                        StrKey::from(name),
                         ExprType::from(Value::BuildVar(match name.as_str() {
                             "input" => "in".into(),
                             "output" => "out".into(),
@@ -326,6 +327,7 @@ where
         /* Convert all variables to ninja rule */
         let mut vars: Vec<(String, Vec<NinjaArg>)> = Vec::new();
         for (name, expr) in objargs.into_iter() {
+            let name = name.as_string();
             expr.resolve()?;
             let attrs = match &expr.inner_ref().tok {
                 ExprType::List(exprs) => exprs.clone(),
@@ -404,14 +406,14 @@ where
         let mut dep_builds: Vec<Rc<PbBuild>> = vec![];
 
         if !rule.rule_args.contains("deps")
-            && let Some(build_arg) = arg_obj.remove("deps")
+            && let Some(build_arg) = arg_obj.remove(&StrKey::from("deps"))
         {
             deps = resolve_build_arg_to_paths(&build_arg, "deps", &mut dep_builds)?;
         }
 
         for arg_name in rule.rule_args.iter() {
             /* Read variable */
-            let build_arg = expr_get_arg!(arg_obj, arg_name);
+            let build_arg = expr_get_arg!(arg_obj, &StrKey::from(arg_name));
             match arg_name.as_str() {
                 "input" => {
                     input = resolve_build_arg_to_paths(&build_arg, "input", &mut dep_builds)?
@@ -426,7 +428,9 @@ where
                         ExprType::List(exprs) => (exprs.clone(), BuildOutputFormat::List),
                         ExprType::Object(fields) => (
                             fields.values().cloned().collect(),
-                            BuildOutputFormat::Object(fields.keys().cloned().collect()),
+                            BuildOutputFormat::Object(
+                                fields.keys().map(|k| k.as_string()).collect(),
+                            ),
                         ),
                         _ => {
                             return Err(Error::new(
@@ -505,7 +509,7 @@ where
                     .zip(build.ninja_outputs().iter())
                     .map(|(name, path)| {
                         (
-                            name,
+                            StrKey::from(&name),
                             ExprType::Value(Value::Path {
                                 path: path.clone(),
                                 depends: vec![build.clone()],
@@ -646,10 +650,13 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbRebase {
 
 pub fn get_pb_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
     let pbset = ExprSet::from([
-        ("lock".into(), Expr::new_builtin(BuiltinPbLock)),
-        ("rule".into(), Expr::new_builtin(BuiltinPbRule)),
-        ("translate".into(), Expr::new_builtin(BuiltinPbTranslate)),
-        ("rebase".into(), Expr::new_builtin(BuiltinPbRebase)),
+        (StrKey::from("lock"), Expr::new_builtin(BuiltinPbLock)),
+        (StrKey::from("rule"), Expr::new_builtin(BuiltinPbRule)),
+        (
+            StrKey::from("translate"),
+            Expr::new_builtin(BuiltinPbTranslate),
+        ),
+        (StrKey::from("rebase"), Expr::new_builtin(BuiltinPbRebase)),
     ]);
     Ok(ExprType::Object(pbset).builtin())
 }

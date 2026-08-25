@@ -4,6 +4,7 @@ use super::{
     super::testvalue::{FRef, TestValue},
     ExprType,
 };
+use crate::strkey::StrKey;
 use std::collections::HashSet;
 
 fn eval(code: &str) -> Expr<TestValue, FRef> {
@@ -17,6 +18,9 @@ fn referenced_vars(code: &str) -> HashSet<String> {
     parse_str::<TestValue, FRef>(code, &FRef)
         .unwrap()
         .referenced_vars()
+        .iter()
+        .map(|k| k.as_string())
+        .collect()
 }
 
 #[test]
@@ -220,7 +224,10 @@ fn test_func_call() {
     let func_a = parse_str("|var| 13", &FRef).unwrap();
     let func_b = parse_str("|var| 42", &FRef).unwrap();
     let call = parse_str("func_b 32", &FRef).unwrap();
-    let varscope = ExprSet::from([("func_a".into(), func_a), ("func_b".into(), func_b)]);
+    let varscope = ExprSet::from([
+        (StrKey::from("func_a"), func_a),
+        (StrKey::from("func_b"), func_b),
+    ]);
     let value: Expr<TestValue, FRef> = ExprType::Bind(varscope, call).builtin();
     value.resolve().unwrap();
     assert_eq!(value, ExprType::from(TestValue::Int(42)).builtin());
@@ -231,7 +238,10 @@ fn test_func_call_var_arg() {
     let func_var = parse_str("|var| var", &FRef).unwrap();
     let arg_var = parse_str("32", &FRef).unwrap();
     let call = parse_str("func arg", &FRef).unwrap();
-    let varscope = ExprSet::from([("func".into(), func_var), ("arg".into(), arg_var)]);
+    let varscope = ExprSet::from([
+        (StrKey::from("func"), func_var),
+        (StrKey::from("arg"), arg_var),
+    ]);
     let value: Expr<TestValue, FRef> = ExprType::Bind(varscope, call).builtin();
     value.resolve().unwrap();
     assert_eq!(value, ExprType::from(TestValue::Int(32)).builtin());
@@ -836,7 +846,7 @@ fn test_builtin_func() {
     let code = "mybuiltin 10";
 
     let builtins = ExprSet::from([(
-        "mybuiltin".into(),
+        StrKey::from("mybuiltin"),
         Expr::new_builtin(CountingBuiltin::new()),
     )]);
     let expr: Expr<TestValue, FRef> =
@@ -858,7 +868,10 @@ fn test_builtin_func_laziness_multiple_calls() {
                 }
             "#;
     let counter = CountingBuiltin::new();
-    let builtins = ExprSet::from([("mybuiltin".into(), Expr::new_builtin(counter.clone()))]);
+    let builtins = ExprSet::from([(
+        StrKey::from("mybuiltin"),
+        Expr::new_builtin(counter.clone()),
+    )]);
     let expr: Expr<TestValue, FRef> =
         ExprType::Bind(builtins, parse_str(code, &FRef).unwrap()).builtin();
     expr.eval().unwrap();
@@ -881,7 +894,10 @@ fn test_builtin_func_laziness_within_obj_map() {
                 }
             "#;
     let counter = CountingBuiltin::new();
-    let builtins = ExprSet::from([("mybuiltin".into(), Expr::new_builtin(counter.clone()))]);
+    let builtins = ExprSet::from([(
+        StrKey::from("mybuiltin"),
+        Expr::new_builtin(counter.clone()),
+    )]);
     let expr: Expr<TestValue, FRef> =
         ExprType::Bind(builtins, parse_str(code, &FRef).unwrap()).builtin();
     expr.eval().unwrap();
@@ -906,7 +922,10 @@ fn test_builtin_func_laziness_within_list_map() {
                 }
             "#;
     let counter = CountingBuiltin::new();
-    let builtins = ExprSet::from([("mybuiltin".into(), Expr::new_builtin(counter.clone()))]);
+    let builtins = ExprSet::from([(
+        StrKey::from("mybuiltin"),
+        Expr::new_builtin(counter.clone()),
+    )]);
     let expr: Expr<TestValue, FRef> =
         ExprType::Bind(builtins, parse_str(code, &FRef).unwrap()).builtin();
     expr.eval().unwrap();
@@ -937,7 +956,10 @@ fn test_builtin_func_laziness_within_obj_hardcoded() {
                 }
             "#;
     let counter = CountingBuiltin::new();
-    let builtins = ExprSet::from([("mybuiltin".into(), Expr::new_builtin(counter.clone()))]);
+    let builtins = ExprSet::from([(
+        StrKey::from("mybuiltin"),
+        Expr::new_builtin(counter.clone()),
+    )]);
     let expr: Expr<TestValue, FRef> =
         ExprType::Bind(builtins, parse_str(code, &FRef).unwrap()).builtin();
     expr.eval().unwrap();
@@ -960,7 +982,10 @@ fn test_builtin_func_laziness_no_calls() {
                 {}
             "#;
     let counter = CountingBuiltin::new();
-    let builtins = ExprSet::from([("mybuiltin".into(), Expr::new_builtin(counter.clone()))]);
+    let builtins = ExprSet::from([(
+        StrKey::from("mybuiltin"),
+        Expr::new_builtin(counter.clone()),
+    )]);
     let expr: Expr<TestValue, FRef> =
         ExprType::Bind(builtins, parse_str(code, &FRef).unwrap()).builtin();
     expr.eval().unwrap();

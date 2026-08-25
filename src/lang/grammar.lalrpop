@@ -20,6 +20,7 @@ use super::{
     unpack_int,
     unpack_bool
 };
+use crate::strkey::StrKey;
 use std::{
     fmt::Debug,
     marker::PhantomData,
@@ -169,7 +170,7 @@ ExprTerm: Expr<T, F> = {
     "(" <Expr> ")"
 };
 
-ExprObject: Expr<T, F> = <l: @L> "{" <s:AssignStmt*> "}" <r: @R> => ExprType::Object(s.into_iter().collect::<ExprSet<T, F>>()).toexpr(l, r, f);
+ExprObject: Expr<T, F> = <l: @L> "{" <s:AssignStmt*> "}" <r: @R> => ExprType::Object(s.into_iter().map(|(k, v)| (StrKey::from(&k), v)).collect::<ExprSet<T, F>>()).toexpr(l, r, f);
 ExprList: Expr<T, F> = <l: @L> "[" <s:Comma<Expr>> "]" <r: @R> => ExprType::List(s).toexpr(l, r, f);
 ExprTuple: Expr<T, F> = <l: @L> "(" <s:TupleComma<Expr>> ")" <r: @R> => ExprType::Tuple(s).toexpr(l, r, f);
 

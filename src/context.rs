@@ -5,6 +5,7 @@ use crate::{
     lang::{Error, ErrorType, Expr, ExprBuiltin, ExprSet, ExprType, Result, parse_str},
     path::VirtPath,
     pbbuild::get_pb_builtins,
+    strkey::StrKey,
     value::Value,
 };
 
@@ -41,8 +42,8 @@ pub struct LangContext(Rc<LangContextStorage>);
 impl Default for LangContext {
     fn default() -> Self {
         let mut builtins = ExprSet::new();
-        builtins.insert("pb".into(), get_pb_builtins().unwrap());
-        builtins.insert("dbg".into(), get_dbg_builtins().unwrap());
+        builtins.insert(StrKey::from("pb"), get_pb_builtins().unwrap());
+        builtins.insert(StrKey::from("dbg"), get_dbg_builtins().unwrap());
         LangContext(Rc::new(LangContextStorage { builtins }))
     }
 }
@@ -56,7 +57,7 @@ impl LangContext {
         Rc::get_mut(&mut self.0)
             .unwrap()
             .builtins
-            .insert(name.to_string(), value);
+            .insert(StrKey::from(&name.to_string()), value);
     }
 
     fn setup_file_args(
@@ -66,13 +67,16 @@ impl LangContext {
     ) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let cwd = file.parent()?.lock();
         let mut builtins = self.0.builtins.clone();
-        builtins.insert("cwd".into(), ExprType::from(Value::path(cwd)).builtin());
         builtins.insert(
-            "include".to_string(),
+            StrKey::from("cwd"),
+            ExprType::from(Value::path(cwd)).builtin(),
+        );
+        builtins.insert(
+            StrKey::from("include"),
             Expr::new_builtin(BuiltinInclude(self.clone())),
         );
         if let Some(args) = args {
-            builtins.insert("args".into(), args);
+            builtins.insert(StrKey::from("args"), args);
         }
         Ok(ExprType::from(builtins).builtin())
     }

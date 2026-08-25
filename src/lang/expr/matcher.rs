@@ -5,6 +5,7 @@ use std::{
 };
 
 use super::{Error, ErrorType, Exportable, Expr, ExprOps, ExprSet, ExprType, Referrable, Result};
+use crate::strkey::StrKey;
 
 pub type ObjectMatch<T, F> = (String, Matcher<T, F>, Option<Expr<T, F>>);
 
@@ -113,13 +114,13 @@ where
         }
     }
 
-    pub fn referenced_vars(&self) -> HashSet<String> {
+    pub fn referenced_vars(&self) -> HashSet<StrKey> {
         let mut referenced_vars = HashSet::new();
         self.visit_referenced_vars(&mut referenced_vars);
         referenced_vars
     }
 
-    fn visit_referenced_vars(&self, referenced_vars: &mut HashSet<String>) {
+    fn visit_referenced_vars(&self, referenced_vars: &mut HashSet<StrKey>) {
         match self {
             Matcher::Alias(inner, name) => {
                 let _ = name;
@@ -152,11 +153,11 @@ where
             Matcher::Alias(matcher, name) => {
                 let mut output = matcher.run(expr.clone())?;
                 // TODO: Check if overlapping keysets
-                output.insert(name.clone(), expr);
+                output.insert(StrKey::from(name), expr);
                 Ok(output)
             }
             Matcher::DontCare => Ok(ExprSet::new()),
-            Matcher::Ident(name) => Ok(ExprSet::from([(name.to_string(), expr)])),
+            Matcher::Ident(name) => Ok(ExprSet::from([(StrKey::from(name), expr)])),
             Matcher::Tuple(matchers) => match &expr.res_type()?.tok {
                 ExprType::Tuple(exprs) => {
                     if exprs.len() != matchers.len() {
@@ -183,7 +184,7 @@ where
 
                     for (itname, itmatch, itdefault) in items.iter() {
                         let in_expr = input
-                            .remove(itname)
+                            .remove(&StrKey::from(itname))
                             .or_else(|| itdefault.clone())
                             .ok_or_else(|| {
                                 Error::new(

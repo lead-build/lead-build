@@ -1,7 +1,9 @@
-use crate::lang::{Error, ErrorType, ExprStorage, ExprType, Result};
-use crate::ninjawriter::NinjaFile;
-use crate::path::VirtPath;
-use crate::{Expr, Value};
+use crate::{
+    Expr, Value,
+    lang::{Error, ErrorType, ExprStorage, ExprType, Result},
+    ninjawriter::NinjaFile,
+    path::VirtPath,
+};
 
 pub fn add_expr_to_ninjafile(
     expr: &Expr<Value, VirtPath>,
@@ -64,6 +66,7 @@ pub fn add_expr_to_ninjafile(
             ..
         } => {
             for (name, value) in fields.iter() {
+                let name = name.as_string();
                 value.resolve()?;
                 let evaluated = value.value()?;
                 if let Value::Path { path, depends } = evaluated {
@@ -79,7 +82,7 @@ pub fn add_expr_to_ninjafile(
                         build.populate_ninja_file(ninja_file, true)?;
                     }
 
-                    ninja_file.add_alias(name, vec![path]);
+                    ninja_file.add_alias(&name, vec![path]);
                 } else {
                     return Err(Error::new(
                         ErrorType::Custom,
