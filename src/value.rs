@@ -4,6 +4,7 @@ use crate::{
     lang::{Error, ErrorType, Exportable, ExprOps, ParsableValue, Result},
     path::VirtPath,
     pbbuild::PbBuild,
+    strkey::StrKey,
 };
 
 #[derive(Clone, PartialEq, Debug)]
@@ -16,7 +17,7 @@ pub enum Value {
     },
     Bool(bool),
 
-    BuildVar(String),
+    BuildVar(StrKey),
     BuildConcat(Vec<Value>),
 }
 

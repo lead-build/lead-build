@@ -1,5 +1,6 @@
 use std::{
     collections::BTreeMap,
+    fmt::{self, Display},
     sync::{Mutex, MutexGuard, OnceLock},
 };
 
@@ -45,10 +46,6 @@ impl StrKeyPool {
 }
 
 impl StrKey {
-    pub fn from(s: &str) -> Self {
-        StrKey(lock_pool().get(s))
-    }
-
     pub fn as_string(&self) -> String {
         let pool = lock_pool();
         if self.0 < pool.idx_to_str.len() {
@@ -56,6 +53,24 @@ impl StrKey {
         } else {
             panic!("Resolving invalid StrKey index: {}", self.0);
         }
+    }
+}
+
+impl Display for StrKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.as_string())
+    }
+}
+
+impl From<&str> for StrKey {
+    fn from(s: &str) -> Self {
+        StrKey(lock_pool().get(s))
+    }
+}
+
+impl From<&String> for StrKey {
+    fn from(s: &String) -> Self {
+        StrKey::from(s.as_str())
     }
 }
 

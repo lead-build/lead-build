@@ -1,10 +1,9 @@
 use std::{fmt::Debug, fs, rc::Rc};
 
 use crate::{
-    debug::get_dbg_builtins,
+    builtins::get_builtins,
     lang::{Error, ErrorType, Expr, ExprBuiltin, ExprSet, ExprType, Result, parse_str},
     path::VirtPath,
-    pbbuild::get_pb_builtins,
     strkey::StrKey,
     value::Value,
 };
@@ -41,9 +40,9 @@ pub struct LangContext(Rc<LangContextStorage>);
 
 impl Default for LangContext {
     fn default() -> Self {
-        let mut builtins = ExprSet::new();
-        builtins.insert(StrKey::from("pb"), get_pb_builtins().unwrap());
-        builtins.insert(StrKey::from("dbg"), get_dbg_builtins().unwrap());
+        let builtins = get_builtins().unwrap_or_else(|e| {
+            panic!("Failed to initialize builtins: {}", e);
+        });
         LangContext(Rc::new(LangContextStorage { builtins }))
     }
 }

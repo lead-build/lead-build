@@ -1,5 +1,5 @@
+pub mod builtins;
 pub mod context;
-pub mod debug;
 pub mod lang;
 pub mod ninjaexpr;
 pub mod ninjawriter;
