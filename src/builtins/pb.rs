@@ -147,7 +147,7 @@ impl<F> ExprBuiltin<Value, F> for BuiltinPbRule
 where
     F: Clone + Debug + Referrable,
 {
-    fn get_name(&self) -> String {
+    fn get_name(&self) -> StrKey {
         "build".into()
     }
 
@@ -257,7 +257,7 @@ impl<F> ExprBuiltin<Value, F> for BuiltinPbBuild
 where
     F: Clone + Debug + Referrable,
 {
-    fn get_name(&self) -> String {
+    fn get_name(&self) -> StrKey {
         "build".into()
     }
 
@@ -414,7 +414,7 @@ where
 pub struct BuiltinPbLock;
 
 impl ExprBuiltin<Value, VirtPath> for BuiltinPbLock {
-    fn get_name(&self) -> String {
+    fn get_name(&self) -> StrKey {
         "lock".into()
     }
 
@@ -432,7 +432,7 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbLock {
 pub struct BuiltinPbTranslate;
 
 impl ExprBuiltin<Value, VirtPath> for BuiltinPbTranslate {
-    fn get_name(&self) -> String {
+    fn get_name(&self) -> StrKey {
         "translate".into()
     }
 
@@ -504,7 +504,7 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbTranslate {
 pub struct BuiltinPbRebase;
 
 impl ExprBuiltin<Value, VirtPath> for BuiltinPbRebase {
-    fn get_name(&self) -> String {
+    fn get_name(&self) -> StrKey {
         "rebase".into()
     }
 

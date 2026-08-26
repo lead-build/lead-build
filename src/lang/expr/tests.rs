@@ -514,7 +514,7 @@ impl CountingBuiltin {
 }
 
 impl ExprBuiltin<TestValue, FRef> for CountingBuiltin {
-    fn get_name(&self) -> String {
+    fn get_name(&self) -> StrKey {
         "mybuiltin".into()
     }
 

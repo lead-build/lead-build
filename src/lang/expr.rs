@@ -43,7 +43,7 @@ where
     T: Clone + PartialEq + Display + ExprOps<F>,
     F: Clone,
 {
-    fn get_name(&self) -> String;
+    fn get_name(&self) -> StrKey;
     fn call(&self, arg: Expr<T, F>) -> Result<Expr<T, F>, F>;
 }
 
@@ -93,7 +93,7 @@ pub enum ExprMapType {
 }
 
 #[derive(Clone)]
-pub struct ExprBuiltinWrapper<T, F>(String, Rc<dyn ExprBuiltin<T, F>>)
+pub struct ExprBuiltinWrapper<T, F>(StrKey, Rc<dyn ExprBuiltin<T, F>>)
 where
     T: Clone + PartialEq + Display + ExprOps<F>,
     F: Clone;
@@ -1173,7 +1173,7 @@ where
             let name = bi.get_name();
             exprset
                 .insert(
-                    StrKey::from(&name),
+                    name,
                     ExprType::FuncDefBuiltin(ExprBuiltinWrapper(name, bi)).builtin(),
                 )
                 .unwrap();

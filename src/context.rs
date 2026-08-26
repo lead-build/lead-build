@@ -16,7 +16,7 @@ use crate::{
 struct BuiltinInclude(LangContext);
 
 impl ExprBuiltin<Value, VirtPath> for BuiltinInclude {
-    fn get_name(&self) -> String {
+    fn get_name(&self) -> StrKey {
         "include".into()
     }
 

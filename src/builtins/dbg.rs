@@ -12,7 +12,7 @@ use crate::{
 pub struct BuiltinDbgTrace;
 
 impl ExprBuiltin<Value, VirtPath> for BuiltinDbgTrace {
-    fn get_name(&self) -> String {
+    fn get_name(&self) -> StrKey {
         "trace".into()
     }
 
@@ -27,7 +27,7 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinDbgTrace {
 pub struct BuiltinDbgBreak;
 
 impl ExprBuiltin<Value, VirtPath> for BuiltinDbgBreak {
-    fn get_name(&self) -> String {
+    fn get_name(&self) -> StrKey {
         "break".into()
     }
 
