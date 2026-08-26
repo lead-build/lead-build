@@ -157,9 +157,11 @@ where
         Vec<(Expr<T, F>, Expr<T, F>)>,
         Option<Expr<T, F>>,
     ),
-    #[default]
     #[strum(message = "null expression")]
     Null,
+    #[default]
+    #[strum(message = "under evaluation")]
+    UnderEval,
 }
 
 /* *****************************************************************************
@@ -390,7 +392,6 @@ where
                 vars.extend(attr.referenced_vars());
                 vars
             }
-            ExprType::Value(_) | ExprType::FuncDefBuiltin(_) | ExprType::Null => HashSet::new(),
             ExprType::Var(name) => HashSet::from([StrKey::from(&name)]),
             ExprType::UnOp(_, inner) => inner.referenced_vars(),
             ExprType::BinOp(_, lhs, rhs) => {
@@ -454,6 +455,10 @@ where
                 }
                 vars
             }
+            ExprType::Value(_)
+            | ExprType::FuncDefBuiltin(_)
+            | ExprType::Null
+            | ExprType::UnderEval => HashSet::new(),
         }
     }
 
@@ -660,6 +665,7 @@ where
             ExprType::Bind(..) => true,
             ExprType::Switch(..) => true,
             ExprType::Null => false,
+            ExprType::UnderEval => true, // To catch an error later...
         } {
             storref = match storref {
                 ExprStorage {
@@ -815,6 +821,10 @@ where
                         tok: ExprType::Null,
                         ..
                     } => Ok(ExprType::Null.loc(loc)),
+                    ExprStorage {
+                        tok: ExprType::UnderEval,
+                        ..
+                    } => unreachable!("ExprType::UnderEval should not be in a Bind expression"),
                 },
                 ExprStorage {
                     tok: ExprType::Concat(parts),
@@ -1084,9 +1094,9 @@ where
                     Error::new(ErrorType::Scope, format!("Unknown variable {}", name)).reref(&loc),
                 ),
                 ExprStorage {
-                    tok: ExprType::Null,
-                    loc: _loc,
-                } => panic!("Found null in expr tree"),
+                    tok: ExprType::UnderEval,
+                    loc: _,
+                } => panic!("Resolving expression that already is under evaluation"),
                 ExprStorage { tok, loc: _ } => unreachable!("Resolving {}", tok),
             }?;
         }

@@ -238,6 +238,7 @@ where
                 write!(f, "<builtin {}>", name)
             }
             ExprType::Null => write!(f, "null"),
+            ExprType::UnderEval => write!(f, "<evaluating>"),
         }
     }
 }
