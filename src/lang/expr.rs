@@ -637,14 +637,7 @@ where
     pub fn resolve(&self) -> Result<(), F> {
         let mut storref: ExprStorage<T, F> = self.inner_ref().clone();
 
-        trace!(
-            "Resolving {} at {}",
-            storref.tok.get_message().unwrap(),
-            storref
-                .loc
-                .as_ref()
-                .map_or_else(|| "unknown location".to_string(), |loc| loc.to_string())
-        );
+        let mut first_match = true;
 
         while match &storref.tok {
             ExprType::Object(..) => false,
@@ -667,6 +660,17 @@ where
             ExprType::Null => false,
             ExprType::UnderEval => true, // To catch an error later...
         } {
+            trace!(
+                "{} {} at {}",
+                first_match.then(|| "Resolving").unwrap_or("   ...   "),
+                storref.tok.get_message().unwrap(),
+                storref
+                    .loc
+                    .as_ref()
+                    .map_or_else(|| "unknown location".to_string(), |loc| loc.to_string())
+            );
+            first_match = false;
+
             storref = match storref {
                 ExprStorage {
                     tok: ExprType::Bind(varspace, bound_expr),
