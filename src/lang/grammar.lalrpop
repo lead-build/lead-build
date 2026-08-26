@@ -167,6 +167,7 @@ ExprTerm: Expr<T, F> = {
     <ExprTuple>,
     <ExprValue>,
     <ExprVar>,
+    <ExprNull>,
     "(" <Expr> ")"
 };
 
@@ -186,6 +187,8 @@ AssignStmt: TypeAssignStmt<T, F> = {
 };
 
 ExprVar: Expr<T, F> = <l: @L> <s:Ident> <r: @R> => ExprType::Var(s).toexpr(l, r, f);
+
+ExprNull: Expr<T, F> = <l: @L> "null" <r: @R> => ExprType::Null.toexpr(l, r, f);
 
 
 //

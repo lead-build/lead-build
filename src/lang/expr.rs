@@ -506,6 +506,18 @@ where
                 }
 
                 match (&lhs_r.tok, op, &rhs_r.tok) {
+                    (ExprType::Null, ExprBinOp::Eq, ExprType::Null) => {
+                        Ok(ExprType::Value(T::new_from_bool(true)))
+                    }
+                    (ExprType::Null, ExprBinOp::Neq, ExprType::Null) => {
+                        Ok(ExprType::Value(T::new_from_bool(false)))
+                    }
+                    (ExprType::Null, ExprBinOp::Eq, _) | (_, ExprBinOp::Eq, ExprType::Null) => {
+                        Ok(ExprType::Value(T::new_from_bool(false)))
+                    }
+                    (ExprType::Null, ExprBinOp::Neq, _) | (_, ExprBinOp::Neq, ExprType::Null) => {
+                        Ok(ExprType::Value(T::new_from_bool(true)))
+                    }
                     (ExprType::Value(lhs_val), op, ExprType::Value(rhs_val)) => match op {
                         ExprBinOp::Add => Ok(ExprType::Value(T::op_add(lhs_val, rhs_val)?)),
                         ExprBinOp::Sub => Ok(ExprType::Value(T::op_sub(lhs_val, rhs_val)?)),
@@ -796,7 +808,7 @@ where
                     ExprStorage {
                         tok: ExprType::Null,
                         ..
-                    } => panic!("Found null in expr tree"),
+                    } => Ok(ExprType::Null.loc(loc)),
                 },
                 ExprStorage {
                     tok: ExprType::Concat(parts),

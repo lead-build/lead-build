@@ -102,6 +102,14 @@ fn test_eval_list() {
 }
 
 #[test]
+fn test_parse_null() {
+    let null = parse_str::<TestValue, FRef>("null", &FRef).unwrap();
+
+    assert_eq!(null.to_string(), "null");
+    assert!(referenced_vars("null").is_empty());
+}
+
+#[test]
 fn test_func_in_let_res() {
     assert_eq!(eval("let a = |x| (x+1); in (a 12)"), eval("13"));
 }
@@ -459,6 +467,16 @@ fn test_bool_not() {
 #[test]
 fn test_bool_neg() {
     assert_eq!(eval("let a = 5; in (-a) + 3"), eval("-2"));
+}
+
+#[test]
+fn test_null_eq_and_neq() {
+    assert_eq!(eval("null == null"), eval("true"));
+    assert_eq!(eval("null != null"), eval("false"));
+    assert_eq!(eval("null == 1"), eval("false"));
+    assert_eq!(eval("1 == null"), eval("false"));
+    assert_eq!(eval("null != 1"), eval("true"));
+    assert_eq!(eval("1 != null"), eval("true"));
 }
 
 #[test]
