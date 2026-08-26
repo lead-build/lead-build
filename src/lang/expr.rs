@@ -140,7 +140,11 @@ where
     #[strum(message = "let binding")]
     Let(Vec<(Matcher<T, F>, Expr<T, F>)>, Expr<T, F>),
     #[strum(message = "fold expression")]
-    Fold(Expr<T, F>, Expr<T, F>, Expr<T, F>),
+    Fold {
+        func: Expr<T, F>,
+        init: Option<Expr<T, F>>,
+        input: Expr<T, F>,
+    },
     #[strum(message = "map expression")]
     Map(ExprMapType, Expr<T, F>, Expr<T, F>, Option<Expr<T, F>>),
     #[strum(message = "function call")]
@@ -410,9 +414,11 @@ where
                 vars.extend(target.referenced_vars());
                 vars
             }
-            ExprType::Fold(func, init, input) => {
+            ExprType::Fold { func, init, input } => {
                 let mut vars = func.referenced_vars();
-                vars.extend(init.referenced_vars());
+                if let Some(init_expr) = init {
+                    vars.extend(init_expr.referenced_vars());
+                }
                 vars.extend(input.referenced_vars());
                 vars
             }
@@ -648,7 +654,7 @@ where
             ExprType::FuncDef(..) => false,
             ExprType::FuncDefBuiltin(..) => false,
             ExprType::Let(..) => true,
-            ExprType::Fold(..) => true,
+            ExprType::Fold { .. } => true,
             ExprType::Map(..) => true,
             ExprType::FuncCall(..) => true,
             ExprType::Bind(..) => true,
@@ -732,13 +738,13 @@ where
                         loc: biloc,
                     } => Ok(ExprType::FuncDefBuiltin(expr_builtin.clone()).loc(biloc.clone())),
                     ExprStorage {
-                        tok: ExprType::Fold(func, init, input),
+                        tok: ExprType::Fold { func, init, input },
                         ..
-                    } => Ok(ExprType::Fold(
-                        func.bind(&varspace),
-                        init.bind(&varspace),
-                        input.bind(&varspace),
-                    )
+                    } => Ok(ExprType::Fold {
+                        func: func.bind(&varspace),
+                        init: init.as_ref().map(|e| e.bind(&varspace)),
+                        input: input.bind(&varspace),
+                    }
                     .loc(loc)),
                     ExprStorage {
                         tok: ExprType::Map(typ, func, input, filter),
@@ -877,7 +883,7 @@ where
                     .reref(floc)),
                 },
                 ExprStorage {
-                    tok: ExprType::Fold(func, init, input),
+                    tok: ExprType::Fold { func, init, input },
                     loc,
                 } => {
                     let mut output = init;
@@ -887,14 +893,20 @@ where
                             loc: input_loc,
                         } => {
                             for item in input_items.iter() {
-                                output = ExprType::FuncCall(
-                                    item.clone(),
-                                    ExprType::FuncCall(output, func.clone())
-                                        .reref(input_loc.clone()),
-                                )
-                                .reref(item.get_loc());
+                                item.resolve()?;
+                                output = match output {
+                                    Some(prev) => Some(
+                                        ExprType::FuncCall(
+                                            item.clone(),
+                                            ExprType::FuncCall(prev, func.clone())
+                                                .reref(input_loc.clone()),
+                                        )
+                                        .reref(item.get_loc()),
+                                    ),
+                                    None => Some(item.clone()),
+                                };
                             }
-                            Ok(output.inner_ref().clone())
+                            Ok(output.unwrap().inner_ref().clone())
                         }
                         _ => Err(Error::new(
                             ErrorType::Eval,

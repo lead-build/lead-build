@@ -792,8 +792,16 @@ fn test_list_commas() {
 #[test]
 fn test_list_fold() {
     assert_eq!(
-        eval("(|prev field| prev*10 + field for 7 .. [1, 2, 3] )"),
-        eval("7123")
+        eval("(|prev field| (prev, field) for 7 : [1, 2, 3] )"),
+        eval("(((7,1),2),3)")
+    );
+}
+
+#[test]
+fn test_list_fold_no_init() {
+    assert_eq!(
+        eval("(|prev field| (prev, field) for [1, 2, 3] )"),
+        eval("((1,2),3)")
     );
 }
 
@@ -803,7 +811,7 @@ fn test_list_fold_concat_strings() {
         eval(
             r#"
             let
-                strconcat = |strs| (|p f| (p + f) for "" .. strs );
+                strconcat = |strs| (|p f| (p + f) for "" : strs );
             in
                 strconcat [ "hello", "rld" ]
             "#
