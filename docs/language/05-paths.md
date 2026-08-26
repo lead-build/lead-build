@@ -102,17 +102,13 @@ in
 
 ## File suffix rewriting
 
-Use the builtin `pb.retype` to change the file suffix of a path. The argument is an object with `input`, `from`, and `to` fields. `input` is the path to a file, and `from` and `to` are strings representing the current and new suffixes.
+File suffixes are rewritten using the `+` and `-` operators, rather than a dedicated builtin. `path + string` appends `string` to the last path element, and `path - string` removes `string` from the end of the last path element (failing if it isn't a suffix of it).
 
 ```lead
-|{cwd, pb, ...}|
+|{cwd, ...}|
 let
   source = cwd / "src" / "main.c";
-  object = pb.retype {
-    input = source,
-    from = ".c",
-    to = ".o"
-  };
+  object = (source - ".c") + ".o";
 in
   object
 ```

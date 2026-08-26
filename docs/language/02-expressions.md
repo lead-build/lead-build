@@ -87,6 +87,16 @@ in
 
 Each case is written as `matcher => expression;`. Matchers are compared against the value after `switch` in order, and the first equal case wins.
 
+## Null
+
+The literal `null` represents the absence of a value. It is only equal to itself; comparing it to any other value with `==` is `false`, and with `!=` is `true`:
+
+```lead
+null == null   # true
+null == 1      # false
+null != 1      # true
+```
+
 ## Strings
 
 Strings are written with double quotes. They are a basic literal type and can be combined with other strings using `+` for concatenation.

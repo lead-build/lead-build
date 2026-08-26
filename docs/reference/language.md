@@ -19,6 +19,12 @@ Boolean values are `true` or `false`. They are used for conditionals and logical
 
 Example: `true` or `false`
 
+### Null
+
+The literal `null` represents the absence of a value. `null` is only equal to itself: `null == null` is `true`, and comparing `null` to any other value with `==`/`!=` is `false`/`true` respectively.
+
+Example: `null`
+
 ### Strings
 
 Strings are quoted text values. They may contain escaped characters such as `\"` for a quote and `\\` for a backslash. Strings are commonly used for path segments and textual data.
@@ -32,6 +38,8 @@ Example: `"hellorld"` or `"Hello ${name}!"`
 Objects are collections of named fields written with `{ key = value; ... }`. They are used for structured data, function arguments, and configuration.
 
 Object keys may be written either as identifiers (`name`) or as quoted strings (`"compiler-flags"`).
+
+Objects support `==`/`!=`: two objects are equal when they have the same set of keys and each corresponding value is equal.
 
 Example:
 ```lead
@@ -125,7 +133,7 @@ Following operators are available:
 | `func arg`                   | 14         | Function call                     |
 | `object.ident`               | 15         | attribute selection               |
 | `object.{expr}`              | 15         | computed attribute selection      |
-| `( func for init .. list )`  | 16         | list fold                         |
+| `( func for init: list )`   | 16         | list fold                         |
 | `[ func for iterable ]`      | 16         | list map                          |
 | `{ func for iterable }`      | 16         | object map                        |
 | `switch expr { ... }`        | 16         | switch expression                 |

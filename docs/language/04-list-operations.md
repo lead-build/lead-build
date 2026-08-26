@@ -104,10 +104,10 @@ A fold reduces a collection to a single value by repeatedly combining an accumul
 The general form is:
 
 ```lead
-(|accumulator field| expression for initial .. source)
+(|accumulator field| expression for initial: source)
 ```
 
-- `initial` is the starting value of the accumulator.
+- `initial` is the starting value of the accumulator, followed by `:`.
 - `accumulator` is the value from the previous step.
 - `field` is the current item from the collection.
 - The `expression` returns the next accumulator value.
@@ -115,7 +115,7 @@ The general form is:
 For example:
 
 ```lead
-(|prev field| prev * 10 + field for 7 .. [1, 2, 3])
+(|prev field| prev * 10 + field for 7: [1, 2, 3])
 ```
 
 This evaluates as:
@@ -129,6 +129,16 @@ and results in:
 ```lead
 7123
 ```
+
+### Omitting the initial value
+
+The `initial:` part is optional. When omitted, the first element of the collection is used as the starting accumulator value, and folding continues over the remaining elements:
+
+```lead
+(|prev field| prev * 10 + field for [7, 1, 2, 3])
+```
+
+This evaluates to the same result as the example above, `7123`. An empty collection without an explicit `initial` is an error, since there is no value to seed the accumulator with.
 
 ### Use cases
 
@@ -146,7 +156,7 @@ Because fold exposes both the accumulated state and the current item, it is well
 ```lead
 # sum: adds all numbers in a list
 let
-  sum = |lst| (|acc v| acc + v for 0 .. lst);
+  sum = |lst| (|acc v| acc + v for 0: lst);
 in
   sum [1, 2, 3, 4]    # => 10
 ```
@@ -154,7 +164,7 @@ in
 ```lead
 # product: multiplies all numbers in a list
 let
-  product = |lst| (|acc v| acc * v for 1 .. lst);
+  product = |lst| (|acc v| acc * v for 1: lst);
 in
   product [2, 3, 4]   # => 24
 ```

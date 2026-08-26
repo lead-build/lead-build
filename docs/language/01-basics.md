@@ -13,6 +13,7 @@ There are a few basic types that can be written in lead-build:
 - Strings - represented by a string surrounded by quotes, for example `"hello"`, where letters can be escaped. Strings may also contain substitutions. More on those later.
 - Integers - a simple number containing digits `0`-`9` and an optional prefixed minus sign.
 - Booleans - the words `true` or `false`.
+- Null - the word `null`, representing the absence of a value.
 
 Besides the basic types listed above, there are other types that cannot be written explicitly, but are returned by builtin functions. These will be covered in future chapters.
 

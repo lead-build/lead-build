@@ -39,24 +39,31 @@ pb.rebase {
 
 Returns a path value that keeps the internal relative location of `path`, but expressed under `base`.
 
-### `pb.retype`
+### `pb.lock`
 
-Changes the file suffix of a path.
+Creates a new path value bound to the same file or directory, but with a fresh root boundary, so upward traversal (`..`) cannot escape above it.
 
 Syntax:
 ```lead
-pb.retype {
-  input = path,
-  from = string,
-  to = string
-}
+pb.lock path
 ```
 
-- `input`: a path to a file
-- `from`: the current file suffix
-- `to`: the desired file suffix
+More information is available in the [paths](../language/05-paths.md) chapter.
 
-Returns a path with the file suffix rewritten from `from` to `to`.
+## Path suffix operators
+
+File suffixes are rewritten using the `+` and `-` operators on a path, rather than a dedicated builtin:
+
+- `path + string` appends `string` to the last path element.
+- `path - string` removes `string` from the end of the last path element, and fails if it isn't a suffix.
+
+```lead
+let
+  source = cwd / "src" / "main.c";
+  object = (source - ".c") + ".o";
+in
+  object
+```
 
 ## Builtin build functions
 
@@ -73,7 +80,7 @@ pb.rule |{input, output, ...}| {
 
 Note: In `pb.rule`, object matcher defaults (for example, `|{input ? fallback, ...}|`) are not supported.
 
-The return value of `pb.rule` is callable. Call it with a build argument object to produce a build value:
+The return value of `pb.rule` is callable. Call it with a build argument object to produce a build value; this is the only way to construct a build value, there is no separate `pb.build` builtin:
 
 ```lead
 compile_rule {
@@ -82,34 +89,36 @@ compile_rule {
 }
 ```
 
-More information is available in the [builds](../builds/01-rules-and-builds.md) chapter.
-
-### `pb.build`
-
-Low-level constructor for a build value. In normal usage, prefer calling the function returned by `pb.rule`.
-
-```lead
-pb.build {
-  rule = rule_definition;
-  input = [sources...];
-  output = output;
-}
-```
-
-The optional variable `deps` adds any implicit depdendencies to the build. Can be either a single file/build or a list of files/builds.
-
-`rule_definition` is the output of `pb.rule`, and the rest of the variables are defined, except `deps`, from the arguments to the rule definition.
-
-Equivalent preferred form:
-
-```lead
-rule_definition {
-  input = [sources...];
-  output = output;
-}
-```
+The optional variable `deps` adds any implicit dependencies to the build, and is not passed to the rule itself. It can be either a single file/build or a list of files/builds.
 
 More information is available in the [builds](../builds/01-rules-and-builds.md) chapter.
+
+## Builtin operator functions
+
+### `ops.zip`
+
+Transposes a compound value of compound values, pairing up elements that share the same index/key.
+
+Syntax:
+```lead
+ops.zip outer
+```
+
+- `outer`: a list, tuple, or object whose elements are themselves lists, tuples, or objects.
+
+All elements of `outer` must decompose into the same compound type (all lists, all tuples, or all objects); mixing types is an error, as is passing an empty `outer`.
+
+`ops.zip` regroups the elements by their inner index/key: the result is a value of the inner compound type, where each entry is a value of the outer compound type collecting the corresponding elements from every inner value. Any missing index in a list or tuple is padded with `null`.
+
+```lead
+ops.zip [[1, 2], [3, 4], [5, 6]]
+```
+
+This evaluates to:
+
+```lead
+[[1, 3, 5], [2, 4, 6]]
+```
 
 ## Debug builtins
 
