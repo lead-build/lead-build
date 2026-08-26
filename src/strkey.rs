@@ -54,6 +54,14 @@ impl StrKey {
             panic!("Resolving invalid StrKey index: {}", self.0);
         }
     }
+
+    pub fn get_raw_id(&self) -> usize {
+        self.0
+    }
+
+    pub fn from_raw_id(id: usize) -> Self {
+        StrKey(id)
+    }
 }
 
 impl Display for StrKey {
