@@ -920,7 +920,14 @@ where
                                     None => Some(item.clone()),
                                 };
                             }
-                            Ok(output.unwrap().inner_ref().clone())
+                            if let Some(output) = output {
+                                Ok(output.inner_ref().clone())
+                            } else {
+                                Err(Error::new(
+                                    ErrorType::Eval,
+                                    format!("Fold over empty list with no init"),
+                                ))
+                            }
                         }
                         _ => Err(Error::new(
                             ErrorType::Eval,

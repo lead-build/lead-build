@@ -158,6 +158,57 @@ where
     }
 }
 
+#[derive(Debug)]
+pub struct BuiltinOpsTransposeObjs;
+
+impl<T, F> ExprBuiltin<T, F> for BuiltinOpsTransposeObjs
+where
+    T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
+    F: Clone + Debug + Referrable,
+{
+    fn get_name(&self) -> StrKey {
+        "transposeObjs".into()
+    }
+
+    fn call(&self, arg: Expr<T, F>) -> Result<Expr<T, F>, F> {
+        let loc = arg.get_loc();
+
+        arg.resolve()?;
+        let binding = arg.inner_ref();
+        let elems = match &binding.tok {
+            ExprType::List(items) => Ok(items),
+            _ => Err(
+                Error::new(ErrorType::Type, format!("expected list {}", arg)).reref(&arg.get_loc()),
+            ),
+        }?;
+
+        let mut new_args: BTreeMap<StrKey, Vec<Expr<T, F>>> = BTreeMap::new();
+        for inner_expr in elems.into_iter() {
+            inner_expr.resolve()?;
+            let binding = inner_expr.inner_ref();
+            let inner_obj = match &binding.tok {
+                ExprType::Object(items) => Ok(items),
+                _ => Err(Error::new(
+                    ErrorType::Type,
+                    format!("expected objects, got {}", inner_expr),
+                )
+                .reref(&inner_expr.get_loc())),
+            }?;
+
+            for (key, value) in inner_obj.iter() {
+                new_args.entry(key.clone()).or_default().push(value.clone());
+            }
+        }
+
+        let new_obj = new_args
+            .into_iter()
+            .map(|(key, values)| (key.clone(), ExprType::List(values).reref(loc.clone())))
+            .collect::<BTreeMap<StrKey, Expr<T, F>>>();
+
+        Ok(ExprType::Object(new_obj).reref(loc))
+    }
+}
+
 pub fn get_ops_builtins<T, F>() -> Result<Expr<T, F>, F>
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
@@ -165,5 +216,9 @@ where
 {
     let mut opsset = ExprSet::new();
     opsset.insert(StrKey::from("zip"), Expr::new_builtin(BuiltinOpsZip));
+    opsset.insert(
+        StrKey::from("transposeObjs"),
+        Expr::new_builtin(BuiltinOpsTransposeObjs),
+    );
     Ok(ExprType::Object(opsset).builtin())
 }
