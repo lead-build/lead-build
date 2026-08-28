@@ -208,6 +208,32 @@ where
         Ok(ExprType::Object(new_obj).reref(loc))
     }
 }
+#[derive(Debug)]
+pub struct BuiltinOpsRecurse;
+
+impl<T, F> ExprBuiltin<T, F> for BuiltinOpsRecurse
+where
+    T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
+    F: Clone + Debug + Referrable,
+{
+    fn get_name(&self) -> StrKey {
+        "recurse".into()
+    }
+
+    fn call(&self, arg: Expr<T, F>) -> Result<Expr<T, F>, F> {
+        let loc = arg.get_loc();
+        println!("Recurse loc: {}", loc.as_ref().unwrap());
+        let out = ExprType::Null.builtin();
+        let call = ExprType::FuncCall {
+            func: arg,
+            arg: out.clone(),
+        }
+        .loc(loc);
+
+        out.replace_storage(call);
+        Ok(out)
+    }
+}
 
 pub fn get_ops_builtins<T, F>() -> Result<Expr<T, F>, F>
 where
@@ -219,6 +245,10 @@ where
     opsset.insert(
         StrKey::from("transposeObjs"),
         Expr::new_builtin(BuiltinOpsTransposeObjs),
+    );
+    opsset.insert(
+        StrKey::from("recurse"),
+        Expr::new_builtin(BuiltinOpsRecurse),
     );
     Ok(ExprType::Object(opsset).builtin())
 }
