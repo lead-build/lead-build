@@ -1,4 +1,5 @@
 use crate::lang::Referrable;
+use crate::strkey::StrKey;
 
 use super::error::{Error, ErrorType, Result};
 use super::expr::{
@@ -13,7 +14,7 @@ use std::fmt::{Debug, Display};
 
 type TypeSwitchCase<T, F> = (Expr<T, F>, Expr<T, F>);
 type TypeLetSetStmt<T, F> = (Matcher<T, F>, Expr<T, F>);
-type TypeAssignStmt<T, F> = (String, Expr<T, F>);
+type TypeAssignStmt<T, F> = (StrKey, Expr<T, F>);
 
 lalrpop_mod!(grammar, "lang/grammar.rs");
 

@@ -155,6 +155,9 @@ where
         arg.resolve()?;
         let loc = arg.get_loc();
 
+        let str_input = StrKey::from("input");
+        let str_output = StrKey::from("output");
+
         /* Initialize meta variables, that may change later */
         let mut rule_args: BTreeSet<StrKey> = BTreeSet::new();
 
@@ -180,15 +183,15 @@ where
                     }
 
                     /* Also store names for validation from PbBuild */
-                    rule_args.insert(StrKey::from(name));
+                    rule_args.insert(*name);
 
                     /* Generate element */
                     Ok((
-                        StrKey::from(name),
-                        ExprType::from(Value::BuildVar(match name.as_str() {
-                            "input" => StrKey::from("in"),
-                            "output" => StrKey::from("out"),
-                            _ => StrKey::from(name),
+                        *name,
+                        ExprType::from(Value::BuildVar(match name {
+                            name if *name == str_input => StrKey::from("in"),
+                            name if *name == str_output => StrKey::from("out"),
+                            name => *name,
                         }))
                         .reref(loc.clone()),
                     ))

@@ -171,7 +171,7 @@ ExprTerm: Expr<T, F> = {
     "(" <Expr> ")"
 };
 
-ExprObject: Expr<T, F> = <l: @L> "{" <s:AssignStmt*> "}" <r: @R> => ExprType::Object(s.into_iter().map(|(k, v)| (StrKey::from(&k), v)).collect::<ExprSet<T, F>>()).toexpr(l, r, f);
+ExprObject: Expr<T, F> = <l: @L> "{" <s:AssignStmt*> "}" <r: @R> => ExprType::Object(s.into_iter().collect::<ExprSet<T, F>>()).toexpr(l, r, f);
 ExprList: Expr<T, F> = <l: @L> "[" <s:Comma<Expr>> "]" <r: @R> => ExprType::List(s).toexpr(l, r, f);
 ExprTuple: Expr<T, F> = <l: @L> "(" <s:TupleComma<Expr>> ")" <r: @R> => ExprType::Tuple(s).toexpr(l, r, f);
 
@@ -183,7 +183,7 @@ ExprTuple: Expr<T, F> = <l: @L> "(" <s:TupleComma<Expr>> ")" <r: @R> => ExprType
 LetSetStmt: TypeLetSetStmt<T, F> = <m:Matcher> "=" <e:Expr> ";" => (m, e);
 AssignStmt: TypeAssignStmt<T, F> = {
     <i:Ident> "=" <e:Expr> ";" => (i, e),
-    <i:RawString> "=" <e:Expr> ";" => (i, e),
+    <i:RawString> "=" <e:Expr> ";" => (StrKey::from(&i), e),
 };
 
 ExprVar: Expr<T, F> = <l: @L> <s:Ident> <r: @R> => ExprType::Var(s).toexpr(l, r, f);
@@ -215,9 +215,9 @@ MatcherInner: Matcher<T, F> = {
 };
 
 MatcherVar: ObjectMatch<T, F> = {
-    <i:Ident> => (i.clone(), Matcher::Ident(i), None),
+    <i:Ident> => (i, Matcher::Ident(i), None),
     <i:Ident> "=" <m:Matcher> => (i, m, None),
-    <i:Ident> "?" <d:ExprTerm> => (i.clone(), Matcher::Ident(i), Some(d)),
+    <i:Ident> "?" <d:ExprTerm> => (i, Matcher::Ident(i), Some(d)),
     <i:Ident> "=" <m:Matcher> "?" <d:ExprTerm> => (i, m, Some(d)),
 };
 
@@ -225,9 +225,9 @@ MatcherVar: ObjectMatch<T, F> = {
 // Terminals
 //
 
-Ident: String = <s:r"[a-zA-Z][a-zA-Z0-9_]*"> => {
+Ident: StrKey = <s:r"[a-zA-Z][a-zA-Z0-9_]*"> => {
     let _ : PhantomData<T> = PhantomData;
-    s.to_string()
+    StrKey::from(s)
 };
 ExprValue: Expr<T, F> = {
     <l: @L> "true" <r: @R> => unpack_bool(true).toexpr(l, r, f),

@@ -128,7 +128,7 @@ where
     #[strum(message = "literal value")]
     Value(T),
     #[strum(message = "variable reference")]
-    Var(String),
+    Var(StrKey),
     #[strum(message = "unary operator expression")]
     UnOp(ExprUnOp, Expr<T, F>),
     #[strum(message = "binary operator expression")]
@@ -769,7 +769,7 @@ where
                     ExprStorage {
                         tok: ExprType::Var(name),
                         loc: vloc,
-                    } => match &varspace.get(&StrKey::from(name)) {
+                    } => match &varspace.get(name) {
                         Some(value) => {
                             storref.loc = value.get_loc();
                             Ok(value

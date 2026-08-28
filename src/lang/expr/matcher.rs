@@ -7,7 +7,7 @@ use std::{
 use super::{Error, ErrorType, Exportable, Expr, ExprOps, ExprSet, ExprType, Referrable, Result};
 use crate::strkey::StrKey;
 
-pub type ObjectMatch<T, F> = (String, Matcher<T, F>, Option<Expr<T, F>>);
+pub type ObjectMatch<T, F> = (StrKey, Matcher<T, F>, Option<Expr<T, F>>);
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Matcher<T, F>
@@ -15,9 +15,9 @@ where
     T: Clone + PartialEq + Display + ExprOps<F>,
     F: Clone,
 {
-    Alias(Box<Matcher<T, F>>, String),
+    Alias(Box<Matcher<T, F>>, StrKey),
     DontCare,
-    Ident(String),
+    Ident(StrKey),
     Tuple(Vec<Matcher<T, F>>),
     Object(Vec<ObjectMatch<T, F>>, bool),
 }
@@ -86,10 +86,10 @@ where
     pub fn bind_defaults(&self, varscope: &ExprSet<T, F>) -> Matcher<T, F> {
         match self {
             Matcher::Alias(matcher, name) => {
-                Matcher::Alias(Box::new(matcher.bind_defaults(varscope)), name.clone())
+                Matcher::Alias(Box::new(matcher.bind_defaults(varscope)), *name)
             }
             Matcher::DontCare => Matcher::DontCare,
-            Matcher::Ident(name) => Matcher::Ident(name.clone()),
+            Matcher::Ident(name) => Matcher::Ident(*name),
             Matcher::Tuple(matchers) => Matcher::Tuple(
                 matchers
                     .iter()
@@ -101,7 +101,7 @@ where
                     .iter()
                     .map(|(name, matcher, default)| {
                         (
-                            name.clone(),
+                            *name,
                             matcher.bind_defaults(varscope),
                             default
                                 .as_ref()
@@ -153,11 +153,11 @@ where
             Matcher::Alias(matcher, name) => {
                 let mut output = matcher.run(expr.clone())?;
                 // TODO: Check if overlapping keysets
-                output.insert(StrKey::from(name), expr);
+                output.insert(*name, expr);
                 Ok(output)
             }
             Matcher::DontCare => Ok(ExprSet::new()),
-            Matcher::Ident(name) => Ok(ExprSet::from([(StrKey::from(name), expr)])),
+            Matcher::Ident(name) => Ok(ExprSet::from([(*name, expr)])),
             Matcher::Tuple(matchers) => match &expr.res_type()?.tok {
                 ExprType::Tuple(exprs) => {
                     if exprs.len() != matchers.len() {
@@ -184,7 +184,7 @@ where
 
                     for (itname, itmatch, itdefault) in items.iter() {
                         let in_expr = input
-                            .remove(&StrKey::from(itname))
+                            .remove(itname)
                             .or_else(|| itdefault.clone())
                             .ok_or_else(|| {
                                 Error::new(
