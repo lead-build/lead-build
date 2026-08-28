@@ -1,0 +1,12 @@
+|{ cwd, ops, ... }|
+let
+    mod = |l| {
+        a = "a";
+        b = "b" + l.a;
+        c = "c" + l.b;
+        out = l.c;
+
+    };
+    res = ops.recurse mod;
+in
+res.out == "cba"
