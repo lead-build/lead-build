@@ -5,70 +5,12 @@ use super::{
     ExprType,
 };
 use crate::strkey::StrKey;
-use std::collections::HashSet;
 
 fn eval(code: &str) -> Expr<TestValue, FRef> {
     let expr: Expr<TestValue, FRef> =
         ExprType::Bind(ExprSet::new(), parse_str(code, &FRef).unwrap()).builtin();
     expr.eval().unwrap();
     expr
-}
-
-fn referenced_vars(code: &str) -> HashSet<String> {
-    parse_str::<TestValue, FRef>(code, &FRef)
-        .unwrap()
-        .referenced_vars()
-        .iter()
-        .map(|k| k.as_string())
-        .collect()
-}
-
-#[test]
-fn test_referenced_vars_simple() {
-    assert_eq!(
-        referenced_vars("a + b"),
-        HashSet::from(["a".into(), "b".into()])
-    );
-}
-
-#[test]
-fn test_referenced_vars_let_bindings_are_not_free() {
-    assert_eq!(
-        referenced_vars("let a = x; in (a + y)"),
-        HashSet::from(["a".into(), "x".into(), "y".into()])
-    );
-}
-
-#[test]
-fn test_referenced_vars_function_matcher_scope() {
-    assert_eq!(
-        referenced_vars(
-            "let func = |{a = ax, b ? def, ...} @ obj| ax + b + obj.inner + cap; in (func input)"
-        ),
-        HashSet::from([
-            "ax".into(),
-            "b".into(),
-            "def".into(),
-            "obj".into(),
-            "cap".into(),
-            "func".into(),
-            "input".into(),
-        ])
-    );
-}
-
-#[test]
-fn test_referenced_vars_shadowing() {
-    assert_eq!(
-        referenced_vars("let x = a; in (let x = b; in (x + c))"),
-        HashSet::from(["x".into(), "a".into(), "b".into(), "c".into()])
-    );
-}
-
-#[test]
-fn test_referenced_in_matcher() {
-    let referenced = referenced_vars("|{a ? x, ...}| a");
-    assert!(referenced.contains("x"));
 }
 
 #[test]
@@ -106,7 +48,6 @@ fn test_parse_null() {
     let null = parse_str::<TestValue, FRef>("null", &FRef).unwrap();
 
     assert_eq!(null.to_string(), "null");
-    assert!(referenced_vars("null").is_empty());
 }
 
 #[test]

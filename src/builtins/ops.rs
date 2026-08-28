@@ -183,7 +183,7 @@ where
         }?;
 
         let mut new_args: BTreeMap<StrKey, Vec<Expr<T, F>>> = BTreeMap::new();
-        for inner_expr in elems.into_iter() {
+        for inner_expr in elems.iter() {
             inner_expr.resolve()?;
             let binding = inner_expr.inner_ref();
             let inner_obj = match &binding.tok {
@@ -196,13 +196,13 @@ where
             }?;
 
             for (key, value) in inner_obj.iter() {
-                new_args.entry(key.clone()).or_default().push(value.clone());
+                new_args.entry(*key).or_default().push(value.clone());
             }
         }
 
         let new_obj = new_args
             .into_iter()
-            .map(|(key, values)| (key.clone(), ExprType::List(values).reref(loc.clone())))
+            .map(|(key, values)| (key, ExprType::List(values).reref(loc.clone())))
             .collect::<BTreeMap<StrKey, Expr<T, F>>>();
 
         Ok(ExprType::Object(new_obj).reref(loc))

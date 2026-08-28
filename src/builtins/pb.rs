@@ -201,7 +201,11 @@ where
         .reref(loc.clone());
 
         /* Generate rule function with variable placeholders and call */
-        let rule_func: Expr<Value, F> = ExprType::FuncCall(var_obj, arg).reref(loc.clone());
+        let rule_func: Expr<Value, F> = ExprType::FuncCall {
+            arg: var_obj,
+            func: arg,
+        }
+        .reref(loc.clone());
         rule_func.resolve()?;
 
         /* Read variables */

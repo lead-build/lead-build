@@ -1,5 +1,4 @@
 use std::{
-    collections::HashSet,
     fmt::{Debug, Display},
     iter::zip,
 };
@@ -111,36 +110,6 @@ where
                     .collect(),
                 *need_all,
             ),
-        }
-    }
-
-    pub fn referenced_vars(&self) -> HashSet<StrKey> {
-        let mut referenced_vars = HashSet::new();
-        self.visit_referenced_vars(&mut referenced_vars);
-        referenced_vars
-    }
-
-    fn visit_referenced_vars(&self, referenced_vars: &mut HashSet<StrKey>) {
-        match self {
-            Matcher::Alias(inner, name) => {
-                let _ = name;
-                inner.visit_referenced_vars(referenced_vars);
-            }
-            Matcher::DontCare => {}
-            Matcher::Ident(_) => {}
-            Matcher::Tuple(matchers) => {
-                for item in matchers.iter() {
-                    item.visit_referenced_vars(referenced_vars);
-                }
-            }
-            Matcher::Object(items, _) => {
-                for (_, item_matcher, item_default) in items.iter() {
-                    if let Some(default_expr) = item_default {
-                        referenced_vars.extend(default_expr.referenced_vars());
-                    }
-                    item_matcher.visit_referenced_vars(referenced_vars);
-                }
-            }
         }
     }
 

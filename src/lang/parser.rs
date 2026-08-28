@@ -247,10 +247,10 @@ mod tests {
     fn test_parse_func_call() {
         let code = "hej 12";
         assert_eq!(
-            ExprType::FuncCall(
-                ExprType::Value(TestValue::Int(12)).builtin(),
-                ExprType::Var("hej".into()).builtin(),
-            )
+            ExprType::FuncCall {
+                arg: ExprType::Value(TestValue::Int(12)).builtin(),
+                func: ExprType::Var("hej".into()).builtin(),
+            }
             .builtin(),
             eval(code)
         );

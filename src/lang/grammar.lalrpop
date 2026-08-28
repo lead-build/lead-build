@@ -126,7 +126,7 @@ ExprNeg: Expr<T, F> = {
 // instead of:
 //    rule = pb.rule ({input, output}: {...});
 ExprFuncCall: Expr<T, F> = {
-    <l: @L> <efunc:ExprFuncCall> <earg:ExprAttrSel> <r: @R> => ExprType::FuncCall(earg, efunc).toexpr(l, r, f),
+    <l: @L> <efunc:ExprFuncCall> <earg:ExprAttrSel> <r: @R> => ExprType::FuncCall { arg: earg, func: efunc }.toexpr(l, r, f),
     <ExprAttrSel>,
 };
 

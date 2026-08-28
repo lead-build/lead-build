@@ -148,7 +148,7 @@ where
     #[strum(message = "map expression")]
     Map(ExprMapType, Expr<T, F>, Expr<T, F>, Option<Expr<T, F>>),
     #[strum(message = "function call")]
-    FuncCall(Expr<T, F>, Expr<T, F>),
+    FuncCall { arg: Expr<T, F>, func: Expr<T, F> },
     #[strum(message = "bound expression")]
     Bind(ExprSet<T, F>, Expr<T, F>),
     #[strum(message = "switch expression")]
@@ -364,10 +364,10 @@ where
     F: Clone + Debug + Referrable,
 {
     pub fn bind(&self, varspace: &ExprSet<T, F>) -> Expr<T, F> {
-        let referenced: HashSet<StrKey> = self.referenced_vars();
+        // TODO: Handle referenced vars correctly
         let filtered_varspace = varspace
             .iter()
-            .filter(|(key, _)| referenced.contains(*key))
+            //.filter(|(key, _)| referenced.contains(*key))
             .map(|(key, expr)| (*key, expr.clone()))
             .collect();
         ExprType::Bind(filtered_varspace, self.clone()).reref(self.get_loc())
@@ -375,91 +375,6 @@ where
 
     pub fn inner_ref(&self) -> Ref<'_, ExprStorage<T, F>> {
         self.0.as_ref().borrow()
-    }
-
-    pub fn referenced_vars(&self) -> HashSet<StrKey> {
-        match self.inner_ref().tok.clone() {
-            ExprType::Object(fields) => fields
-                .values()
-                .flat_map(|field| field.referenced_vars().into_iter())
-                .collect(),
-            ExprType::List(items) | ExprType::Tuple(items) | ExprType::Concat(items) => items
-                .iter()
-                .flat_map(|item| item.referenced_vars().into_iter())
-                .collect(),
-            ExprType::AttrSel(value, attr) => {
-                let mut vars = value.referenced_vars();
-                vars.extend(attr.referenced_vars());
-                vars
-            }
-            ExprType::Var(name) => HashSet::from([StrKey::from(&name)]),
-            ExprType::UnOp(_, inner) => inner.referenced_vars(),
-            ExprType::BinOp(_, lhs, rhs) => {
-                let mut vars = lhs.referenced_vars();
-                vars.extend(rhs.referenced_vars());
-                vars
-            }
-            ExprType::FuncDef(matcher, body) => {
-                let mut vars = matcher.referenced_vars();
-                vars.extend(body.referenced_vars());
-                vars
-            }
-            ExprType::Let(bindings, target) => {
-                let mut vars = HashSet::new();
-
-                for (matcher, value_expr) in bindings.iter() {
-                    vars.extend(value_expr.referenced_vars());
-                    vars.extend(matcher.referenced_vars());
-                }
-
-                vars.extend(target.referenced_vars());
-                vars
-            }
-            ExprType::Fold { func, init, input } => {
-                let mut vars = func.referenced_vars();
-                if let Some(init_expr) = init {
-                    vars.extend(init_expr.referenced_vars());
-                }
-                vars.extend(input.referenced_vars());
-                vars
-            }
-            ExprType::Map(_, func, input, filter) => {
-                let mut vars = func.referenced_vars();
-                vars.extend(input.referenced_vars());
-                if let Some(filter_expr) = filter {
-                    vars.extend(filter_expr.referenced_vars());
-                }
-                vars
-            }
-            ExprType::FuncCall(arg, func) => {
-                let mut vars = arg.referenced_vars();
-                vars.extend(func.referenced_vars());
-                vars
-            }
-            ExprType::Bind(varspace, bound_expr) => {
-                let mut vars: HashSet<StrKey> = varspace
-                    .values()
-                    .flat_map(|value| value.referenced_vars().into_iter())
-                    .collect();
-                vars.extend(bound_expr.referenced_vars());
-                vars
-            }
-            ExprType::Switch(ref_expr, cases, default_case) => {
-                let mut vars = ref_expr.referenced_vars();
-                for (matcher_expr, outcome_expr) in cases.iter() {
-                    vars.extend(matcher_expr.referenced_vars());
-                    vars.extend(outcome_expr.referenced_vars());
-                }
-                if let Some(default_expr) = default_case {
-                    vars.extend(default_expr.referenced_vars());
-                }
-                vars
-            }
-            ExprType::Value(_)
-            | ExprType::FuncDefBuiltin(_)
-            | ExprType::Null
-            | ExprType::UnderEval => HashSet::new(),
-        }
     }
 
     fn resolve_binop(
@@ -654,7 +569,7 @@ where
             ExprType::Let(..) => true,
             ExprType::Fold { .. } => true,
             ExprType::Map(..) => true,
-            ExprType::FuncCall(..) => true,
+            ExprType::FuncCall { .. } => true,
             ExprType::Bind(..) => true,
             ExprType::Switch(..) => true,
             ExprType::Null => false,
@@ -662,7 +577,11 @@ where
         } {
             trace!(
                 "{} {} at {}",
-                first_match.then(|| "Resolving").unwrap_or("   ...   "),
+                if first_match {
+                    "Resolving"
+                } else {
+                    "   ...   "
+                },
                 storref.tok.get_message().unwrap(),
                 storref
                     .loc
@@ -796,11 +715,17 @@ where
                         Ok(ExprType::BinOp(*op, lhs.bind(&varspace), rhs.bind(&varspace)).loc(loc))
                     }
                     ExprStorage {
-                        tok: ExprType::FuncCall(fargs, fexpr),
+                        tok:
+                            ExprType::FuncCall {
+                                arg: fargs,
+                                func: fexpr,
+                            },
                         ..
-                    } => Ok(
-                        ExprType::FuncCall(fargs.bind(&varspace), fexpr.bind(&varspace)).loc(loc),
-                    ),
+                    } => Ok(ExprType::FuncCall {
+                        arg: fargs.bind(&varspace),
+                        func: fexpr.bind(&varspace),
+                    }
+                    .loc(loc)),
                     ExprStorage {
                         tok: ExprType::Value(value),
                         ..
@@ -859,7 +784,11 @@ where
                     Ok(value.inner_ref().tok.clone().loc(loc))
                 }
                 ExprStorage {
-                    tok: ExprType::FuncCall(fargs, fexpr),
+                    tok:
+                        ExprType::FuncCall {
+                            arg: fargs,
+                            func: fexpr,
+                        },
                     loc,
                 } => match &*fexpr.res_type().map_err(|e| e.reref(&loc))? {
                     ExprStorage {
@@ -910,11 +839,14 @@ where
                                 item.resolve()?;
                                 output = match output {
                                     Some(prev) => Some(
-                                        ExprType::FuncCall(
-                                            item.clone(),
-                                            ExprType::FuncCall(prev, func.clone())
-                                                .reref(input_loc.clone()),
-                                        )
+                                        ExprType::FuncCall {
+                                            arg: item.clone(),
+                                            func: ExprType::FuncCall {
+                                                arg: prev,
+                                                func: func.clone(),
+                                            }
+                                            .reref(input_loc.clone()),
+                                        }
                                         .reref(item.get_loc()),
                                     ),
                                     None => Some(item.clone()),
@@ -925,7 +857,7 @@ where
                             } else {
                                 Err(Error::new(
                                     ErrorType::Eval,
-                                    format!("Fold over empty list with no init"),
+                                    "Fold over empty list with no init".to_string(),
                                 ))
                             }
                         }
@@ -974,11 +906,13 @@ where
                     if let Some(filter_expr) = filter {
                         filtered_items = Vec::new();
                         for item in input_items.iter() {
-                            let filter_result =
-                                ExprType::FuncCall(item.clone(), filter_expr.clone())
-                                    .reref(item.get_loc())
-                                    .value()?
-                                    .as_bool()?;
+                            let filter_result = ExprType::FuncCall {
+                                arg: item.clone(),
+                                func: filter_expr.clone(),
+                            }
+                            .reref(item.get_loc())
+                            .value()?
+                            .as_bool()?;
                             if filter_result {
                                 filtered_items.push(item.clone());
                             }
@@ -991,7 +925,11 @@ where
                         .into_iter()
                         .map(|iel| {
                             let loc = iel.get_loc();
-                            ExprType::FuncCall(iel, func.clone()).reref(loc)
+                            ExprType::FuncCall {
+                                arg: iel,
+                                func: func.clone(),
+                            }
+                            .reref(loc)
                         })
                         .collect::<Vec<_>>();
 
@@ -1114,6 +1052,10 @@ where
 
         self.0.as_ref().replace(storref);
         Ok(())
+    }
+
+    pub fn replace_storage(&self, storref: ExprStorage<T, F>) {
+        self.0.as_ref().replace(storref);
     }
 
     fn res_type(&self) -> Result<Ref<'_, ExprStorage<T, F>>, F> {

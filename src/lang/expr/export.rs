@@ -187,7 +187,10 @@ where
                 };
                 Ok(())
             }
-            ExprType::FuncCall(farg, fexpr) => {
+            ExprType::FuncCall {
+                arg: farg,
+                func: fexpr,
+            } => {
                 write!(f, "(")?;
                 newline(indent + 1, f)?;
                 fexpr.export(indent + 1, f)?;
