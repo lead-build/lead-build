@@ -105,9 +105,9 @@ fn btree_transpose<K: Ord + Clone, T>(
 }
 
 #[derive(Debug)]
-pub struct BuiltinOpsZip;
+pub struct BuiltinOpsTranspose;
 
-impl<T, F> ExprBuiltin<T, F> for BuiltinOpsZip
+impl<T, F> ExprBuiltin<T, F> for BuiltinOpsTranspose
 where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
     F: Clone + Debug + Referrable,
@@ -215,7 +215,7 @@ where
     F: Clone + Debug + Referrable,
 {
     let mut opsset = ExprSet::new();
-    opsset.insert(StrKey::from("zip"), Expr::new_builtin(BuiltinOpsZip));
+    opsset.insert(StrKey::from("transpose"), Expr::new_builtin(BuiltinOpsTranspose));
     opsset.insert(
         StrKey::from("transposeObjs"),
         Expr::new_builtin(BuiltinOpsTransposeObjs),
