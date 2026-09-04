@@ -9,28 +9,41 @@ pub fn add_expr_to_ninjafile(
     expr: &Expr<Value, VirtPath>,
     ninja_file: &mut NinjaFile,
 ) -> Result<(), VirtPath> {
+    add_expr_to_ninjafile_inner(expr, ninja_file, None)
+}
+
+fn add_expr_to_ninjafile_inner(
+    expr: &Expr<Value, VirtPath>,
+    ninja_file: &mut NinjaFile,
+    alias: Option<&str>,
+) -> Result<(), VirtPath> {
     expr.resolve()?;
     match &*expr.inner_ref() {
         ExprStorage {
             tok: ExprType::Value(value),
             ..
         } => {
-            if let Value::Path { depends, .. } = value {
+            if let Value::Path { path, depends, .. } = value {
                 if depends.is_empty() {
-                    return Err(Error::new(
-                        ErrorType::Custom,
-                        "Top-level value has no build dependencies",
-                    )
-                    .reref(&expr.get_loc()));
+                    let message = alias.map_or_else(
+                        || "Top-level value has no build dependencies".to_string(),
+                        |alias| format!("Top-level field '{}' has no build dependencies", alias),
+                    );
+                    return Err(Error::new(ErrorType::Custom, message).reref(&expr.get_loc()));
                 }
                 for build in depends.iter() {
                     build.populate_ninja_file(ninja_file, true)?;
                 }
+
+                if let Some(alias) = alias {
+                    ninja_file.add_alias(alias, vec![path.clone()]);
+                }
             } else {
-                return Err(
-                    Error::new(ErrorType::Custom, "Top-level value is not a path")
-                        .reref(&expr.get_loc()),
+                let message = alias.map_or_else(
+                    || "Top-level value is not a path".to_string(),
+                    |alias| format!("Top-level field '{}' is not a path", alias),
                 );
+                return Err(Error::new(ErrorType::Custom, message).reref(&expr.get_loc()));
             }
             Ok(())
         }
@@ -39,25 +52,7 @@ pub fn add_expr_to_ninjafile(
             ..
         } => {
             for item in list.iter() {
-                item.resolve()?;
-                let evaluated = item.value()?;
-                if let Value::Path { depends, .. } = evaluated {
-                    if depends.is_empty() {
-                        return Err(Error::new(
-                            ErrorType::Custom,
-                            "Top-level list item has no build dependencies",
-                        )
-                        .reref(&item.get_loc()));
-                    }
-                    for build in depends.iter() {
-                        build.populate_ninja_file(ninja_file, true)?;
-                    }
-                } else {
-                    return Err(
-                        Error::new(ErrorType::Custom, "Top-level list item is not a path")
-                            .reref(&item.get_loc()),
-                    );
-                }
+                add_expr_to_ninjafile_inner(item, ninja_file, alias)?;
             }
             Ok(())
         }
@@ -67,29 +62,7 @@ pub fn add_expr_to_ninjafile(
         } => {
             for (name, value) in fields.iter() {
                 let name = name.as_string();
-                value.resolve()?;
-                let evaluated = value.value()?;
-                if let Value::Path { path, depends } = evaluated {
-                    if depends.is_empty() {
-                        return Err(Error::new(
-                            ErrorType::Custom,
-                            format!("Top-level field '{}' has no build dependencies", name),
-                        )
-                        .reref(&value.get_loc()));
-                    }
-
-                    for build in depends.iter() {
-                        build.populate_ninja_file(ninja_file, true)?;
-                    }
-
-                    ninja_file.add_alias(&name, vec![path]);
-                } else {
-                    return Err(Error::new(
-                        ErrorType::Custom,
-                        format!("Top-level field '{}' is not a path", name),
-                    )
-                    .reref(&value.get_loc()));
-                }
+                add_expr_to_ninjafile_inner(value, ninja_file, Some(&name))?;
             }
             Ok(())
         }

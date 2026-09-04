@@ -1,0 +1,10 @@
+ninja_contains = [
+	"rule cc_c_o",
+	"command = cc -c ${in} -o ${out}",
+	"build {{CASE_DIR}}/out1.o: cc_c_o {{CASE_DIR}}/src.c",
+	"build {{CASE_DIR}}/out2.o: cc_c_o {{CASE_DIR}}/src.c",
+	"build {{CASE_DIR}}/out3.o: cc_c_o {{CASE_DIR}}/src.c",
+	"build release: phony {{CASE_DIR}}/out1.o",
+	"build debug: phony {{CASE_DIR}}/out2.o {{CASE_DIR}}/out3.o",
+	"default {{CASE_DIR}}/out1.o {{CASE_DIR}}/out2.o {{CASE_DIR}}/out3.o",
+]

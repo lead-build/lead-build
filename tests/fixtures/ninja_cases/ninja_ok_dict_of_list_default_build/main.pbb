@@ -1,0 +1,33 @@
+|{ cwd, pb, ... }|
+let
+    cc_rule = pb.rule (
+        |{ input, output }|{
+            command = [
+                "cc",
+                "-c",
+                input,
+                "-o",
+                output
+            ];
+            description = "compile";
+        }
+    );
+in
+{
+    release = [
+        cc_rule {
+            input = cwd / "src.c";
+            output = cwd / "out1.o";
+        }
+    ];
+    debug = [
+        cc_rule {
+            input = cwd / "src.c";
+            output = cwd / "out2.o";
+        },
+        cc_rule {
+            input = cwd / "src.c";
+            output = cwd / "out3.o";
+        }
+    ];
+}
