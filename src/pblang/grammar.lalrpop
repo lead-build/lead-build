@@ -382,16 +382,16 @@ ObjectMatcher: ObjectMatcher = {
         },
 };
 
-Ident: StrKey = <s:"ident"> => StrKey::from(s);
+Ident: StrKey = <s:"ident"> => s;
 ExprValue: PbNode = {
     <l:@L> "true" <r:@R> => PbNode::new(PbNodeKind::Bool(true), l, r, f),
     <l:@L> "false" <r:@R> => PbNode::new(PbNodeKind::Bool(false), l, r, f),
     <l:@L> <value:"num"> <r:@R> =>
-        PbNode::new(PbNodeKind::Int(value.into()), l, r, f),
+        PbNode::new(PbNodeKind::Int(value), l, r, f),
     <l:@L> <value:RawString> <r:@R> =>
         PbNode::new(PbNodeKind::String(value), l, r, f),
 };
-RawString: String = <s:"str"> => s.into();
+RawString: String = <s:"str"> => s;
 
 Comma<T>: Delimited<T> = {
     <mut values:(<T> ",")*> <last:T?> => match last {
