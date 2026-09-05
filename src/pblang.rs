@@ -68,7 +68,7 @@ pub enum PbNodeKind {
     Tuple(Delimited<PbNode>),
     Bool(bool),
     Int(String),
-    String(String),
+    String(Vec<StringPart>),
     Var(String),
     Null,
     OutputPlaceholder(String),
@@ -77,6 +77,13 @@ pub enum PbNodeKind {
         omitted: usize,
     },
     OutputCycle,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StringPart {
+    /// Raw source text, escape sequences undecoded, for exact round-trip.
+    Chunk(String),
+    Embed(Box<PbNode>),
 }
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -133,7 +140,7 @@ pub struct Assignment {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Key {
     Ident(String, Option<Span>),
-    String(String, Option<Span>),
+    String(Vec<StringPart>, Option<Span>),
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct SwitchCase {

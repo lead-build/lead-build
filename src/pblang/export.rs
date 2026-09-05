@@ -1,6 +1,6 @@
 use super::{
     Assignment, Attr, BinaryOp, Delimited, Key, LetBinding, MapKind, Matcher, MatcherKind,
-    ObjectMatcher, PbNode, PbNodeKind, SwitchCase, UnaryOp,
+    ObjectMatcher, PbNode, PbNodeKind, StringPart, SwitchCase, UnaryOp,
 };
 use std::fmt::{Result, Write};
 
@@ -135,7 +135,8 @@ impl PbLangExportable for PbNode {
             PbNodeKind::List(items) => export_delimited(writer, "[", "]", items),
             PbNodeKind::Tuple(items) => export_delimited(writer, "(", ")", items),
             PbNodeKind::Bool(value) => write!(writer, "{value}"),
-            PbNodeKind::Int(value) | PbNodeKind::String(value) => writer.write_str(value),
+            PbNodeKind::Int(value) => writer.write_str(value),
+            PbNodeKind::String(parts) => export_string_parts(writer, parts),
             PbNodeKind::Var(name) => write!(writer, "{name}"),
             PbNodeKind::Null => writer.write_str("null"),
             PbNodeKind::OutputPlaceholder(label) => write!(writer, "<{label}>"),
@@ -265,9 +266,27 @@ impl PbLangExportable for Key {
     {
         match self {
             Key::Ident(key, _) => write!(writer, "{key}"),
-            Key::String(key, _) => writer.write_str(key),
+            Key::String(parts, _) => export_string_parts(writer, parts),
         }
     }
+}
+
+fn export_string_parts<W>(writer: &mut W, parts: &[StringPart]) -> Result
+where
+    W: Write,
+{
+    writer.write_str("\"")?;
+    for part in parts {
+        match part {
+            StringPart::Chunk(raw) => writer.write_str(raw)?,
+            StringPart::Embed(expr) => {
+                writer.write_str("${")?;
+                expr.export(writer)?;
+                writer.write_str("}")?;
+            }
+        }
+    }
+    writer.write_str("\"")
 }
 
 impl PbLangExportable for SwitchCase {

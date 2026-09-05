@@ -1,7 +1,7 @@
 use super::{
     Assignment, Attr, BinaryOp, Delimited, Key, LetBinding, MapKind,
     Matcher, MatcherKind, ObjectMatcher, PbNode, PbNodeKind,
-    Span, SwitchCase, UnaryOp,
+    Span, StringPart, SwitchCase, UnaryOp,
     lexer::{
         Tok,
         LexError,
@@ -60,7 +60,11 @@ extern {
 
         "ident"     => Tok::Ident(<String>),
         "num"       => Tok::Number(<String>),
-        "str"       => Tok::Str(<String>),
+
+        "strquote"      => Tok::StringQuote,
+        "strchunk"      => Tok::StringChunk(<String>),
+        "strembedstart" => Tok::StringEmbedStart,
+        "strembedend"   => Tok::StringEmbedEnd,
     }
 }
 
@@ -316,7 +320,7 @@ AssignStmt: Assignment = {
             value,
             span: Some(Span { start: l, end: r }),
         },
-    <l:@L> <key:RawString> "=" <value:Expr> ";" <r:@R> =>
+    <l:@L> <key:StringLit> "=" <value:Expr> ";" <r:@R> =>
         Assignment {
             key: Key::String(key, Some(Span { start: l, end: r })),
             value,
@@ -388,10 +392,15 @@ ExprValue: PbNode = {
     <l:@L> "false" <r:@R> => PbNode::new(PbNodeKind::Bool(false), l, r, f),
     <l:@L> <value:"num"> <r:@R> =>
         PbNode::new(PbNodeKind::Int(value), l, r, f),
-    <l:@L> <value:RawString> <r:@R> =>
+    <l:@L> <value:StringLit> <r:@R> =>
         PbNode::new(PbNodeKind::String(value), l, r, f),
 };
-RawString: String = <s:"str"> => s;
+
+StringLit: Vec<StringPart> = "strquote" <parts:StringPart*> "strquote" => parts;
+StringPart: StringPart = {
+    <s:"strchunk"> => StringPart::Chunk(s),
+    "strembedstart" <e:Expr> "strembedend" => StringPart::Embed(Box::new(e)),
+};
 
 Comma<T>: Delimited<T> = {
     <mut values:(<T> ",")*> <last:T?> => match last {

@@ -3,11 +3,10 @@ use super::expr::matcher::ObjectMatch;
 use super::expr::{
     Exportable, Expr, ExprBinOp, ExprMapType, ExprOps, ExprSet, ExprType, ExprUnOp, Matcher,
 };
-use super::stringdecode::{StringType, string_decode};
 use crate::strkey::StrKey;
 use crate::{
     pbexpr::Referrable,
-    pblang::{self, Attr, BinaryOp, Key, MapKind, MatcherKind, PbNodeKind, Visitor},
+    pblang::{self, Attr, BinaryOp, Key, MapKind, MatcherKind, PbNodeKind, StringPart, Visitor},
 };
 use std::fmt::{Debug, Display};
 
@@ -64,14 +63,13 @@ where
     pblang::Visitor::<T, F>::visit_expr(&ExprGenerator { file }, &tree)
 }
 
-fn unescape_str(input: &str) -> String {
+/// Decodes escape sequences in a raw string chunk (as produced by the lexer:
+/// no surrounding quotes, `${`/`"` already split out as separate tokens).
+fn unescape_chunk(input: &str) -> String {
     let mut out = String::new();
     let mut chars = input.chars();
 
-    let _ = chars.next(); // TODO: expect "
-
     while let Some(c) = match chars.next() {
-        Some('"') => None,
         Some('\\') => match chars.next() {
             Some('n') => Some('\n'),
             Some('r') => Some('\r'),
@@ -92,8 +90,12 @@ fn unescape_str(input: &str) -> String {
             Some(c) => Some(c),
             None => panic!("Unmatched escape seq"),
         },
+        Some('$') => match chars.next() {
+            Some('$') => Some('$'),
+            _ => unreachable!("lexer only allows '$' as part of a '$$' escape"),
+        },
         Some(c) => Some(c),
-        None => panic!("invalid string"),
+        None => None,
     } {
         out.push(c);
     }
@@ -269,7 +271,18 @@ where
                             Ok((
                                 match &assignment.key {
                                     Key::Ident(key, _) => StrKey::from(key),
-                                    Key::String(raw, _) => StrKey::from(unescape_str(raw).as_str()),
+                                    Key::String(parts, span) => {
+                                        let key_loc = span.as_ref().unwrap_or(loc);
+                                        if let [StringPart::Chunk(part)] = &parts[..] {
+                                            StrKey::from(part)
+                                        } else {
+                                            return Err(Error::new(
+                                                ErrorType::Parse,
+                                                "object keys cannot contain string interpolation",
+                                            )
+                                            .loc(key_loc.start, key_loc.end, self.file));
+                                        }
+                                    }
                                 },
                                 self.visit_expr(&assignment.value)?,
                             ))
@@ -321,24 +334,23 @@ where
                 ExprType::Value(T::parse_int(value).expect("Error parsing int")),
                 loc,
             ),
-            PbNodeKind::String(raw) => {
-                let parts = string_decode(&unescape_str(raw))
-                    .unwrap()
-                    .into_iter()
+            PbNodeKind::String(parts) => {
+                let pieces = parts
+                    .iter()
                     .map(|part| match part {
-                        StringType::Str(value) => T::parse_string(value)
+                        StringPart::Chunk(raw) => T::parse_string(unescape_chunk(raw))
                             .map(|value| self.expr(ExprType::Value(value), loc))
                             .ok_or_else(|| {
                                 Error::new(ErrorType::Parse, "Error parsing string")
                                     .loc(loc.start, loc.end, self.file)
                             }),
-                        StringType::Expr(code) => parse_str(&code, self.file),
+                        StringPart::Embed(expr) => self.visit_expr(expr),
                     })
                     .collect::<Result<Vec<_>, F>>()?;
-                if parts.len() == 1 {
-                    parts.into_iter().next().unwrap()
+                if pieces.len() == 1 {
+                    pieces.into_iter().next().unwrap()
                 } else {
-                    self.expr(ExprType::Concat(parts), loc)
+                    self.expr(ExprType::Concat(pieces), loc)
                 }
             }
             PbNodeKind::Var(name) => self.expr(ExprType::Var(StrKey::from(name)), loc),

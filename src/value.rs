@@ -52,7 +52,9 @@ impl Exportable for Value {
                 crate::pblang::PbNodeKind::Int(v.to_string()),
             )),
             Value::String(v) => Ok(crate::pblang::PbNode::generated(
-                crate::pblang::PbNodeKind::String(format!("\"{v}\"")),
+                crate::pblang::PbNodeKind::String(vec![crate::pblang::StringPart::Chunk(
+                    v.clone(),
+                )]),
             )),
             Value::Bool(v) => Ok(crate::pblang::PbNode::generated(
                 crate::pblang::PbNodeKind::Bool(*v),

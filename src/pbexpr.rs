@@ -1,7 +1,6 @@
 mod error;
 mod expr;
 mod parser;
-mod stringdecode;
 
 #[cfg(test)]
 mod testvalue;

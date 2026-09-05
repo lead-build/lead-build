@@ -8,7 +8,7 @@ use super::{
     expr::ExprOps,
     parser::ParsableValue,
 };
-use crate::pblang::{PbNode, PbNodeKind, export::PbLangExportable};
+use crate::pblang::{PbNode, PbNodeKind, StringPart, export::PbLangExportable};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FRef;
@@ -35,7 +35,9 @@ impl Exportable for TestValue {
     fn export(&self) -> crate::pbexpr::ExportResult<PbNode> {
         match self {
             TestValue::Int(v) => Ok(PbNode::generated(PbNodeKind::Int(v.to_string()))),
-            TestValue::String(v) => Ok(PbNode::generated(PbNodeKind::String(format!("\"{v}\"")))),
+            TestValue::String(v) => Ok(PbNode::generated(PbNodeKind::String(vec![
+                StringPart::Chunk(v.clone()),
+            ]))),
             TestValue::Bool(v) => Ok(PbNode::generated(PbNodeKind::Bool(*v))),
         }
     }
