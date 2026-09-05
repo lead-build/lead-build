@@ -343,6 +343,14 @@ where
             }
             PbNodeKind::Var(name) => self.expr(ExprType::Var(*name), loc),
             PbNodeKind::Null => self.expr(ExprType::Null, loc),
+            PbNodeKind::OutputPlaceholder(_)
+            | PbNodeKind::OutputElided { .. }
+            | PbNodeKind::OutputCycle => {
+                return Err(Error::new(
+                    ErrorType::Parse,
+                    "diagnostic CST nodes cannot be parsed",
+                ));
+            }
         };
         Ok(value)
     }

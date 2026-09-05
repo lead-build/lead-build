@@ -3,7 +3,7 @@ pub mod matcher;
 
 use super::error::{Error, ErrorType, Loc, Referrable, Result};
 use crate::strkey::StrKey;
-pub use export::Exportable;
+pub use export::{ExportError, ExportResult, Exportable};
 pub use matcher::Matcher;
 use std::{
     cell::{Ref, RefCell},
@@ -194,8 +194,8 @@ where
 
 impl<T, F> ExprType<T, F>
 where
-    T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug + Referrable,
+    T: Clone + PartialEq + Display + ExprOps<F>,
+    F: Clone,
 {
     pub fn reref(self: ExprType<T, F>, loc: Option<Loc<F>>) -> Expr<T, F> {
         Expr(Rc::new(RefCell::new(ExprStorage { tok: self, loc })))
@@ -274,7 +274,17 @@ where
     F: Clone + Debug + Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.export(0, f)
+        use crate::pbcst::export::Exportable as PbExportable;
+
+        match Exportable::export(self) {
+            Ok(node) => f.write_str(&PbExportable::to_source(&node)),
+            Err(error) => {
+                let node = crate::pbcst::PbNode::generated(
+                    crate::pbcst::PbNodeKind::OutputPlaceholder(error.to_string()),
+                );
+                f.write_str(&PbExportable::to_source(&node))
+            }
+        }
     }
 }
 
@@ -284,7 +294,17 @@ where
     F: Clone + Debug + Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.export(0, f)
+        use crate::pbcst::export::Exportable as PbExportable;
+
+        match Exportable::export(self) {
+            Ok(node) => f.write_str(&PbExportable::to_source(&node)),
+            Err(error) => {
+                let node = crate::pbcst::PbNode::generated(
+                    crate::pbcst::PbNodeKind::OutputPlaceholder(error.to_string()),
+                );
+                f.write_str(&PbExportable::to_source(&node))
+            }
+        }
     }
 }
 
@@ -328,8 +348,8 @@ where
 
 impl<T, F> Default for ExprStorage<T, F>
 where
-    T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug + Referrable,
+    T: Clone + PartialEq + Display + ExprOps<F>,
+    F: Clone,
 {
     fn default() -> Self {
         Self {

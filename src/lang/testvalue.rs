@@ -31,18 +31,25 @@ pub enum TestValue {
 }
 
 impl Exportable for TestValue {
-    fn export(&self, _indent: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn export(&self) -> crate::lang::ExportResult<crate::pbcst::PbNode> {
         match self {
-            TestValue::Int(v) => v.fmt(f),
-            TestValue::String(v) => v.fmt(f),
-            TestValue::Bool(v) => v.fmt(f),
+            TestValue::Int(v) => Ok(crate::pbcst::PbNode::generated(
+                crate::pbcst::PbNodeKind::Int(v.to_string()),
+            )),
+            TestValue::String(v) => Ok(crate::pbcst::PbNode::generated(
+                crate::pbcst::PbNodeKind::String(format!("\"{v}\"")),
+            )),
+            TestValue::Bool(v) => Ok(crate::pbcst::PbNode::generated(
+                crate::pbcst::PbNodeKind::Bool(*v),
+            )),
         }
     }
 }
 
 impl Display for TestValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.export(0, f)
+        use crate::pbcst::export::Exportable as PbExportable;
+        self.export().unwrap().to_source().fmt(f)
     }
 }
 

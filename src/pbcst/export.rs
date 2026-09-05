@@ -2,61 +2,57 @@ use super::{
     Assignment, Attr, BinaryOp, Delimited, Key, LetBinding, MapKind, Matcher, MatcherKind,
     ObjectMatcher, PbNode, PbNodeKind, SwitchCase, UnaryOp,
 };
-use std::io::{self, Write};
+use std::fmt::{Result, Write};
 
 pub trait Exportable {
-    fn export<W>(&self, writer: &mut W) -> io::Result<()>
+    fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write;
 
     fn to_source(&self) -> String {
-        let mut output = Vec::new();
+        let mut output = String::new();
         self.export(&mut output)
-            .expect("writing to a byte vector cannot fail");
-        String::from_utf8(output).expect("CST source is always valid UTF-8")
+            .expect("writing to a string cannot fail");
+        output
     }
 }
 
 impl Exportable for PbNode {
-    fn export<W>(&self, writer: &mut W) -> io::Result<()>
+    fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
     {
-        if let Some(source) = &self.source {
-            return writer.write_all(source.as_bytes());
-        }
-
         match &self.kind {
             PbNodeKind::Group(value) => {
-                writer.write_all(b"(")?;
+                writer.write_str("(")?;
                 value.export(writer)?;
-                writer.write_all(b")")
+                writer.write_str(")")
             }
             PbNodeKind::Let(bindings, body) => {
-                writer.write_all(b"let ")?;
+                writer.write_str("let ")?;
                 for binding in bindings {
                     binding.export(writer)?;
                 }
-                writer.write_all(b"in ")?;
+                writer.write_str("in ")?;
                 body.export(writer)
             }
             PbNodeKind::Bind(assignments, body) => {
-                writer.write_all(b"bind ")?;
+                writer.write_str("bind ")?;
                 for assignment in assignments {
                     assignment.export(writer)?;
                 }
-                writer.write_all(b"in ")?;
+                writer.write_str("in ")?;
                 body.export(writer)
             }
             PbNodeKind::FuncDef(matchers, body) => {
-                writer.write_all(b"|")?;
+                writer.write_str("|")?;
                 for (index, matcher) in matchers.iter().enumerate() {
                     if index > 0 {
-                        writer.write_all(b" ")?;
+                        writer.write_str(" ")?;
                     }
                     matcher.export(writer)?;
                 }
-                writer.write_all(b"|")?;
+                writer.write_str("|")?;
                 body.export(writer)
             }
             PbNodeKind::Binary(op, lhs, rhs) => {
@@ -70,24 +66,24 @@ impl Exportable for PbNode {
             }
             PbNodeKind::FuncCall(func, arg) => {
                 func.export(writer)?;
-                writer.write_all(b" ")?;
+                writer.write_str(" ")?;
                 arg.export(writer)
             }
             PbNodeKind::AttrSel(lhs, attr) => {
                 lhs.export(writer)?;
-                writer.write_all(b".")?;
+                writer.write_str(".")?;
                 attr.export(writer)
             }
             PbNodeKind::Fold { func, init, input } => {
-                writer.write_all(b"(")?;
+                writer.write_str("(")?;
                 func.export(writer)?;
-                writer.write_all(b" for ")?;
+                writer.write_str(" for ")?;
                 if let Some(init) = init {
                     init.export(writer)?;
-                    writer.write_all(b":")?;
+                    writer.write_str(":")?;
                 }
                 input.export(writer)?;
-                writer.write_all(b")")
+                writer.write_str(")")
             }
             PbNodeKind::Map {
                 kind,
@@ -95,20 +91,20 @@ impl Exportable for PbNode {
                 input,
                 filter,
             } => {
-                writer.write_all(match kind {
-                    MapKind::List => b"[",
-                    MapKind::Object => b"{",
+                writer.write_str(match kind {
+                    MapKind::List => "[",
+                    MapKind::Object => "{",
                 })?;
                 func.export(writer)?;
-                writer.write_all(b" for ")?;
+                writer.write_str(" for ")?;
                 input.export(writer)?;
                 if let Some(filter) = filter {
-                    writer.write_all(b" if ")?;
+                    writer.write_str(" if ")?;
                     filter.export(writer)?;
                 }
-                writer.write_all(match kind {
-                    MapKind::List => b"]",
-                    MapKind::Object => b"}",
+                writer.write_str(match kind {
+                    MapKind::List => "]",
+                    MapKind::Object => "}",
                 })
             }
             PbNodeKind::Switch {
@@ -116,94 +112,97 @@ impl Exportable for PbNode {
                 cases,
                 default,
             } => {
-                writer.write_all(b"switch ")?;
+                writer.write_str("switch ")?;
                 input.export(writer)?;
-                writer.write_all(b" {")?;
+                writer.write_str(" {")?;
                 for case in cases {
                     case.export(writer)?;
                 }
                 if let Some(default) = default {
-                    writer.write_all(b"_=>")?;
+                    writer.write_str("_=>")?;
                     default.export(writer)?;
-                    writer.write_all(b";")?;
+                    writer.write_str(";")?;
                 }
-                writer.write_all(b"}")
+                writer.write_str("}")
             }
             PbNodeKind::Object(items) => {
-                writer.write_all(b"{")?;
+                writer.write_str("{")?;
                 for item in items {
                     item.export(writer)?;
                 }
-                writer.write_all(b"}")
+                writer.write_str("}")
             }
-            PbNodeKind::List(items) => export_delimited(writer, b"[", b"]", items),
-            PbNodeKind::Tuple(items) => export_delimited(writer, b"(", b")", items),
+            PbNodeKind::List(items) => export_delimited(writer, "[", "]", items),
+            PbNodeKind::Tuple(items) => export_delimited(writer, "(", ")", items),
             PbNodeKind::Bool(value) => write!(writer, "{value}"),
-            PbNodeKind::Int(value) | PbNodeKind::String(value) => {
-                writer.write_all(value.as_bytes())
-            }
+            PbNodeKind::Int(value) | PbNodeKind::String(value) => writer.write_str(value),
             PbNodeKind::Var(name) => write!(writer, "{name}"),
-            PbNodeKind::Null => writer.write_all(b"null"),
+            PbNodeKind::Null => writer.write_str("null"),
+            PbNodeKind::OutputPlaceholder(label) => write!(writer, "<{label}>"),
+            PbNodeKind::OutputElided { label, omitted } => {
+                write!(writer, "<{label}; {omitted} omitted>")
+            }
+            PbNodeKind::OutputCycle => writer.write_str("<recursive expression>"),
         }
     }
 }
 
 impl Exportable for BinaryOp {
-    fn export<W>(&self, writer: &mut W) -> io::Result<()>
+    fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
     {
-        writer.write_all(match self {
-            Self::HasAttr => b"?",
-            Self::ListConcat => b"++",
-            Self::Mult => b"*",
-            Self::Div => b"/",
-            Self::Sub => b"-",
-            Self::Add => b"+",
-            Self::Update => b"//",
-            Self::Lt => b"<",
-            Self::Le => b"<=",
-            Self::Gt => b">",
-            Self::Ge => b">=",
-            Self::Eq => b"==",
-            Self::Neq => b"!=",
-            Self::LogAnd => b"&&",
-            Self::LogOr => b"||",
-            Self::LogImpl => b"->",
+        writer.write_str(match self {
+            Self::HasAttr => "?",
+            Self::ListConcat => "++",
+            Self::Mult => "*",
+            Self::Div => "/",
+            Self::Sub => "-",
+            Self::Add => "+",
+            Self::Update => "//",
+            Self::Lt => "<",
+            Self::Le => "<=",
+            Self::Gt => ">",
+            Self::Ge => ">=",
+            Self::Eq => "==",
+            Self::Neq => "!=",
+            Self::LogAnd => "&&",
+            Self::LogOr => "||",
+            Self::LogImpl => "->",
         })
     }
 }
 
 impl Exportable for UnaryOp {
-    fn export<W>(&self, writer: &mut W) -> io::Result<()>
+    fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
     {
-        writer.write_all(match self {
-            Self::Neg => b"-",
-            Self::Not => b"!",
+        writer.write_str(match self {
+            Self::Neg => "-",
+            Self::Not => "!",
         })
     }
 }
 
 impl Exportable for Attr {
-    fn export<W>(&self, writer: &mut W) -> io::Result<()>
+    fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
     {
         match self {
             Attr::Ident(name, _) => write!(writer, "{name}"),
             Attr::Dynamic(value) => {
-                writer.write_all(b"{")?;
+                writer.write_str("{")?;
                 value.export(writer)?;
-                writer.write_all(b"}")
+                writer.write_str("}")
             }
         }
     }
 }
 
 impl Exportable for Matcher {
-    fn export<W>(&self, writer: &mut W) -> io::Result<()>
+    fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
     {
@@ -212,89 +211,89 @@ impl Exportable for Matcher {
                 matcher.export(writer)?;
                 write!(writer, "@{name}")
             }
-            MatcherKind::DontCare => writer.write_all(b"_"),
+            MatcherKind::DontCare => writer.write_str("_"),
             MatcherKind::Ident(name) => write!(writer, "{name}"),
-            MatcherKind::Tuple(items) => export_delimited(writer, b"(", b")", items),
+            MatcherKind::Tuple(items) => export_delimited(writer, "(", ")", items),
             MatcherKind::Object { fields, exhaustive } => {
-                writer.write_all(b"{")?;
+                writer.write_str("{")?;
                 for (index, field) in fields.iter().enumerate() {
                     if index > 0 {
-                        writer.write_all(b",")?;
+                        writer.write_str(",")?;
                     }
                     field.export(writer)?;
                 }
                 if !exhaustive {
                     if !fields.is_empty() {
-                        writer.write_all(b",")?;
+                        writer.write_str(",")?;
                     }
-                    writer.write_all(b"...")?;
+                    writer.write_str("...")?;
                 }
-                writer.write_all(b"}")
+                writer.write_str("}")
             }
         }
     }
 }
 
 impl Exportable for LetBinding {
-    fn export<W>(&self, writer: &mut W) -> io::Result<()>
+    fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
     {
         self.matcher.export(writer)?;
-        writer.write_all(b"=")?;
+        writer.write_str("=")?;
         self.value.export(writer)?;
-        writer.write_all(b";")
+        writer.write_str(";")
     }
 }
 
 impl Exportable for Assignment {
-    fn export<W>(&self, writer: &mut W) -> io::Result<()>
+    fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
     {
         self.key.export(writer)?;
-        writer.write_all(b"=")?;
+        writer.write_str("=")?;
         self.value.export(writer)?;
-        writer.write_all(b";")
+        writer.write_str(";")
     }
 }
 
 impl Exportable for Key {
-    fn export<W>(&self, writer: &mut W) -> io::Result<()>
+    fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
     {
         match self {
             Key::Ident(key, _) => write!(writer, "{key}"),
-            Key::String(key, _) => writer.write_all(key.as_bytes()),
+            Key::String(key, _) => writer.write_str(key),
         }
     }
 }
 
 impl Exportable for SwitchCase {
-    fn export<W>(&self, writer: &mut W) -> io::Result<()>
+    fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
     {
         self.matcher.export(writer)?;
-        writer.write_all(b"=>")?;
+        writer.write_str("=>")?;
         self.value.export(writer)?;
-        writer.write_all(b";")
+        writer.write_str(";")
     }
 }
 
 impl Exportable for ObjectMatcher {
-    fn export<W>(&self, writer: &mut W) -> io::Result<()>
+    fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
     {
         write!(writer, "{}", self.key)?;
         if !matches!(&self.matcher.kind, MatcherKind::Ident(name) if *name == self.key) {
-            writer.write_all(b"=")?;
+            writer.write_str("=")?;
             self.matcher.export(writer)?;
         }
         if let Some(default) = &self.default {
-            writer.write_all(b"?")?;
+            writer.write_str("?")?;
             default.export(writer)?;
         }
         Ok(())
@@ -303,23 +302,23 @@ impl Exportable for ObjectMatcher {
 
 fn export_delimited<W, T>(
     writer: &mut W,
-    open: &[u8],
-    close: &[u8],
+    open: &str,
+    close: &str,
     delimited: &Delimited<T>,
-) -> io::Result<()>
+) -> Result
 where
     W: Write,
     T: Exportable,
 {
-    writer.write_all(open)?;
+    writer.write_str(open)?;
     for (index, item) in delimited.items.iter().enumerate() {
         if index > 0 {
-            writer.write_all(b",")?;
+            writer.write_str(",")?;
         }
         item.export(writer)?;
     }
     if delimited.trailing {
-        writer.write_all(b",")?;
+        writer.write_str(",")?;
     }
-    writer.write_all(close)
+    writer.write_str(close)
 }

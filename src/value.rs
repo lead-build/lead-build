@@ -45,29 +45,29 @@ impl Value {
 }
 
 impl Exportable for Value {
-    fn export(&self, _indent: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn export(&self) -> crate::lang::ExportResult<crate::pbcst::PbNode> {
         match self {
-            Value::Int(v) => v.fmt(f),
-            Value::String(v) => write!(f, "\"{}\"", v),
-            Value::Path { path: v, .. } => v.fmt(f),
-            Value::Bool(v) => v.fmt(f),
-            Value::BuildVar(v) => write!(f, "${}", v),
-            Value::BuildConcat(vs) => {
-                for (i, v) in vs.iter().enumerate() {
-                    if i != 0 {
-                        write!(f, " + ")?;
-                    }
-                    v.fmt(f)?;
-                }
-                Ok(())
-            }
+            Value::Int(v) => Ok(crate::pbcst::PbNode::generated(
+                crate::pbcst::PbNodeKind::Int(v.to_string()),
+            )),
+            Value::String(v) => Ok(crate::pbcst::PbNode::generated(
+                crate::pbcst::PbNodeKind::String(format!("\"{v}\"")),
+            )),
+            Value::Bool(v) => Ok(crate::pbcst::PbNode::generated(
+                crate::pbcst::PbNodeKind::Bool(*v),
+            )),
+            _ => Err(crate::lang::ExportError("value cannot be exported".into())),
         }
     }
 }
 
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.export(0, f)
+        use crate::pbcst::export::Exportable as PbExportable;
+        match self.export() {
+            Ok(node) => node.to_source().fmt(f),
+            Err(error) => error.fmt(f),
+        }
     }
 }
 
