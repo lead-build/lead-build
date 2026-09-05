@@ -60,8 +60,8 @@ where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
     F: Clone + Debug + Referrable,
 {
-    let tree = pbcst::parse(code, file).map_err(|error| transform_parse_error(error, file))?;
-    pbcst::Visitor::<T, F>::visit_expr(&ExprGenerator, &tree)
+    let tree = pbcst::parse(code).map_err(|error| transform_parse_error(error, file))?;
+    pbcst::Visitor::<T, F>::visit_expr(&ExprGenerator { file }, &tree)
 }
 
 fn unescape_str(input: &str) -> String {
@@ -101,19 +101,21 @@ fn unescape_str(input: &str) -> String {
     out
 }
 
-struct ExprGenerator;
+struct ExprGenerator<'a, F> {
+    file: &'a F,
+}
 
-impl ExprGenerator {
-    fn expr<T, F>(&self, kind: ExprType<T, F>, loc: &pbcst::Loc<F>) -> Expr<T, F>
+impl<F> ExprGenerator<'_, F> {
+    fn expr<T>(&self, kind: ExprType<T, F>, span: &pbcst::Span) -> Expr<T, F>
     where
         T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
         F: Clone + Debug + Referrable,
     {
-        kind.toexpr(loc.left, loc.right, &loc.file)
+        kind.toexpr(span.left, span.right, self.file)
     }
 }
 
-impl<T, F> Visitor<T, F> for ExprGenerator
+impl<T, F> Visitor<T, F> for ExprGenerator<'_, F>
 where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
     F: Clone + Debug + Referrable,
@@ -121,9 +123,10 @@ where
     type ExprOutput = Result<Expr<T, F>, F>;
     type MatcherOutput = Result<Matcher<T, F>, F>;
 
-    fn visit_expr(&self, expr: &pbcst::PbNode<F>) -> Self::ExprOutput {
+    fn visit_expr(&self, expr: &pbcst::PbNode) -> Self::ExprOutput {
         use BinaryOp::*;
 
+        let loc = expr.span.as_ref().expect("parsed CST nodes have spans");
         let value = match &expr.kind {
             PbNodeKind::Group(value) => self.visit_expr(value)?,
             PbNodeKind::Let(bindings, body) => self.expr(
@@ -139,15 +142,13 @@ where
                         .collect::<Result<_, F>>()?,
                     self.visit_expr(body)?,
                 ),
-                &expr.loc,
+                loc,
             ),
             PbNodeKind::FuncDef(matchers, body) => {
                 let mut result = self.visit_expr(body)?;
                 for matcher in matchers.iter().rev() {
-                    result = self.expr(
-                        ExprType::FuncDef(self.visit_matcher(matcher)?, result),
-                        &expr.loc,
-                    );
+                    result =
+                        self.expr(ExprType::FuncDef(self.visit_matcher(matcher)?, result), loc);
                 }
                 result
             }
@@ -174,7 +175,7 @@ where
                     self.visit_expr(lhs)?,
                     self.visit_expr(rhs)?,
                 ),
-                &expr.loc,
+                loc,
             ),
             PbNodeKind::Unary(op, rhs) => self.expr(
                 ExprType::UnOp(
@@ -184,26 +185,27 @@ where
                     },
                     self.visit_expr(rhs)?,
                 ),
-                &expr.loc,
+                loc,
             ),
             PbNodeKind::FuncCall(func, arg) => self.expr(
                 ExprType::FuncCall {
                     func: self.visit_expr(func)?,
                     arg: self.visit_expr(arg)?,
                 },
-                &expr.loc,
+                loc,
             ),
             PbNodeKind::AttrSel(lhs, attr) => self.expr(
                 ExprType::AttrSel(
                     self.visit_expr(lhs)?,
                     match attr {
-                        Attr::Ident(name, loc) => {
-                            self.expr(ExprType::Value(T::new_from_string(name)), loc)
-                        }
+                        Attr::Ident(name, loc) => self.expr(
+                            ExprType::Value(T::new_from_string(name)),
+                            loc.as_ref().expect("parsed CST nodes have spans"),
+                        ),
                         Attr::Dynamic(value) => self.visit_expr(value)?,
                     },
                 ),
-                &expr.loc,
+                loc,
             ),
             PbNodeKind::Fold { func, init, input } => self.expr(
                 ExprType::Fold {
@@ -214,7 +216,7 @@ where
                         .transpose()?,
                     input: self.visit_expr(input)?,
                 },
-                &expr.loc,
+                loc,
             ),
             PbNodeKind::Map {
                 kind,
@@ -234,7 +236,7 @@ where
                         .map(|value| self.visit_expr(value))
                         .transpose()?,
                 ),
-                &expr.loc,
+                loc,
             ),
             PbNodeKind::Switch {
                 input,
@@ -257,7 +259,7 @@ where
                         .map(|value| self.visit_expr(value))
                         .transpose()?,
                 ),
-                &expr.loc,
+                loc,
             ),
             PbNodeKind::Object(assignments) => self.expr(
                 ExprType::Object(
@@ -274,7 +276,25 @@ where
                         })
                         .collect::<Result<ExprSet<T, F>, F>>()?,
                 ),
-                &expr.loc,
+                loc,
+            ),
+            PbNodeKind::Bind(assignments, body) => self.expr(
+                ExprType::Bind(
+                    assignments
+                        .iter()
+                        .map(|assignment| {
+                            Ok((
+                                match &assignment.key {
+                                    Key::Ident(key, _) => *key,
+                                    Key::String(_, _) => unreachable!("bind keys are identifiers"),
+                                },
+                                self.visit_expr(&assignment.value)?,
+                            ))
+                        })
+                        .collect::<Result<ExprSet<T, F>, F>>()?,
+                    self.visit_expr(body)?,
+                ),
+                loc,
             ),
             PbNodeKind::List(items) => self.expr(
                 ExprType::List(
@@ -284,7 +304,7 @@ where
                         .map(|item| self.visit_expr(item))
                         .collect::<Result<_, F>>()?,
                 ),
-                &expr.loc,
+                loc,
             ),
             PbNodeKind::Tuple(items) => self.expr(
                 ExprType::Tuple(
@@ -294,12 +314,12 @@ where
                         .map(|item| self.visit_expr(item))
                         .collect::<Result<_, F>>()?,
                 ),
-                &expr.loc,
+                loc,
             ),
-            PbNodeKind::Bool(value) => self.expr(ExprType::Value(T::from_bool(*value)), &expr.loc),
+            PbNodeKind::Bool(value) => self.expr(ExprType::Value(T::from_bool(*value)), loc),
             PbNodeKind::Int(value) => self.expr(
                 ExprType::Value(T::parse_int(value).expect("Error parsing int")),
-                &expr.loc,
+                loc,
             ),
             PbNodeKind::String(raw) => {
                 let parts = string_decode(&unescape_str(raw))
@@ -307,30 +327,27 @@ where
                     .into_iter()
                     .map(|part| match part {
                         StringType::Str(value) => T::parse_string(value)
-                            .map(|value| self.expr(ExprType::Value(value), &expr.loc))
+                            .map(|value| self.expr(ExprType::Value(value), loc))
                             .ok_or_else(|| {
-                                Error::new(ErrorType::Parse, "Error parsing string").loc(
-                                    expr.loc.left,
-                                    expr.loc.right,
-                                    &expr.loc.file,
-                                )
+                                Error::new(ErrorType::Parse, "Error parsing string")
+                                    .loc(loc.left, loc.right, self.file)
                             }),
-                        StringType::Expr(code) => parse_str(&code, &expr.loc.file),
+                        StringType::Expr(code) => parse_str(&code, self.file),
                     })
                     .collect::<Result<Vec<_>, F>>()?;
                 if parts.len() == 1 {
                     parts.into_iter().next().unwrap()
                 } else {
-                    self.expr(ExprType::Concat(parts), &expr.loc)
+                    self.expr(ExprType::Concat(parts), loc)
                 }
             }
-            PbNodeKind::Var(name) => self.expr(ExprType::Var(*name), &expr.loc),
-            PbNodeKind::Null => self.expr(ExprType::Null, &expr.loc),
+            PbNodeKind::Var(name) => self.expr(ExprType::Var(*name), loc),
+            PbNodeKind::Null => self.expr(ExprType::Null, loc),
         };
         Ok(value)
     }
 
-    fn visit_matcher(&self, matcher: &pbcst::Matcher<F>) -> Self::MatcherOutput {
+    fn visit_matcher(&self, matcher: &pbcst::Matcher) -> Self::MatcherOutput {
         Ok(match &matcher.kind {
             MatcherKind::Alias(inner, name, _) => {
                 Matcher::Alias(Box::new(self.visit_matcher(inner)?), *name)
@@ -505,6 +522,28 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_bind() {
+        let code = "bind a = 21; b = 33; in 434";
+        assert_eq!(
+            ExprType::Bind(
+                ExprSet::from([
+                    (
+                        StrKey::from("a"),
+                        ExprType::Value(TestValue::Int(21)).builtin()
+                    ),
+                    (
+                        StrKey::from("b"),
+                        ExprType::Value(TestValue::Int(33)).builtin()
+                    ),
+                ]),
+                ExprType::Value(TestValue::Int(434)).builtin(),
+            )
+            .builtin(),
+            eval(code)
+        );
+    }
+
+    #[test]
     fn test_parse_add_mul_prio() {
         let code = "2 * 3 + 4 * 5";
         assert_eq!(
@@ -600,20 +639,6 @@ mod tests {
         assert_eq!(
             ExprType::Value(TestValue::String("abc#def".into())).builtin(),
             eval(code)
-        );
-    }
-
-    #[test]
-    fn test_parse_cst_source_and_location() {
-        let code = " let a = 1; in a + 2 ";
-        let tree = pbcst::parse(code, &FRef).unwrap();
-        assert_eq!(tree.to_source(), code);
-        assert_eq!(tree.loc.left, 1);
-        assert_eq!(tree.loc.right, code.len() - 1);
-
-        assert_eq!(
-            pbcst::parse("([1,2,])", &FRef).unwrap().to_source(),
-            "([1,2,])"
         );
     }
 }

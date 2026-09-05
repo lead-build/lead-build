@@ -1,10 +1,33 @@
-pub use crate::pbcst::{Loc, Referrable};
 use std::{
     fmt::{Debug, Display},
     result,
 };
 
 pub type Result<T, F> = result::Result<T, Error<F>>;
+
+pub trait Referrable {
+    fn format_ref(
+        &self,
+        left: usize,
+        right: usize,
+        f: &mut std::fmt::Formatter<'_>,
+    ) -> std::fmt::Result;
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Loc<F> {
+    pub file: F,
+    pub span: crate::pbcst::Span,
+}
+
+impl<F> Display for Loc<F>
+where
+    F: Referrable,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.file.format_ref(self.span.left, self.span.right, f)
+    }
+}
 
 #[derive(Debug)]
 pub enum ErrorType {
@@ -74,9 +97,8 @@ where
     pub fn loc(self, left: usize, right: usize, file: &F) -> Self {
         let mut out = self;
         out.locs.push(Loc {
-            left,
-            right,
             file: file.clone(),
+            span: crate::pbcst::Span { left, right },
         });
         out
     }

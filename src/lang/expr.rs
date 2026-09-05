@@ -204,8 +204,7 @@ where
     pub fn toexpr(self: ExprType<T, F>, left: usize, right: usize, f: &F) -> Expr<T, F> {
         self.reref(Some(Loc {
             file: f.clone(),
-            left,
-            right,
+            span: crate::pbcst::Span { left, right },
         }))
     }
 

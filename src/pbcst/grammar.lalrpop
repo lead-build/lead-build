@@ -1,33 +1,31 @@
 use super::{
-    Assignment, Attr, BinaryOp, Delimited, Key, LetBinding, Loc, MapKind,
+    Assignment, Attr, BinaryOp, Delimited, Key, LetBinding, MapKind,
     Matcher, MatcherKind, ObjectMatcher, PbNode, PbNodeKind,
-    Referrable, SwitchCase, UnaryOp,
+    Span, SwitchCase, UnaryOp,
 };
 use crate::strkey::StrKey;
-use std::fmt::Debug;
-
-grammar<F>(f: &F)
-where
-    F: Clone + Debug + Referrable;
+grammar<F>(f: &F);
 
 match {
     r"[ \t\r\n]+" => { },
     r"#[^\n\r]*" => { }
 } else { _ }
 
-pub Expr: PbNode<F> = {
+pub Expr: PbNode = {
     <ExprBindBlocks>,
 };
 
-ExprBindBlocks: PbNode<F> = {
+ExprBindBlocks: PbNode = {
     <l:@L> "let" <s:LetSetStmt*> "in" <e:ExprBindBlocks> <r:@R> =>
         PbNode::new(PbNodeKind::Let(s, Box::new(e)), l, r, f),
+    <l:@L> "bind" <s:BindSetStmt*> "in" <e:ExprBindBlocks> <r:@R> =>
+        PbNode::new(PbNodeKind::Bind(s, Box::new(e)), l, r, f),
     <l:@L> "|" <ms:Matcher*> "|" <e:ExprBindBlocks> <r:@R> =>
         PbNode::new(PbNodeKind::FuncDef(ms, Box::new(e)), l, r, f),
     <ExprLogImpl>,
 };
 
-ExprLogImpl: PbNode<F> = {
+ExprLogImpl: PbNode = {
     <l:@L> <lhs:ExprLogImpl> "->" <rhs:ExprLogOr> <r:@R> =>
         PbNode::new(
             PbNodeKind::Binary(BinaryOp::LogImpl, Box::new(lhs), Box::new(rhs)),
@@ -35,7 +33,7 @@ ExprLogImpl: PbNode<F> = {
         ),
     <ExprLogOr>,
 };
-ExprLogOr: PbNode<F> = {
+ExprLogOr: PbNode = {
     <l:@L> <lhs:ExprLogOr> "||" <rhs:ExprLogAnd> <r:@R> =>
         PbNode::new(
             PbNodeKind::Binary(BinaryOp::LogOr, Box::new(lhs), Box::new(rhs)),
@@ -43,7 +41,7 @@ ExprLogOr: PbNode<F> = {
         ),
     <ExprLogAnd>,
 };
-ExprLogAnd: PbNode<F> = {
+ExprLogAnd: PbNode = {
     <l:@L> <lhs:ExprLogAnd> "&&" <rhs:ExprEq> <r:@R> =>
         PbNode::new(
             PbNodeKind::Binary(BinaryOp::LogAnd, Box::new(lhs), Box::new(rhs)),
@@ -51,7 +49,7 @@ ExprLogAnd: PbNode<F> = {
         ),
     <ExprEq>,
 };
-ExprEq: PbNode<F> = {
+ExprEq: PbNode = {
     <l:@L> <lhs:ExprCompare> "==" <rhs:ExprCompare> <r:@R> =>
         PbNode::new(
             PbNodeKind::Binary(BinaryOp::Eq, Box::new(lhs), Box::new(rhs)),
@@ -64,7 +62,7 @@ ExprEq: PbNode<F> = {
         ),
     <ExprCompare>,
 };
-ExprCompare: PbNode<F> = {
+ExprCompare: PbNode = {
     <l:@L> <lhs:ExprUpdate> "<" <rhs:ExprUpdate> <r:@R> =>
         PbNode::new(
             PbNodeKind::Binary(BinaryOp::Lt, Box::new(lhs), Box::new(rhs)),
@@ -87,7 +85,7 @@ ExprCompare: PbNode<F> = {
         ),
     <ExprUpdate>,
 };
-ExprUpdate: PbNode<F> = {
+ExprUpdate: PbNode = {
     <l:@L> <lhs:ExprUpdate> "//" <rhs:ExprNot> <r:@R> =>
         PbNode::new(
             PbNodeKind::Binary(BinaryOp::Update, Box::new(lhs), Box::new(rhs)),
@@ -95,12 +93,12 @@ ExprUpdate: PbNode<F> = {
         ),
     <ExprNot>,
 };
-ExprNot: PbNode<F> = {
+ExprNot: PbNode = {
     <l:@L> "!" <rhs:ExprAddSub> <r:@R> =>
         PbNode::new(PbNodeKind::Unary(UnaryOp::Not, Box::new(rhs)), l, r, f),
     <ExprAddSub>,
 };
-ExprAddSub: PbNode<F> = {
+ExprAddSub: PbNode = {
     <l:@L> <lhs:ExprAddSub> "-" <rhs:ExprMultDiv> <r:@R> =>
         PbNode::new(
             PbNodeKind::Binary(BinaryOp::Sub, Box::new(lhs), Box::new(rhs)),
@@ -113,7 +111,7 @@ ExprAddSub: PbNode<F> = {
         ),
     <ExprMultDiv>,
 };
-ExprMultDiv: PbNode<F> = {
+ExprMultDiv: PbNode = {
     <l:@L> <lhs:ExprMultDiv> "*" <rhs:ExprConcat> <r:@R> =>
         PbNode::new(
             PbNodeKind::Binary(BinaryOp::Mult, Box::new(lhs), Box::new(rhs)),
@@ -126,7 +124,7 @@ ExprMultDiv: PbNode<F> = {
         ),
     <ExprConcat>,
 };
-ExprConcat: PbNode<F> = {
+ExprConcat: PbNode = {
     <l:@L> <lhs:ExprConcat> "++" <rhs:ExprHasAttr> <r:@R> =>
         PbNode::new(
             PbNodeKind::Binary(BinaryOp::ListConcat, Box::new(lhs), Box::new(rhs)),
@@ -134,7 +132,7 @@ ExprConcat: PbNode<F> = {
         ),
     <ExprHasAttr>,
 };
-ExprHasAttr: PbNode<F> = {
+ExprHasAttr: PbNode = {
     <l:@L> <lhs:ExprNeg> "?" <rhs:ExprNeg> <r:@R> =>
         PbNode::new(
             PbNodeKind::Binary(BinaryOp::HasAttr, Box::new(lhs), Box::new(rhs)),
@@ -142,22 +140,22 @@ ExprHasAttr: PbNode<F> = {
         ),
     <ExprNeg>,
 };
-ExprNeg: PbNode<F> = {
+ExprNeg: PbNode = {
     <l:@L> "-" <rhs:ExprFuncCall> <r:@R> =>
         PbNode::new(PbNodeKind::Unary(UnaryOp::Neg, Box::new(rhs)), l, r, f),
     <ExprFuncCall>,
 };
-ExprFuncCall: PbNode<F> = {
+ExprFuncCall: PbNode = {
     <l:@L> <func:ExprFuncCall> <arg:ExprAttrSel> <r:@R> =>
         PbNode::new(PbNodeKind::FuncCall(Box::new(func), Box::new(arg)), l, r, f),
     <ExprAttrSel>,
 };
-ExprAttrSel: PbNode<F> = {
+ExprAttrSel: PbNode = {
     <l:@L> <lhs:ExprAttrSel> "." <li:@L> <rhs:Ident> <r:@R> =>
         PbNode::new(
             PbNodeKind::AttrSel(
                 Box::new(lhs),
-                Attr::Ident(rhs, Loc { file: f.clone(), left: li, right: r }),
+                Attr::Ident(rhs, Some(Span { left: li, right: r })),
             ),
             l, r, f,
         ),
@@ -168,7 +166,7 @@ ExprAttrSel: PbNode<F> = {
         ),
     <ExprListComp>,
 };
-ExprListComp: PbNode<F> = {
+ExprListComp: PbNode = {
     <l:@L> "(" <func:Expr> "for" <init:(<Expr> ":")?> <source:Expr>
         ")" <r:@R> =>
         PbNode::new(
@@ -203,7 +201,7 @@ ExprListComp: PbNode<F> = {
         ),
     <ExprSwitch>,
 };
-ExprSwitch: PbNode<F> = {
+ExprSwitch: PbNode = {
     <l:@L> "switch" <source:ExprTerm> "{" <cases:SwitchCase*>
         <default:("_" "=>" <Expr> ";")?> "}" <r:@R> =>
         PbNode::new(
@@ -216,15 +214,15 @@ ExprSwitch: PbNode<F> = {
         ),
     <ExprTerm>,
 };
-SwitchCase: SwitchCase<F> =
+SwitchCase: SwitchCase =
     <l:@L> <matcher:Expr> "=>" <value:Expr> ";" <r:@R> =>
         SwitchCase {
             matcher,
             value,
-            loc: Loc { file: f.clone(), left: l, right: r },
+            span: Some(Span { left: l, right: r }),
         };
 
-ExprTerm: PbNode<F> = {
+ExprTerm: PbNode = {
     <ExprObject>,
     <ExprList>,
     <ExprTuple>,
@@ -234,54 +232,61 @@ ExprTerm: PbNode<F> = {
     <l:@L> "(" <value:Expr> ")" <r:@R> =>
         PbNode::new(PbNodeKind::Group(Box::new(value)), l, r, f),
 };
-ExprObject: PbNode<F> =
+ExprObject: PbNode =
     <l:@L> "{" <items:AssignStmt*> "}" <r:@R> =>
         PbNode::new(PbNodeKind::Object(items), l, r, f);
-    ExprList: PbNode<F> =
+ExprList: PbNode =
     <l:@L> "[" <items:Comma<Expr>> "]" <r:@R> =>
         PbNode::new(PbNodeKind::List(items), l, r, f);
-    ExprTuple: PbNode<F> =
+ExprTuple: PbNode =
     <l:@L> "(" <items:TupleComma<Expr>> ")" <r:@R> =>
         PbNode::new(PbNodeKind::Tuple(items), l, r, f);
 
-LetSetStmt: LetBinding<F> =
+LetSetStmt: LetBinding =
     <l:@L> <matcher:Matcher> "=" <value:Expr> ";" <r:@R> =>
         LetBinding {
             matcher,
             value,
-            loc: Loc { file: f.clone(), left: l, right: r },
+            span: Some(Span { left: l, right: r }),
         };
-AssignStmt: Assignment<F> = {
+BindSetStmt: Assignment =
     <l:@L> <key:Ident> "=" <value:Expr> ";" <r:@R> =>
         Assignment {
-            key: Key::Ident(key, Loc { file: f.clone(), left: l, right: r }),
+            key: Key::Ident(key, Some(Span { left: l, right: r })),
             value,
-            loc: Loc { file: f.clone(), left: l, right: r },
+            span: Some(Span { left: l, right: r }),
+        };
+AssignStmt: Assignment = {
+    <l:@L> <key:Ident> "=" <value:Expr> ";" <r:@R> =>
+        Assignment {
+            key: Key::Ident(key, Some(Span { left: l, right: r })),
+            value,
+            span: Some(Span { left: l, right: r }),
         },
     <l:@L> <key:RawString> "=" <value:Expr> ";" <r:@R> =>
         Assignment {
-            key: Key::String(key, Loc { file: f.clone(), left: l, right: r }),
+            key: Key::String(key, Some(Span { left: l, right: r })),
             value,
-            loc: Loc { file: f.clone(), left: l, right: r },
+            span: Some(Span { left: l, right: r }),
         },
 };
-ExprVar: PbNode<F> =
+ExprVar: PbNode =
     <l:@L> <name:Ident> <r:@R> => PbNode::new(PbNodeKind::Var(name), l, r, f);
-ExprNull: PbNode<F> =
+ExprNull: PbNode =
     <l:@L> "null" <r:@R> => PbNode::new(PbNodeKind::Null, l, r, f);
 
-Matcher: Matcher<F> = {
+Matcher: Matcher = {
     <l:@L> <matcher:MatcherInner> "@" <name:Ident> <r:@R> =>
         Matcher::new(
             MatcherKind::Alias(
                 Box::new(matcher), name,
-                Loc { file: f.clone(), left: l, right: r },
+                Some(Span { left: l, right: r }),
             ),
             l, r, f,
         ),
     <MatcherInner>,
 };
-MatcherInner: Matcher<F> = {
+MatcherInner: Matcher = {
     <l:@L> <name:Ident> <r:@R> => Matcher::new(MatcherKind::Ident(name), l, r, f),
     <l:@L> "_" <r:@R> => Matcher::new(MatcherKind::DontCare, l, r, f),
     <l:@L> "(" <items:TupleComma<Matcher>> ")" <r:@R> =>
@@ -296,36 +301,36 @@ MatcherInner: Matcher<F> = {
     <l:@L> "{" <fields:(<ObjectMatcher> ",")*> "..." "}" <r:@R> =>
         Matcher::new(MatcherKind::Object { fields, exhaustive: false }, l, r, f),
 };
-ObjectMatcher: ObjectMatcher<F> = {
+ObjectMatcher: ObjectMatcher = {
     <l:@L> <key:Ident> <r:@R> => ObjectMatcher {
         key,
         matcher: Matcher::new(MatcherKind::Ident(key), l, r, f),
         default: None,
-        loc: Loc { file: f.clone(), left: l, right: r },
+        span: Some(Span { left: l, right: r }),
     },
     <l:@L> <key:Ident> "=" <matcher:Matcher> <r:@R> => ObjectMatcher {
         key,
         matcher,
         default: None,
-        loc: Loc { file: f.clone(), left: l, right: r },
+        span: Some(Span { left: l, right: r }),
     },
     <l:@L> <key:Ident> "?" <default:ExprTerm> <r:@R> => ObjectMatcher {
         key,
         matcher: Matcher::new(MatcherKind::Ident(key), l, r, f),
         default: Some(default),
-        loc: Loc { file: f.clone(), left: l, right: r },
+        span: Some(Span { left: l, right: r }),
     },
     <l:@L> <key:Ident> "=" <matcher:Matcher> "?" <default:ExprTerm>
         <r:@R> => ObjectMatcher {
             key,
             matcher,
             default: Some(default),
-            loc: Loc { file: f.clone(), left: l, right: r },
+            span: Some(Span { left: l, right: r }),
         },
 };
 
 Ident: StrKey = <s:r"[a-zA-Z][a-zA-Z0-9_]*"> => StrKey::from(s);
-ExprValue: PbNode<F> = {
+ExprValue: PbNode = {
     <l:@L> "true" <r:@R> => PbNode::new(PbNodeKind::Bool(true), l, r, f),
     <l:@L> "false" <r:@R> => PbNode::new(PbNodeKind::Bool(false), l, r, f),
     <l:@L> <value:r"[0-9]+"> <r:@R> =>
