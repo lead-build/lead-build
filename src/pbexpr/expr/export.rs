@@ -43,7 +43,7 @@ where
                     .iter()
                     .map(|(key, value)| {
                         Ok(Assignment {
-                            key: Key::Ident(*key, None),
+                            key: Key::Ident(key.into(), None),
                             value: value.export()?,
                             span: None,
                         })
@@ -69,13 +69,13 @@ where
                 Box::new(value.export()?),
                 match &attr.inner_ref().tok {
                     ExprType::Value(value) if is_ident(&value.to_string()) => {
-                        Attr::Ident(StrKey::from(&value.to_string()), None)
+                        Attr::Ident(value.to_string(), None)
                     }
                     _ => Attr::Dynamic(Box::new(attr.export()?)),
                 },
             ),
             ExprType::Value(value) => return value.export(),
-            ExprType::Var(name) => PbNodeKind::Var(*name),
+            ExprType::Var(name) => PbNodeKind::Var(name.into()),
             ExprType::UnOp(op, value) => PbNodeKind::Unary(
                 match op {
                     ExprUnOp::Neg => UnaryOp::Neg,
@@ -137,7 +137,7 @@ where
                     .iter()
                     .map(|(key, value)| {
                         Ok(Assignment {
-                            key: Key::Ident(*key, None),
+                            key: Key::Ident(key.into(), None),
                             value: value.export()?,
                             span: None,
                         })
@@ -177,10 +177,10 @@ where
 {
     let kind = match matcher {
         Matcher::Alias(matcher, name) => {
-            PbMatcherKind::Alias(Box::new(export_matcher(matcher)?), *name, None)
+            PbMatcherKind::Alias(Box::new(export_matcher(matcher)?), name.into(), None)
         }
         Matcher::DontCare => PbMatcherKind::DontCare,
-        Matcher::Ident(name) => PbMatcherKind::Ident(*name),
+        Matcher::Ident(name) => PbMatcherKind::Ident(name.into()),
         Matcher::Tuple(items) => PbMatcherKind::Tuple(Delimited {
             items: items
                 .iter()
@@ -193,7 +193,7 @@ where
                 .iter()
                 .map(|(key, matcher, default)| {
                     Ok(ObjectMatcher {
-                        key: *key,
+                        key: key.into(),
                         matcher: export_matcher(matcher)?,
                         default: default.as_ref().map(Exportable::export).transpose()?,
                         span: None,

@@ -1,4 +1,3 @@
-use crate::strkey::StrKey;
 use logos::Logos;
 
 #[derive(Logos, Clone, Debug, PartialEq, logos_display::Display)]
@@ -92,14 +91,20 @@ pub enum Tok {
 
     #[regex(
         r"[a-zA-Z][a-zA-Z0-9_]*",
-        |lex| StrKey::from(&lex.slice().to_string())
+        |lex| lex.slice().to_string()
     )]
-    Ident(StrKey),
+    Ident(String),
 
-    #[regex(r"[0-9]+", |lex| lex.slice().to_string())]
+    #[regex(
+        r"[0-9]+",
+        |lex| lex.slice().to_string()
+    )]
     Number(String),
 
-    #[regex(r#""([^"]|\\.)*""#, |lex| lex.slice().to_string())]
+    #[regex(
+        r#""([^"]|\\.)*""#,
+        |lex| lex.slice().to_string()
+    )]
     Str(String),
 }
 #[derive(Debug, Clone, PartialEq)]

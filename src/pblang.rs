@@ -3,7 +3,6 @@ pub mod lexer;
 
 use std::ops::Range;
 
-use crate::strkey::StrKey;
 use lalrpop_util::lalrpop_mod;
 use lexer::{LexError, Lexer};
 
@@ -70,7 +69,7 @@ pub enum PbNodeKind {
     Bool(bool),
     Int(String),
     String(String),
-    Var(StrKey),
+    Var(String),
     Null,
     OutputPlaceholder(String),
     OutputElided {
@@ -116,7 +115,7 @@ pub struct Delimited<T> {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Attr {
-    Ident(StrKey, Option<Span>),
+    Ident(String, Option<Span>),
     Dynamic(Box<PbNode>),
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -133,7 +132,7 @@ pub struct Assignment {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum Key {
-    Ident(StrKey, Option<Span>),
+    Ident(String, Option<Span>),
     String(String, Option<Span>),
 }
 #[derive(Debug, Clone, PartialEq)]
@@ -157,9 +156,9 @@ impl Matcher {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub enum MatcherKind {
-    Alias(Box<Matcher>, StrKey, Option<Span>),
+    Alias(Box<Matcher>, String, Option<Span>),
     DontCare,
-    Ident(StrKey),
+    Ident(String),
     Tuple(Delimited<Matcher>),
     Object {
         fields: Vec<ObjectMatcher>,
@@ -168,7 +167,7 @@ pub enum MatcherKind {
 }
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectMatcher {
-    pub key: StrKey,
+    pub key: String,
     pub matcher: Matcher,
     pub default: Option<PbNode>,
     pub span: Option<Span>,

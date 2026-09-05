@@ -268,7 +268,7 @@ where
                         .map(|assignment| {
                             Ok((
                                 match &assignment.key {
-                                    Key::Ident(key, _) => *key,
+                                    Key::Ident(key, _) => StrKey::from(key),
                                     Key::String(raw, _) => StrKey::from(unescape_str(raw).as_str()),
                                 },
                                 self.visit_expr(&assignment.value)?,
@@ -285,7 +285,7 @@ where
                         .map(|assignment| {
                             Ok((
                                 match &assignment.key {
-                                    Key::Ident(key, _) => *key,
+                                    Key::Ident(key, _) => StrKey::from(key),
                                     Key::String(_, _) => unreachable!("bind keys are identifiers"),
                                 },
                                 self.visit_expr(&assignment.value)?,
@@ -341,7 +341,7 @@ where
                     self.expr(ExprType::Concat(parts), loc)
                 }
             }
-            PbNodeKind::Var(name) => self.expr(ExprType::Var(*name), loc),
+            PbNodeKind::Var(name) => self.expr(ExprType::Var(StrKey::from(name)), loc),
             PbNodeKind::Null => self.expr(ExprType::Null, loc),
             PbNodeKind::OutputPlaceholder(_)
             | PbNodeKind::OutputElided { .. }
@@ -358,10 +358,10 @@ where
     fn visit_matcher(&self, matcher: &pblang::Matcher) -> Self::MatcherOutput {
         Ok(match &matcher.kind {
             MatcherKind::Alias(inner, name, _) => {
-                Matcher::Alias(Box::new(self.visit_matcher(inner)?), *name)
+                Matcher::Alias(Box::new(self.visit_matcher(inner)?), StrKey::from(name))
             }
             MatcherKind::DontCare => Matcher::DontCare,
-            MatcherKind::Ident(name) => Matcher::Ident(*name),
+            MatcherKind::Ident(name) => Matcher::Ident(StrKey::from(name)),
             MatcherKind::Tuple(items) => Matcher::Tuple(
                 items
                     .items
@@ -374,7 +374,7 @@ where
                     .iter()
                     .map(|field| {
                         Ok((
-                            field.key,
+                            StrKey::from(&field.key),
                             self.visit_matcher(&field.matcher)?,
                             field
                                 .default

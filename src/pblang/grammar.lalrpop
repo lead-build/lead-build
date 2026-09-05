@@ -7,7 +7,7 @@ use super::{
         LexError,
     }
 };
-use crate::strkey::StrKey;
+
 grammar<F>(f: &F);
 
 extern {
@@ -58,7 +58,7 @@ extern {
         "["         => Tok::LSqBracket,
         "]"         => Tok::RSqBracket,
 
-        "ident"     => Tok::Ident(<StrKey>),
+        "ident"     => Tok::Ident(<String>),
         "num"       => Tok::Number(<String>),
         "str"       => Tok::Str(<String>),
     }
@@ -356,33 +356,33 @@ MatcherInner: Matcher = {
 };
 ObjectMatcher: ObjectMatcher = {
     <l:@L> <key:Ident> <r:@R> => ObjectMatcher {
-        key,
+        key: key.clone(),
         matcher: Matcher::new(MatcherKind::Ident(key), l, r, f),
         default: None,
         span: Some(Span { start: l, end: r }),
     },
     <l:@L> <key:Ident> "=" <matcher:Matcher> <r:@R> => ObjectMatcher {
-        key,
+        key: key.clone(),
         matcher,
         default: None,
         span: Some(Span { start: l, end: r }),
     },
     <l:@L> <key:Ident> "?" <default:ExprTerm> <r:@R> => ObjectMatcher {
-        key,
+        key: key.clone(),
         matcher: Matcher::new(MatcherKind::Ident(key), l, r, f),
         default: Some(default),
         span: Some(Span { start: l, end: r }),
     },
     <l:@L> <key:Ident> "=" <matcher:Matcher> "?" <default:ExprTerm>
         <r:@R> => ObjectMatcher {
-            key,
+            key: key.clone(),
             matcher,
             default: Some(default),
             span: Some(Span { start: l, end: r }),
         },
 };
 
-Ident: StrKey = <s:"ident"> => s;
+Ident: String = <s:"ident"> => s;
 ExprValue: PbNode = {
     <l:@L> "true" <r:@R> => PbNode::new(PbNodeKind::Bool(true), l, r, f),
     <l:@L> "false" <r:@R> => PbNode::new(PbNodeKind::Bool(false), l, r, f),
