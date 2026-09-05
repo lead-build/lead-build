@@ -10,8 +10,8 @@ pub type Result<T, F> = result::Result<T, Error<F>>;
 pub trait Referrable {
     fn format_ref(
         &self,
-        left: usize,
-        right: usize,
+        start: usize,
+        end: usize,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result;
 }
@@ -27,7 +27,7 @@ where
     F: Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.file.format_ref(self.span.left, self.span.right, f)
+        self.file.format_ref(self.span.start, self.span.end, f)
     }
 }
 
@@ -96,11 +96,11 @@ where
         }
     }
 
-    pub fn loc(self, left: usize, right: usize, file: &F) -> Self {
+    pub fn loc(self, start: usize, end: usize, file: &F) -> Self {
         let mut out = self;
         out.locs.push(Loc {
             file: file.clone(),
-            span: Span { left, right },
+            span: Span { start, end },
         });
         out
     }

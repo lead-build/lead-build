@@ -33,13 +33,13 @@ impl Display for VirtPath {
 impl Referrable for VirtPath {
     fn format_ref(
         &self,
-        left: usize,
-        _right: usize,
+        start: usize,
+        _end: usize,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         let fs_path = self.to_path_buf();
         let code = fs::read_to_string(fs_path.clone()).unwrap();
-        let before = code[..left].to_string();
+        let before = code[..start].to_string();
         let lines = before.lines().count();
         let column = if let Some(last_line) = before.lines().last() {
             last_line.len() + 1

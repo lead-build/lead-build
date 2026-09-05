@@ -34,7 +34,7 @@ where
         )
         .loc(location, location, file),
         lalrpop_util::ParseError::UnrecognizedToken {
-            token: (left, token, right),
+            token: (start, token, end),
             expected,
         } => Error::new(
             ErrorType::Parse,
@@ -44,11 +44,11 @@ where
                 expected.join(", ")
             ),
         )
-        .loc(left, right, file),
+        .loc(start, end, file),
 
         lalrpop_util::ParseError::ExtraToken {
-            token: (left, token, right),
-        } => Error::new(ErrorType::Parse, format!("Extra token: {}", token)).loc(left, right, file),
+            token: (start, token, end),
+        } => Error::new(ErrorType::Parse, format!("Extra token: {}", token)).loc(start, end, file),
         lalrpop_util::ParseError::User { error } => {
             Error::new(ErrorType::Parse, error).loc(0, 0, file)
         }
@@ -111,7 +111,7 @@ impl<F> ExprGenerator<'_, F> {
         T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
         F: Clone + Debug + Referrable,
     {
-        kind.toexpr(span.left, span.right, self.file)
+        kind.toexpr(span.start, span.end, self.file)
     }
 }
 
@@ -330,7 +330,7 @@ where
                             .map(|value| self.expr(ExprType::Value(value), loc))
                             .ok_or_else(|| {
                                 Error::new(ErrorType::Parse, "Error parsing string")
-                                    .loc(loc.left, loc.right, self.file)
+                                    .loc(loc.start, loc.end, self.file)
                             }),
                         StringType::Expr(code) => parse_str(&code, self.file),
                     })

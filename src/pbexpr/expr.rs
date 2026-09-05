@@ -204,10 +204,10 @@ where
         Expr(Rc::new(RefCell::new(ExprStorage { tok: self, loc })))
     }
 
-    pub fn toexpr(self: ExprType<T, F>, left: usize, right: usize, f: &F) -> Expr<T, F> {
+    pub fn toexpr(self: ExprType<T, F>, start: usize, end: usize, f: &F) -> Expr<T, F> {
         self.reref(Some(Loc {
             file: f.clone(),
-            span: Span { left, right },
+            span: Span { start, end },
         }))
     }
 

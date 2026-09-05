@@ -1,6 +1,8 @@
 pub mod export;
 pub mod lexer;
 
+use std::ops::Range;
+
 use crate::strkey::StrKey;
 use lalrpop_util::lalrpop_mod;
 use lexer::{LexError, Lexer};
@@ -15,11 +17,7 @@ pub fn parse(code: &str) -> std::result::Result<PbNode, ParseError<'_>> {
     Ok(tree)
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct Span {
-    pub left: usize,
-    pub right: usize,
-}
+pub type Span = Range<usize>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct PbNode {
@@ -28,10 +26,10 @@ pub struct PbNode {
 }
 
 impl PbNode {
-    pub fn new<F>(kind: PbNodeKind, left: usize, right: usize, _file: &F) -> Self {
+    pub fn new<F>(kind: PbNodeKind, start: usize, end: usize, _file: &F) -> Self {
         Self {
             kind,
-            span: Some(Span { left, right }),
+            span: Some(Span { start, end }),
         }
     }
 
@@ -150,10 +148,10 @@ pub struct Matcher {
     pub span: Option<Span>,
 }
 impl Matcher {
-    pub fn new<F>(kind: MatcherKind, left: usize, right: usize, _file: &F) -> Self {
+    pub fn new<F>(kind: MatcherKind, start: usize, end: usize, _file: &F) -> Self {
         Self {
             kind,
-            span: Some(Span { left, right }),
+            span: Some(Span { start, end }),
         }
     }
 }

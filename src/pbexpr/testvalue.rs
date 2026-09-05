@@ -16,11 +16,11 @@ pub struct FRef;
 impl Referrable for FRef {
     fn format_ref(
         &self,
-        left: usize,
-        right: usize,
+        start: usize,
+        end: usize,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        write!(f, "FRef({},{})", left, right)
+        write!(f, "FRef({},{})", start, end)
     }
 }
 

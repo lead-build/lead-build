@@ -182,14 +182,14 @@ impl Display for NinjaBuild {
 impl Display for NinjaFile {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut rules = self.rules.iter().collect::<Vec<_>>();
-        rules.sort_by(|left, right| left.1.cmp(right.1));
+        rules.sort_by(|start, end| start.1.cmp(end.1));
 
         for (rule, name) in rules {
             NamedNinjaRule { rule, name }.fmt(f)?;
         }
 
         let mut builds = self.builds.iter().collect::<Vec<_>>();
-        builds.sort_by(|left, right| format!("{:?}", left).cmp(&format!("{:?}", right)));
+        builds.sort_by(|start, end| format!("{:?}", start).cmp(&format!("{:?}", end)));
 
         for build in builds {
             build.fmt(f)?;
@@ -197,7 +197,7 @@ impl Display for NinjaFile {
 
         if !self.aliases.is_empty() {
             let mut aliases = self.aliases.iter().collect::<Vec<_>>();
-            aliases.sort_by(|left, right| left.0.cmp(right.0));
+            aliases.sort_by(|start, end| start.0.cmp(end.0));
 
             for (name, inputs) in aliases {
                 write!(f, "build ")?;
@@ -214,7 +214,7 @@ impl Display for NinjaFile {
 
         if !self.default_targets.is_empty() {
             let mut defaults = self.default_targets.iter().collect::<Vec<_>>();
-            defaults.sort_by(|left, right| format!("{:?}", left).cmp(&format!("{:?}", right)));
+            defaults.sort_by(|start, end| format!("{:?}", start).cmp(&format!("{:?}", end)));
 
             write!(f, "default")?;
             for outp in defaults {

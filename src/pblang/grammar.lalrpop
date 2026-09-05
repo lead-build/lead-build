@@ -208,7 +208,7 @@ ExprAttrSel: PbNode = {
         PbNode::new(
             PbNodeKind::AttrSel(
                 Box::new(lhs),
-                Attr::Ident(rhs, Some(Span { left: li, right: r })),
+                Attr::Ident(rhs, Some(Span { start: li, end: r })),
             ),
             l, r, f,
         ),
@@ -272,7 +272,7 @@ SwitchCase: SwitchCase =
         SwitchCase {
             matcher,
             value,
-            span: Some(Span { left: l, right: r }),
+            span: Some(Span { start: l, end: r }),
         };
 
 ExprTerm: PbNode = {
@@ -300,27 +300,27 @@ LetSetStmt: LetBinding =
         LetBinding {
             matcher,
             value,
-            span: Some(Span { left: l, right: r }),
+            span: Some(Span { start: l, end: r }),
         };
 BindSetStmt: Assignment =
     <l:@L> <key:Ident> "=" <value:Expr> ";" <r:@R> =>
         Assignment {
-            key: Key::Ident(key, Some(Span { left: l, right: r })),
+            key: Key::Ident(key, Some(Span { start: l, end: r })),
             value,
-            span: Some(Span { left: l, right: r }),
+            span: Some(Span { start: l, end: r }),
         };
 AssignStmt: Assignment = {
     <l:@L> <key:Ident> "=" <value:Expr> ";" <r:@R> =>
         Assignment {
-            key: Key::Ident(key, Some(Span { left: l, right: r })),
+            key: Key::Ident(key, Some(Span { start: l, end: r })),
             value,
-            span: Some(Span { left: l, right: r }),
+            span: Some(Span { start: l, end: r }),
         },
     <l:@L> <key:RawString> "=" <value:Expr> ";" <r:@R> =>
         Assignment {
-            key: Key::String(key, Some(Span { left: l, right: r })),
+            key: Key::String(key, Some(Span { start: l, end: r })),
             value,
-            span: Some(Span { left: l, right: r }),
+            span: Some(Span { start: l, end: r }),
         },
 };
 ExprVar: PbNode =
@@ -333,7 +333,7 @@ Matcher: Matcher = {
         Matcher::new(
             MatcherKind::Alias(
                 Box::new(matcher), name,
-                Some(Span { left: l, right: r }),
+                Some(Span { start: l, end: r }),
             ),
             l, r, f,
         ),
@@ -359,26 +359,26 @@ ObjectMatcher: ObjectMatcher = {
         key,
         matcher: Matcher::new(MatcherKind::Ident(key), l, r, f),
         default: None,
-        span: Some(Span { left: l, right: r }),
+        span: Some(Span { start: l, end: r }),
     },
     <l:@L> <key:Ident> "=" <matcher:Matcher> <r:@R> => ObjectMatcher {
         key,
         matcher,
         default: None,
-        span: Some(Span { left: l, right: r }),
+        span: Some(Span { start: l, end: r }),
     },
     <l:@L> <key:Ident> "?" <default:ExprTerm> <r:@R> => ObjectMatcher {
         key,
         matcher: Matcher::new(MatcherKind::Ident(key), l, r, f),
         default: Some(default),
-        span: Some(Span { left: l, right: r }),
+        span: Some(Span { start: l, end: r }),
     },
     <l:@L> <key:Ident> "=" <matcher:Matcher> "?" <default:ExprTerm>
         <r:@R> => ObjectMatcher {
             key,
             matcher,
             default: Some(default),
-            span: Some(Span { left: l, right: r }),
+            span: Some(Span { start: l, end: r }),
         },
 };
 
