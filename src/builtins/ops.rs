@@ -215,7 +215,10 @@ where
     F: Clone + Debug + Referrable,
 {
     let mut opsset = ExprSet::new();
-    opsset.insert(StrKey::from("transpose"), Expr::new_builtin(BuiltinOpsTranspose));
+    opsset.insert(
+        StrKey::from("transpose"),
+        Expr::new_builtin(BuiltinOpsTranspose),
+    );
     opsset.insert(
         StrKey::from("transposeObjs"),
         Expr::new_builtin(BuiltinOpsTransposeObjs),

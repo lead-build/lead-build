@@ -5,6 +5,7 @@ pub mod ninjaexpr;
 pub mod ninjawriter;
 pub mod path;
 pub mod pbbuild;
+pub mod pbcst;
 pub mod stats;
 pub mod strkey;
 pub mod value;
