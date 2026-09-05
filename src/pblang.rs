@@ -1,14 +1,17 @@
+pub mod export;
+pub mod lexer;
+
 use crate::strkey::StrKey;
 use lalrpop_util::lalrpop_mod;
-
-pub mod export;
+use lexer::{LexError, Lexer};
 
 lalrpop_mod!(pub grammar, "pblang/grammar.rs");
 
-pub type ParseError<'input> = lalrpop_util::ParseError<usize, grammar::Token<'input>, &'static str>;
+pub type ParseError<'input> = lalrpop_util::ParseError<usize, lexer::Tok, LexError>;
 
 pub fn parse(code: &str) -> std::result::Result<PbNode, ParseError<'_>> {
-    let tree = grammar::ExprParser::new().parse(&(), code)?;
+    let tokens = Lexer::new(code);
+    let tree = grammar::ExprParser::new().parse(&(), tokens)?;
     Ok(tree)
 }
 

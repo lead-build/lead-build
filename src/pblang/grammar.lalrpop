@@ -2,14 +2,67 @@ use super::{
     Assignment, Attr, BinaryOp, Delimited, Key, LetBinding, MapKind,
     Matcher, MatcherKind, ObjectMatcher, PbNode, PbNodeKind,
     Span, SwitchCase, UnaryOp,
+    lexer::{
+        Tok,
+        LexError,
+    }
 };
 use crate::strkey::StrKey;
 grammar<F>(f: &F);
 
-match {
-    r"[ \t\r\n]+" => { },
-    r"#[^\n\r]*" => { }
-} else { _ }
+extern {
+    type Location = usize;
+    type Error = LexError;
+
+    enum Tok {
+        "bind"      => Tok::Bind,
+        "let"       => Tok::Let,
+        "in"        => Tok::In,
+        "if"        => Tok::If,
+        "for"       => Tok::For,
+        "switch"    => Tok::Switch,
+        "null"      => Tok::Null,
+        "true"      => Tok::True,
+        "false"     => Tok::False,
+        "@"         => Tok::At,
+        "_"         => Tok::Underscore,
+        "..."       => Tok::TripleDots,
+        "=>"        => Tok::RDoubleArrow,
+        ":"         => Tok::Colon,
+        ";"         => Tok::SemiColon,
+        "="         => Tok::Assign,
+        "|"         => Tok::Pipe,
+        "."         => Tok::Dot,
+        ","         => Tok::Comma,
+        "-"         => Tok::Minus,
+        "!"         => Tok::UnOpNot,
+        "?"         => Tok::BinOpHasAttr,
+        "++"        => Tok::BinOpListConcat,
+        "*"         => Tok::BinOpMult,
+        "/"         => Tok::BinOpDiv,
+        "+"         => Tok::BinOpAdd,
+        "//"        => Tok::BinOpUpdate,
+        "<"         => Tok::BinOpLt,
+        "<="        => Tok::BinOpLe,
+        ">"         => Tok::BinOpGt,
+        ">="        => Tok::BinOpGe,
+        "=="        => Tok::BinOpEq,
+        "!="        => Tok::BinOpNeq,
+        "&&"        => Tok::BinOpLogAnd,
+        "||"        => Tok::BinOpLogOr,
+        "->"        => Tok::BinOpLogImpl,
+        "{"         => Tok::LBrace,
+        "}"         => Tok::RBrace,
+        "("         => Tok::LPar,
+        ")"         => Tok::RPar,
+        "["         => Tok::LSqBracket,
+        "]"         => Tok::RSqBracket,
+
+        "ident"     => Tok::Ident(<StrKey>),
+        "num"       => Tok::Number(<String>),
+        "str"       => Tok::Str(<String>),
+    }
+}
 
 pub Expr: PbNode = {
     <ExprBindBlocks>,
@@ -329,16 +382,16 @@ ObjectMatcher: ObjectMatcher = {
         },
 };
 
-Ident: StrKey = <s:r"[a-zA-Z][a-zA-Z0-9_]*"> => StrKey::from(s);
+Ident: StrKey = <s:"ident"> => StrKey::from(s);
 ExprValue: PbNode = {
     <l:@L> "true" <r:@R> => PbNode::new(PbNodeKind::Bool(true), l, r, f),
     <l:@L> "false" <r:@R> => PbNode::new(PbNodeKind::Bool(false), l, r, f),
-    <l:@L> <value:r"[0-9]+"> <r:@R> =>
+    <l:@L> <value:"num"> <r:@R> =>
         PbNode::new(PbNodeKind::Int(value.into()), l, r, f),
     <l:@L> <value:RawString> <r:@R> =>
         PbNode::new(PbNodeKind::String(value), l, r, f),
 };
-RawString: String = <s:r#""([^\"]|\\.)*""#> => s.into();
+RawString: String = <s:"str"> => s.into();
 
 Comma<T>: Delimited<T> = {
     <mut values:(<T> ",")*> <last:T?> => match last {
