@@ -5,7 +5,7 @@ use std::{
 };
 
 use crate::{
-    lang::{Error, ErrorType, Referrable, Result},
+    pbexpr::{Error, ErrorType, Referrable, Result},
     ninjawriter::{NinjaArg, NinjaBuild, NinjaFile, NinjaRule, NinjaRuleRef},
     path::VirtPath,
     strkey::StrKey,

@@ -6,7 +6,7 @@ use std::{
 
 use pathdiff::diff_paths;
 
-use crate::lang::{Error, ErrorType, Referrable, Result};
+use crate::pbexpr::{Error, ErrorType, Referrable, Result};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct VirtPath {

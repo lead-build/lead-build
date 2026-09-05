@@ -1,6 +1,6 @@
 pub mod builtins;
 pub mod context;
-pub mod lang;
+pub mod pbexpr;
 pub mod ninjaexpr;
 pub mod ninjawriter;
 pub mod path;
@@ -12,5 +12,5 @@ pub mod value;
 
 pub use crate::ninjaexpr::add_expr_to_ninjafile;
 pub use context::LangContext;
-pub use lang::{Expr, Result};
+pub use pbexpr::{Expr, Result};
 pub use value::Value;

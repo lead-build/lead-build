@@ -6,7 +6,7 @@ use super::expr::{
 use super::stringdecode::{StringType, string_decode};
 use crate::strkey::StrKey;
 use crate::{
-    lang::Referrable,
+    pbexpr::Referrable,
     pbcst::{self, Attr, BinaryOp, Key, MapKind, MatcherKind, PbNodeKind, Visitor},
 };
 use std::fmt::{Debug, Display};

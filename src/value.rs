@@ -1,7 +1,7 @@
 use std::{fmt::Display, rc::Rc};
 
 use crate::{
-    lang::{Error, ErrorType, Exportable, ExprOps, ParsableValue, Result},
+    pbexpr::{Error, ErrorType, Exportable, ExprOps, ParsableValue, Result},
     path::VirtPath,
     pbbuild::PbBuild,
     strkey::StrKey,
@@ -45,7 +45,7 @@ impl Value {
 }
 
 impl Exportable for Value {
-    fn export(&self) -> crate::lang::ExportResult<crate::pbcst::PbNode> {
+    fn export(&self) -> crate::pbexpr::ExportResult<crate::pbcst::PbNode> {
         match self {
             Value::Int(v) => Ok(crate::pbcst::PbNode::generated(
                 crate::pbcst::PbNodeKind::Int(v.to_string()),
@@ -56,7 +56,7 @@ impl Exportable for Value {
             Value::Bool(v) => Ok(crate::pbcst::PbNode::generated(
                 crate::pbcst::PbNodeKind::Bool(*v),
             )),
-            _ => Err(crate::lang::ExportError("value cannot be exported".into())),
+            _ => Err(crate::pbexpr::ExportError("value cannot be exported".into())),
         }
     }
 }

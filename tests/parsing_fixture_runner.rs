@@ -1,5 +1,5 @@
 use lead_build::LangContext;
-use lead_build::lang::ErrorType;
+use lead_build::pbexpr::ErrorType;
 use lead_build::path::VirtPath;
 use serde::Deserialize;
 use std::fs;

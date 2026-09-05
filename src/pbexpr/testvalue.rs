@@ -31,7 +31,7 @@ pub enum TestValue {
 }
 
 impl Exportable for TestValue {
-    fn export(&self) -> crate::lang::ExportResult<crate::pbcst::PbNode> {
+    fn export(&self) -> crate::pbexpr::ExportResult<crate::pbcst::PbNode> {
         match self {
             TestValue::Int(v) => Ok(crate::pbcst::PbNode::generated(
                 crate::pbcst::PbNodeKind::Int(v.to_string()),

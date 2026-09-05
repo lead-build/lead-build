@@ -1,6 +1,6 @@
 use crate::{
     Expr, Value,
-    lang::{Error, ErrorType, ExprStorage, ExprType, Result},
+    pbexpr::{Error, ErrorType, ExprStorage, ExprType, Result},
     ninjawriter::NinjaFile,
     path::VirtPath,
 };

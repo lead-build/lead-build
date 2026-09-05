@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     Expr,
-    lang::{
+    pbexpr::{
         Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Referrable, Result,
     },
     ninjawriter::NinjaArg,

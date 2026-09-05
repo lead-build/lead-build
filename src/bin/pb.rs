@@ -1,7 +1,7 @@
 use clap::{ArgAction, Parser};
 use lead_build::{
     Expr, LangContext, Result, Value, add_expr_to_ninjafile,
-    lang::{Error, ErrorType, ExprSet, ExprType},
+    pbexpr::{Error, ErrorType, ExprSet, ExprType},
     ninjawriter::NinjaFile,
     path::VirtPath,
     strkey::StrKey,
