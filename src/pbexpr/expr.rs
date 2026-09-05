@@ -2,7 +2,10 @@ mod export;
 pub mod matcher;
 
 use super::error::{Error, ErrorType, Loc, Referrable, Result};
-use crate::strkey::StrKey;
+use crate::{
+    pblang::{PbNode, PbNodeKind, Span, export::PbLangExportable},
+    strkey::StrKey,
+};
 pub use export::{ExportError, ExportResult, Exportable};
 pub use matcher::Matcher;
 use std::{
@@ -204,7 +207,7 @@ where
     pub fn toexpr(self: ExprType<T, F>, left: usize, right: usize, f: &F) -> Expr<T, F> {
         self.reref(Some(Loc {
             file: f.clone(),
-            span: crate::pbcst::Span { left, right },
+            span: Span { left, right },
         }))
     }
 
@@ -274,15 +277,11 @@ where
     F: Clone + Debug + Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use crate::pbcst::export::Exportable as PbExportable;
-
         match Exportable::export(self) {
-            Ok(node) => f.write_str(&PbExportable::to_source(&node)),
+            Ok(node) => f.write_str(&PbLangExportable::to_source(&node)),
             Err(error) => {
-                let node = crate::pbcst::PbNode::generated(
-                    crate::pbcst::PbNodeKind::OutputPlaceholder(error.to_string()),
-                );
-                f.write_str(&PbExportable::to_source(&node))
+                let node = PbNode::generated(PbNodeKind::OutputPlaceholder(error.to_string()));
+                f.write_str(&PbLangExportable::to_source(&node))
             }
         }
     }
@@ -294,15 +293,11 @@ where
     F: Clone + Debug + Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use crate::pbcst::export::Exportable as PbExportable;
-
         match Exportable::export(self) {
-            Ok(node) => f.write_str(&PbExportable::to_source(&node)),
+            Ok(node) => f.write_str(&PbLangExportable::to_source(&node)),
             Err(error) => {
-                let node = crate::pbcst::PbNode::generated(
-                    crate::pbcst::PbNodeKind::OutputPlaceholder(error.to_string()),
-                );
-                f.write_str(&PbExportable::to_source(&node))
+                let node = PbNode::generated(PbNodeKind::OutputPlaceholder(error.to_string()));
+                f.write_str(&PbLangExportable::to_source(&node))
             }
         }
     }

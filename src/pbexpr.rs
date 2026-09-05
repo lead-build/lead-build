@@ -6,7 +6,7 @@ mod stringdecode;
 #[cfg(test)]
 mod testvalue;
 
-pub use crate::pbcst;
+pub use crate::pblang;
 pub use error::{Error, ErrorType, Referrable, Result};
 pub use expr::{
     ExportError, ExportResult, Exportable, Expr, ExprBuiltin, ExprOps, ExprSet, ExprStorage,

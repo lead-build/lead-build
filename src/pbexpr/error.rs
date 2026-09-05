@@ -3,6 +3,8 @@ use std::{
     result,
 };
 
+use crate::pblang::Span;
+
 pub type Result<T, F> = result::Result<T, Error<F>>;
 
 pub trait Referrable {
@@ -17,7 +19,7 @@ pub trait Referrable {
 #[derive(Debug, PartialEq, Clone)]
 pub struct Loc<F> {
     pub file: F,
-    pub span: crate::pbcst::Span,
+    pub span: Span,
 }
 
 impl<F> Display for Loc<F>
@@ -98,7 +100,7 @@ where
         let mut out = self;
         out.locs.push(Loc {
             file: file.clone(),
-            span: crate::pbcst::Span { left, right },
+            span: Span { left, right },
         });
         out
     }

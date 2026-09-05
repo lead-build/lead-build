@@ -7,7 +7,7 @@ use super::stringdecode::{StringType, string_decode};
 use crate::strkey::StrKey;
 use crate::{
     pbexpr::Referrable,
-    pbcst::{self, Attr, BinaryOp, Key, MapKind, MatcherKind, PbNodeKind, Visitor},
+    pblang::{self, Attr, BinaryOp, Key, MapKind, MatcherKind, PbNodeKind, Visitor},
 };
 use std::fmt::{Debug, Display};
 
@@ -20,7 +20,7 @@ where
     fn from_bool(value: bool) -> Self;
 }
 
-fn transform_parse_error<F>(input: pbcst::ParseError<'_>, file: &F) -> Error<F>
+fn transform_parse_error<F>(input: pblang::ParseError<'_>, file: &F) -> Error<F>
 where
     F: Clone,
 {
@@ -60,8 +60,8 @@ where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
     F: Clone + Debug + Referrable,
 {
-    let tree = pbcst::parse(code).map_err(|error| transform_parse_error(error, file))?;
-    pbcst::Visitor::<T, F>::visit_expr(&ExprGenerator { file }, &tree)
+    let tree = pblang::parse(code).map_err(|error| transform_parse_error(error, file))?;
+    pblang::Visitor::<T, F>::visit_expr(&ExprGenerator { file }, &tree)
 }
 
 fn unescape_str(input: &str) -> String {
@@ -106,7 +106,7 @@ struct ExprGenerator<'a, F> {
 }
 
 impl<F> ExprGenerator<'_, F> {
-    fn expr<T>(&self, kind: ExprType<T, F>, span: &pbcst::Span) -> Expr<T, F>
+    fn expr<T>(&self, kind: ExprType<T, F>, span: &pblang::Span) -> Expr<T, F>
     where
         T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
         F: Clone + Debug + Referrable,
@@ -123,7 +123,7 @@ where
     type ExprOutput = Result<Expr<T, F>, F>;
     type MatcherOutput = Result<Matcher<T, F>, F>;
 
-    fn visit_expr(&self, expr: &pbcst::PbNode) -> Self::ExprOutput {
+    fn visit_expr(&self, expr: &pblang::PbNode) -> Self::ExprOutput {
         use BinaryOp::*;
 
         let loc = expr.span.as_ref().expect("parsed CST nodes have spans");
@@ -180,8 +180,8 @@ where
             PbNodeKind::Unary(op, rhs) => self.expr(
                 ExprType::UnOp(
                     match op {
-                        pbcst::UnaryOp::Neg => ExprUnOp::Neg,
-                        pbcst::UnaryOp::Not => ExprUnOp::Not,
+                        pblang::UnaryOp::Neg => ExprUnOp::Neg,
+                        pblang::UnaryOp::Not => ExprUnOp::Not,
                     },
                     self.visit_expr(rhs)?,
                 ),
@@ -355,7 +355,7 @@ where
         Ok(value)
     }
 
-    fn visit_matcher(&self, matcher: &pbcst::Matcher) -> Self::MatcherOutput {
+    fn visit_matcher(&self, matcher: &pblang::Matcher) -> Self::MatcherOutput {
         Ok(match &matcher.kind {
             MatcherKind::Alias(inner, name, _) => {
                 Matcher::Alias(Box::new(self.visit_matcher(inner)?), *name)

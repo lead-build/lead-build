@@ -1,11 +1,11 @@
 pub mod builtins;
 pub mod context;
-pub mod pbexpr;
 pub mod ninjaexpr;
 pub mod ninjawriter;
 pub mod path;
 pub mod pbbuild;
-pub mod pbcst;
+pub mod pbexpr;
+pub mod pblang;
 pub mod stats;
 pub mod strkey;
 pub mod value;

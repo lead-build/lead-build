@@ -6,12 +6,12 @@ use std::{
 
 use crate::{
     Expr,
-    pbexpr::{
-        Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Referrable, Result,
-    },
     ninjawriter::NinjaArg,
     path::VirtPath,
     pbbuild::{PbBuild, PbBuildRule},
+    pbexpr::{
+        Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Referrable, Result,
+    },
     strkey::StrKey,
     value::Value,
 };

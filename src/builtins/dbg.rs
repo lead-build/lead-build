@@ -2,8 +2,8 @@ use std::fmt::Debug;
 
 use crate::{
     Expr,
-    pbexpr::{Error, ErrorType, ExprBuiltin, ExprSet, ExprType, Result},
     path::VirtPath,
+    pbexpr::{Error, ErrorType, ExprBuiltin, ExprSet, ExprType, Result},
     strkey::StrKey,
     value::Value,
 };

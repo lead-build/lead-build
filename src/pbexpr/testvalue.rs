@@ -8,6 +8,7 @@ use super::{
     expr::ExprOps,
     parser::ParsableValue,
 };
+use crate::pblang::{PbNode, PbNodeKind, export::PbLangExportable};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FRef;
@@ -31,24 +32,17 @@ pub enum TestValue {
 }
 
 impl Exportable for TestValue {
-    fn export(&self) -> crate::pbexpr::ExportResult<crate::pbcst::PbNode> {
+    fn export(&self) -> crate::pbexpr::ExportResult<PbNode> {
         match self {
-            TestValue::Int(v) => Ok(crate::pbcst::PbNode::generated(
-                crate::pbcst::PbNodeKind::Int(v.to_string()),
-            )),
-            TestValue::String(v) => Ok(crate::pbcst::PbNode::generated(
-                crate::pbcst::PbNodeKind::String(format!("\"{v}\"")),
-            )),
-            TestValue::Bool(v) => Ok(crate::pbcst::PbNode::generated(
-                crate::pbcst::PbNodeKind::Bool(*v),
-            )),
+            TestValue::Int(v) => Ok(PbNode::generated(PbNodeKind::Int(v.to_string()))),
+            TestValue::String(v) => Ok(PbNode::generated(PbNodeKind::String(format!("\"{v}\"")))),
+            TestValue::Bool(v) => Ok(PbNode::generated(PbNodeKind::Bool(*v))),
         }
     }
 }
 
 impl Display for TestValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        use crate::pbcst::export::Exportable as PbExportable;
         self.export().unwrap().to_source().fmt(f)
     }
 }

@@ -3,7 +3,7 @@ use lalrpop_util::lalrpop_mod;
 
 pub mod export;
 
-lalrpop_mod!(pub grammar, "pbcst/grammar.rs");
+lalrpop_mod!(pub grammar, "pblang/grammar.rs");
 
 pub type ParseError<'input> = lalrpop_util::ParseError<usize, grammar::Token<'input>, &'static str>;
 
@@ -183,7 +183,7 @@ pub trait Visitor<T, F> {
 #[cfg(test)]
 mod tests {
     use super::parse;
-    use crate::pbcst::export::Exportable;
+    use crate::pblang::export::PbLangExportable;
     use std::fs;
     use std::path::{Path, PathBuf};
 

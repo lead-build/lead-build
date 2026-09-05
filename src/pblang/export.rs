@@ -4,7 +4,7 @@ use super::{
 };
 use std::fmt::{Result, Write};
 
-pub trait Exportable {
+pub trait PbLangExportable {
     fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write;
@@ -17,7 +17,7 @@ pub trait Exportable {
     }
 }
 
-impl Exportable for PbNode {
+impl PbLangExportable for PbNode {
     fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
@@ -147,7 +147,7 @@ impl Exportable for PbNode {
     }
 }
 
-impl Exportable for BinaryOp {
+impl PbLangExportable for BinaryOp {
     fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
@@ -173,7 +173,7 @@ impl Exportable for BinaryOp {
     }
 }
 
-impl Exportable for UnaryOp {
+impl PbLangExportable for UnaryOp {
     fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
@@ -185,7 +185,7 @@ impl Exportable for UnaryOp {
     }
 }
 
-impl Exportable for Attr {
+impl PbLangExportable for Attr {
     fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
@@ -201,7 +201,7 @@ impl Exportable for Attr {
     }
 }
 
-impl Exportable for Matcher {
+impl PbLangExportable for Matcher {
     fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
@@ -234,7 +234,7 @@ impl Exportable for Matcher {
     }
 }
 
-impl Exportable for LetBinding {
+impl PbLangExportable for LetBinding {
     fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
@@ -246,7 +246,7 @@ impl Exportable for LetBinding {
     }
 }
 
-impl Exportable for Assignment {
+impl PbLangExportable for Assignment {
     fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
@@ -258,7 +258,7 @@ impl Exportable for Assignment {
     }
 }
 
-impl Exportable for Key {
+impl PbLangExportable for Key {
     fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
@@ -270,7 +270,7 @@ impl Exportable for Key {
     }
 }
 
-impl Exportable for SwitchCase {
+impl PbLangExportable for SwitchCase {
     fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
@@ -282,7 +282,7 @@ impl Exportable for SwitchCase {
     }
 }
 
-impl Exportable for ObjectMatcher {
+impl PbLangExportable for ObjectMatcher {
     fn export<W>(&self, writer: &mut W) -> Result
     where
         W: Write,
@@ -308,7 +308,7 @@ fn export_delimited<W, T>(
 ) -> Result
 where
     W: Write,
-    T: Exportable,
+    T: PbLangExportable,
 {
     writer.write_str(open)?;
     for (index, item) in delimited.items.iter().enumerate() {
