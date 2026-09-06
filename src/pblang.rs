@@ -1,3 +1,4 @@
+pub mod fmt;
 pub mod lexer;
 pub mod syntaxtree;
 
@@ -11,7 +12,7 @@ pub type ParseError<'input> = lalrpop_util::ParseError<usize, lexer::Tok, LexErr
 
 pub fn parse(code: &str) -> std::result::Result<SyntaxNode, ParseError<'_>> {
     let tokens = Lexer::new(code);
-    let root = grammar::ExprParser::new().parse(tokens)?;
+    let root = grammar::ExprParser::new().parse(code, tokens)?;
     Ok(SyntaxNode::new_root(
         root.green
             .into_node()
@@ -49,20 +50,13 @@ mod tests {
                 .unwrap_or_else(|error| panic!("failed to parse {}: {error:?}", path.display()));
             let output = tree.text().to_string();
 
-            // FIXME: This is not entirely correct. Comments needs to be
-            // preserved in the tree, since it's important when used by an
-            // auto formatter. The synthetic TRIVIA padding `green_node`
-            // inserts for skipped whitespace/comments is spaces, not the
-            // original text, which is why this comparison strips all
-            // whitespace rather than comparing byte-for-byte.
-            let clean_source: String = source
-                .lines()
-                .map(|line| line.split("#").next().unwrap_or("").trim())
-                .collect::<Vec<_>>()
-                .join("")
-                .chars()
-                .filter(|c| !c.is_whitespace())
-                .collect();
+            // The tree is byte-exact within the parsed expression's own
+            // span, comments included (TRIVIA holds the real source bytes
+            // for gaps between tokens). Trivia outside that span — e.g. a
+            // trailing comment after the file's last token — isn't
+            // captured, so this still strips whitespace before comparing
+            // rather than requiring byte-for-byte equality.
+            let clean_source: String = source.chars().filter(|c| !c.is_whitespace()).collect();
             let clean_output: String = output.chars().filter(|c| !c.is_whitespace()).collect();
 
             assert_eq!(clean_output, clean_source, "fixture {}", path.display());
