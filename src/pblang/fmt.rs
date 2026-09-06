@@ -375,13 +375,15 @@ fn format_node(node: SyntaxNode) -> Piece {
                 // Every case (and the first one right after `{`) starts a
                 // fresh line; anything else here is inside the default
                 // clause's own flattened `_ => expr ;` tokens.
-                let default = if matches!(kinds[i - 1], SyntaxKind::L_BRACE | SyntaxKind::SWITCH_CASE)
-                {
-                    RcDoc::hardline()
-                } else {
-                    simple_default(kind, &kinds, i)
-                };
-                body = body.append(gap_doc(&gaps[i], default)).append(pieces[i].doc.clone());
+                let default =
+                    if matches!(kinds[i - 1], SyntaxKind::L_BRACE | SyntaxKind::SWITCH_CASE) {
+                        RcDoc::hardline()
+                    } else {
+                        simple_default(kind, &kinds, i)
+                    };
+                body = body
+                    .append(gap_doc(&gaps[i], default))
+                    .append(pieces[i].doc.clone());
             }
             pieces[0]
                 .doc
@@ -403,7 +405,9 @@ fn format_node(node: SyntaxNode) -> Piece {
                 if pieces[i].own_line {
                     default = RcDoc::hardline();
                 }
-                doc = doc.append(gap_doc(&gaps[i], default)).append(pieces[i].doc.clone());
+                doc = doc
+                    .append(gap_doc(&gaps[i], default))
+                    .append(pieces[i].doc.clone());
             }
             doc
         }
