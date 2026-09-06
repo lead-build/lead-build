@@ -10,9 +10,10 @@ use std::{
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// The .pbb file to format (required unless --stdin is given)
-    #[arg(required_unless_present = "stdin")]
-    file: Option<PathBuf>,
+    /// The .pbb file(s) to format (required unless --stdin is given).
+    /// Multiple files are only allowed together with --in-place.
+    #[arg(required_unless_present = "stdin", num_args = 1..)]
+    file: Vec<PathBuf>,
 
     /// Read the source from stdin instead of a file
     #[arg(short, long, conflicts_with = "file")]
@@ -27,7 +28,7 @@ struct Args {
     in_place: bool,
 }
 
-fn run(args: Args) -> Result<(), String> {
+fn run_file(file: Option<&PathBuf>, args: &Args) -> Result<(), String> {
     let (source, name) = if args.stdin {
         let mut source = String::new();
         io::stdin()
@@ -35,10 +36,7 @@ fn run(args: Args) -> Result<(), String> {
             .map_err(|e| format!("Error reading stdin: {e}"))?;
         (source, "<stdin>".to_string())
     } else {
-        let file = args
-            .file
-            .as_ref()
-            .expect("clap requires `file` unless --stdin is set");
+        let file = file.expect("clap requires `file` unless --stdin is set");
         let source = fs::read_to_string(file)
             .map_err(|e| format!("Error reading {}: {}", file.display(), e))?;
         (source, file.display().to_string())
@@ -51,10 +49,7 @@ fn run(args: Args) -> Result<(), String> {
     } else {
         let formatted = format_tree(&tree).text().to_string();
         if args.in_place {
-            let file = args
-                .file
-                .as_ref()
-                .expect("clap requires `file` unless --stdin is set");
+            let file = file.expect("clap requires `file` unless --stdin is set");
             fs::write(file, &formatted)
                 .map_err(|e| format!("Error writing {}: {}", file.display(), e))?;
         } else {
@@ -68,8 +63,28 @@ fn run(args: Args) -> Result<(), String> {
 fn main() {
     let args = Args::parse();
 
-    if let Err(err) = run(args) {
-        eprintln!("{}", err);
+    if !args.in_place && args.file.len() > 1 {
+        eprintln!("Multiple files are only allowed together with --in-place");
+        exit(1);
+    }
+
+    let mut had_error = false;
+
+    if args.stdin {
+        if let Err(err) = run_file(None, &args) {
+            eprintln!("{}", err);
+            had_error = true;
+        }
+    } else {
+        for file in &args.file {
+            if let Err(err) = run_file(Some(file), &args) {
+                eprintln!("{}", err);
+                had_error = true;
+            }
+        }
+    }
+
+    if had_error {
         exit(1);
     }
 }
