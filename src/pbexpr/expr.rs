@@ -1,12 +1,9 @@
 mod export;
 pub mod matcher;
 
-use super::error::{Error, ErrorType, Loc, Referrable, Result};
-use crate::{
-    pblang::{PbNode, PbNodeKind, Span, export::PbLangExportable},
-    strkey::StrKey,
-};
-pub use export::{ExportError, ExportResult, Exportable};
+use super::error::{Error, ErrorType, Loc, Referrable, Result, Span};
+use crate::strkey::StrKey;
+pub use export::{Exportable, Printer};
 pub use matcher::Matcher;
 use std::{
     cell::{Ref, RefCell},
@@ -277,13 +274,7 @@ where
     F: Clone + Debug + Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match Exportable::export(self) {
-            Ok(node) => f.write_str(&PbLangExportable::to_source(&node)),
-            Err(error) => {
-                let node = PbNode::generated(PbNodeKind::OutputPlaceholder(error.to_string()));
-                f.write_str(&PbLangExportable::to_source(&node))
-            }
-        }
+        Exportable::export(self, &mut Printer::new(f))
     }
 }
 
@@ -293,13 +284,7 @@ where
     F: Clone + Debug + Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match Exportable::export(self) {
-            Ok(node) => f.write_str(&PbLangExportable::to_source(&node)),
-            Err(error) => {
-                let node = PbNode::generated(PbNodeKind::OutputPlaceholder(error.to_string()));
-                f.write_str(&PbLangExportable::to_source(&node))
-            }
-        }
+        Exportable::export(self, &mut Printer::new(f))
     }
 }
 

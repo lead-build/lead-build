@@ -1,14 +1,13 @@
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 
 use strum::EnumTryAs;
 
 use super::{
-    Exportable,
+    Exportable, Printer,
     error::{Error, ErrorType, Referrable, Result},
     expr::ExprOps,
     parser::ParsableValue,
 };
-use crate::pblang::{PbNode, PbNodeKind, StringPart, export::PbLangExportable};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct FRef;
@@ -32,20 +31,18 @@ pub enum TestValue {
 }
 
 impl Exportable for TestValue {
-    fn export(&self) -> crate::pbexpr::ExportResult<PbNode> {
+    fn export(&self, out: &mut Printer<'_>) -> std::fmt::Result {
         match self {
-            TestValue::Int(v) => Ok(PbNode::generated(PbNodeKind::Int(v.to_string()))),
-            TestValue::String(v) => Ok(PbNode::generated(PbNodeKind::String(vec![
-                StringPart::Chunk(v.clone()),
-            ]))),
-            TestValue::Bool(v) => Ok(PbNode::generated(PbNodeKind::Bool(*v))),
+            TestValue::Int(v) => write!(out, "{v}"),
+            TestValue::String(v) => write!(out, "\"{v}\""),
+            TestValue::Bool(v) => write!(out, "{v}"),
         }
     }
 }
 
 impl Display for TestValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.export().unwrap().to_source().fmt(f)
+        self.export(&mut Printer::new(f))
     }
 }
 

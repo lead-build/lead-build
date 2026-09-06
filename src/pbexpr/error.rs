@@ -3,7 +3,7 @@ use std::{
     result,
 };
 
-use crate::pblang::Span;
+pub type Span = std::ops::Range<usize>;
 
 pub type Result<T, F> = result::Result<T, Error<F>>;
 

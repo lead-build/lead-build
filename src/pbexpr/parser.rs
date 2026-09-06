@@ -3,11 +3,13 @@ use super::expr::matcher::ObjectMatch;
 use super::expr::{
     Exportable, Expr, ExprBinOp, ExprMapType, ExprOps, ExprSet, ExprType, ExprUnOp, Matcher,
 };
-use crate::strkey::StrKey;
-use crate::{
-    pbexpr::Referrable,
-    pblang::{self, Attr, BinaryOp, Key, MapKind, MatcherKind, PbNodeKind, StringPart, Visitor},
+use crate::pbexpr::Referrable;
+use crate::pblang::{
+    self,
+    syntaxtree::{SyntaxKind, SyntaxNode, SyntaxToken},
 };
+use crate::strkey::StrKey;
+use rowan::NodeOrToken;
 use std::fmt::{Debug, Display};
 
 pub trait ParsableValue
@@ -60,7 +62,11 @@ where
     F: Clone + Debug + Referrable,
 {
     let tree = pblang::parse(code).map_err(|error| transform_parse_error(error, file))?;
-    pblang::Visitor::<T, F>::visit_expr(&ExprGenerator { file }, &tree)
+    ExprGenerator {
+        file,
+        _value: std::marker::PhantomData,
+    }
+    .visit_expr(&tree)
 }
 
 /// Decodes escape sequences in a raw string chunk (as produced by the lexer:
@@ -103,301 +109,430 @@ fn unescape_chunk(input: &str) -> String {
     out
 }
 
-struct ExprGenerator<'a, F> {
-    file: &'a F,
+fn range_usize(range: rowan::TextRange) -> (usize, usize) {
+    (usize::from(range.start()), usize::from(range.end()))
 }
 
-impl<F> ExprGenerator<'_, F> {
-    fn expr<T>(&self, kind: ExprType<T, F>, span: &pblang::Span) -> Expr<T, F>
-    where
-        T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
-        F: Clone + Debug + Referrable,
-    {
-        kind.toexpr(span.start, span.end, self.file)
+fn span_of(node: &SyntaxNode) -> (usize, usize) {
+    range_usize(node.text_range())
+}
+
+/// Direct, non-trivia token children of `node`, in source order. `TRIVIA` is
+/// the synthetic space-padding `green_node` inserts for skipped
+/// whitespace/comments (see `pblang::syntaxtree`); it never carries meaning.
+fn non_trivia_tokens(node: &SyntaxNode) -> impl Iterator<Item = SyntaxToken> + '_ {
+    node.children_with_tokens()
+        .filter_map(|el| el.into_token())
+        .filter(|t| t.kind() != SyntaxKind::TRIVIA)
+}
+
+fn first_non_trivia_token(node: &SyntaxNode) -> SyntaxToken {
+    non_trivia_tokens(node)
+        .next()
+        .unwrap_or_else(|| panic!("{:?} has at least one real token", node.kind()))
+}
+
+fn find_token(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxToken> {
+    non_trivia_tokens(node).find(|t| t.kind() == kind)
+}
+
+fn has_token(node: &SyntaxNode, kind: SyntaxKind) -> bool {
+    find_token(node, kind).is_some()
+}
+
+/// The single non-trivia operator token of a `BINARY_EXPR`/`UNARY_EXPR`
+/// (the one thing between/before its expression child/children).
+fn operator_token(node: &SyntaxNode) -> SyntaxToken {
+    non_trivia_tokens(node)
+        .next()
+        .unwrap_or_else(|| panic!("{:?} has an operator token", node.kind()))
+}
+
+fn binary_op_from_kind(kind: SyntaxKind) -> ExprBinOp {
+    match kind {
+        SyntaxKind::QUESTION => ExprBinOp::HasAttr,
+        SyntaxKind::PLUS_PLUS => ExprBinOp::ListConcat,
+        SyntaxKind::STAR => ExprBinOp::Mult,
+        SyntaxKind::SLASH => ExprBinOp::Div,
+        SyntaxKind::MINUS => ExprBinOp::Sub,
+        SyntaxKind::PLUS => ExprBinOp::Add,
+        SyntaxKind::SLASH_SLASH => ExprBinOp::Update,
+        SyntaxKind::LT => ExprBinOp::Lt,
+        SyntaxKind::LT_EQ => ExprBinOp::Le,
+        SyntaxKind::GT => ExprBinOp::Gt,
+        SyntaxKind::GT_EQ => ExprBinOp::Ge,
+        SyntaxKind::EQ_EQ => ExprBinOp::Eq,
+        SyntaxKind::BANG_EQ => ExprBinOp::Neq,
+        SyntaxKind::AMP_AMP => ExprBinOp::LogAnd,
+        SyntaxKind::PIPE_PIPE => ExprBinOp::LogOr,
+        SyntaxKind::THIN_ARROW => ExprBinOp::LogImpl,
+        other => unreachable!("BINARY_EXPR has unexpected operator token {other:?}"),
     }
 }
 
-impl<T, F> Visitor<T, F> for ExprGenerator<'_, F>
+/// One piece of a `STRING_LIT`: either a raw literal chunk, or a `${..}`
+/// interpolation (the `STRING_EMBED` node wrapping it).
+enum StringPart {
+    Chunk(String),
+    Embed(SyntaxNode),
+}
+
+fn string_lit_parts(node: &SyntaxNode) -> Vec<StringPart> {
+    node.children_with_tokens()
+        .filter_map(|el| match el {
+            NodeOrToken::Token(t) if t.kind() == SyntaxKind::STRING_CHUNK => {
+                Some(StringPart::Chunk(t.text().to_string()))
+            }
+            NodeOrToken::Node(n) if n.kind() == SyntaxKind::STRING_EMBED => {
+                Some(StringPart::Embed(n))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+/// Reconstructs an object key's raw (still-escaped) text from its
+/// `STRING_LIT` node. Object keys don't support string interpolation: they
+/// must be resolvable to a `StrKey` without evaluating any expression, since
+/// keys are fixed once when the tree is built, not lazily evaluated.
+fn string_key_text<F>(node: &SyntaxNode, file: &F) -> Result<String, F>
+where
+    F: Clone,
+{
+    let mut raw = String::new();
+    for part in string_lit_parts(node) {
+        match part {
+            StringPart::Chunk(chunk) => raw.push_str(&chunk),
+            StringPart::Embed(_) => {
+                let (start, end) = span_of(node);
+                return Err(Error::new(
+                    ErrorType::Parse,
+                    "object keys cannot contain string interpolation",
+                )
+                .loc(start, end, file));
+            }
+        }
+    }
+    Ok(raw)
+}
+
+struct ExprGenerator<'a, T, F> {
+    file: &'a F,
+    _value: std::marker::PhantomData<T>,
+}
+
+impl<T, F> ExprGenerator<'_, T, F>
 where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
     F: Clone + Debug + Referrable,
 {
-    type ExprOutput = Result<Expr<T, F>, F>;
-    type MatcherOutput = Result<Matcher<T, F>, F>;
+    fn expr(&self, kind: ExprType<T, F>, start: usize, end: usize) -> Expr<T, F> {
+        kind.toexpr(start, end, self.file)
+    }
 
-    fn visit_expr(&self, expr: &pblang::PbNode) -> Self::ExprOutput {
-        use BinaryOp::*;
+    /// Splits an `ASSIGNMENT` node into its key (as a `StrKey`) and its value
+    /// node. The key is either a bare `IDENT` token, or a `STRING_LIT` node
+    /// (always the first node child when present).
+    fn assignment_key_value(&self, assignment: &SyntaxNode) -> Result<(StrKey, SyntaxNode), F> {
+        if let Some(ident) = find_token(assignment, SyntaxKind::IDENT) {
+            let value = assignment
+                .children()
+                .next()
+                .expect("ASSIGNMENT always has a value");
+            return Ok((StrKey::from(ident.text()), value));
+        }
+        let mut children = assignment.children();
+        let key_node = children.next().expect("ASSIGNMENT key is a STRING_LIT");
+        let value = children.next().expect("ASSIGNMENT always has a value");
+        let raw = string_key_text(&key_node, self.file)?;
+        Ok((StrKey::from(unescape_chunk(&raw).as_str()), value))
+    }
 
-        let loc = expr.span.as_ref().expect("parsed CST nodes have spans");
-        let value = match &expr.kind {
-            PbNodeKind::Group(value) => self.visit_expr(value)?,
-            PbNodeKind::Let(bindings, body) => self.expr(
-                ExprType::Let(
-                    bindings
-                        .iter()
-                        .map(|binding| {
-                            Ok((
-                                self.visit_matcher(&binding.matcher)?,
-                                self.visit_expr(&binding.value)?,
-                            ))
-                        })
-                        .collect::<Result<_, F>>()?,
-                    self.visit_expr(body)?,
-                ),
-                loc,
+    fn visit_object_matcher_field(&self, field: &SyntaxNode) -> Result<ObjectMatch<T, F>, F> {
+        let key = StrKey::from(first_non_trivia_token(field).text());
+        let has_eq = has_token(field, SyntaxKind::EQ);
+        let has_default = has_token(field, SyntaxKind::QUESTION);
+        let children: Vec<SyntaxNode> = field.children().collect();
+        let (matcher, default) = match (has_eq, has_default) {
+            (false, false) => (Matcher::Ident(key), None),
+            (true, false) => (self.visit_matcher(&children[0])?, None),
+            (false, true) => (Matcher::Ident(key), Some(self.visit_expr(&children[0])?)),
+            (true, true) => (
+                self.visit_matcher(&children[0])?,
+                Some(self.visit_expr(&children[1])?),
             ),
-            PbNodeKind::FuncDef(matchers, body) => {
+        };
+        Ok((key, matcher, default))
+    }
+
+    fn visit_expr(&self, node: &SyntaxNode) -> Result<Expr<T, F>, F> {
+        let (start, end) = span_of(node);
+        let children: Vec<SyntaxNode> = node.children().collect();
+
+        let value = match node.kind() {
+            SyntaxKind::GROUP_EXPR => return self.visit_expr(&children[0]),
+
+            SyntaxKind::LET_EXPR => {
+                let body = children.last().expect("LET_EXPR has a body");
+                let bindings = &children[..children.len() - 1];
+                self.expr(
+                    ExprType::Let(
+                        bindings
+                            .iter()
+                            .map(|binding| {
+                                let bc: Vec<SyntaxNode> = binding.children().collect();
+                                Ok((self.visit_matcher(&bc[0])?, self.visit_expr(&bc[1])?))
+                            })
+                            .collect::<Result<_, F>>()?,
+                        self.visit_expr(body)?,
+                    ),
+                    start,
+                    end,
+                )
+            }
+            SyntaxKind::BIND_EXPR => {
+                let body = children.last().expect("BIND_EXPR has a body");
+                let bindings = &children[..children.len() - 1];
+                let items = bindings
+                    .iter()
+                    .map(|assignment| {
+                        let (key, value) = self.assignment_key_value(assignment)?;
+                        Ok((key, self.visit_expr(&value)?))
+                    })
+                    .collect::<Result<ExprSet<T, F>, F>>()?;
+                self.expr(ExprType::Bind(items, self.visit_expr(body)?), start, end)
+            }
+            SyntaxKind::FUNC_DEF => {
+                let body = children.last().expect("FUNC_DEF has a body");
+                let matchers = &children[..children.len() - 1];
                 let mut result = self.visit_expr(body)?;
                 for matcher in matchers.iter().rev() {
-                    result =
-                        self.expr(ExprType::FuncDef(self.visit_matcher(matcher)?, result), loc);
+                    result = self.expr(
+                        ExprType::FuncDef(self.visit_matcher(matcher)?, result),
+                        start,
+                        end,
+                    );
                 }
                 result
             }
-            PbNodeKind::Binary(op, lhs, rhs) => self.expr(
-                ExprType::BinOp(
-                    match op {
-                        HasAttr => ExprBinOp::HasAttr,
-                        ListConcat => ExprBinOp::ListConcat,
-                        Mult => ExprBinOp::Mult,
-                        Div => ExprBinOp::Div,
-                        Sub => ExprBinOp::Sub,
-                        Add => ExprBinOp::Add,
-                        Update => ExprBinOp::Update,
-                        Lt => ExprBinOp::Lt,
-                        Le => ExprBinOp::Le,
-                        Gt => ExprBinOp::Gt,
-                        Ge => ExprBinOp::Ge,
-                        Eq => ExprBinOp::Eq,
-                        Neq => ExprBinOp::Neq,
-                        LogAnd => ExprBinOp::LogAnd,
-                        LogOr => ExprBinOp::LogOr,
-                        LogImpl => ExprBinOp::LogImpl,
-                    },
-                    self.visit_expr(lhs)?,
-                    self.visit_expr(rhs)?,
-                ),
-                loc,
-            ),
-            PbNodeKind::Unary(op, rhs) => self.expr(
-                ExprType::UnOp(
-                    match op {
-                        pblang::UnaryOp::Neg => ExprUnOp::Neg,
-                        pblang::UnaryOp::Not => ExprUnOp::Not,
-                    },
-                    self.visit_expr(rhs)?,
-                ),
-                loc,
-            ),
-            PbNodeKind::FuncCall(func, arg) => self.expr(
+            SyntaxKind::BINARY_EXPR => {
+                let op = binary_op_from_kind(operator_token(node).kind());
+                self.expr(
+                    ExprType::BinOp(
+                        op,
+                        self.visit_expr(&children[0])?,
+                        self.visit_expr(&children[1])?,
+                    ),
+                    start,
+                    end,
+                )
+            }
+            SyntaxKind::UNARY_EXPR => {
+                let op = match operator_token(node).kind() {
+                    SyntaxKind::MINUS => ExprUnOp::Neg,
+                    SyntaxKind::BANG => ExprUnOp::Not,
+                    other => unreachable!("UNARY_EXPR has unexpected operator {other:?}"),
+                };
+                self.expr(
+                    ExprType::UnOp(op, self.visit_expr(&children[0])?),
+                    start,
+                    end,
+                )
+            }
+            SyntaxKind::FUNC_CALL => self.expr(
                 ExprType::FuncCall {
-                    func: self.visit_expr(func)?,
-                    arg: self.visit_expr(arg)?,
+                    func: self.visit_expr(&children[0])?,
+                    arg: self.visit_expr(&children[1])?,
                 },
-                loc,
+                start,
+                end,
             ),
-            PbNodeKind::AttrSel(lhs, attr) => self.expr(
-                ExprType::AttrSel(
-                    self.visit_expr(lhs)?,
-                    match attr {
-                        Attr::Ident(name, loc) => self.expr(
-                            ExprType::Value(T::new_from_string(name)),
-                            loc.as_ref().expect("parsed CST nodes have spans"),
-                        ),
-                        Attr::Dynamic(value) => self.visit_expr(value)?,
+            SyntaxKind::ATTR_SEL => {
+                let lhs = self.visit_expr(&children[0])?;
+                let attr = if children.len() == 2 {
+                    let inner = children[1]
+                        .children()
+                        .next()
+                        .expect("DYNAMIC_ATTR wraps an expr");
+                    self.visit_expr(&inner)?
+                } else {
+                    let name = find_token(node, SyntaxKind::IDENT)
+                        .expect("static ATTR_SEL has an IDENT token");
+                    let (nstart, nend) = range_usize(name.text_range());
+                    self.expr(
+                        ExprType::Value(T::new_from_string(name.text())),
+                        nstart,
+                        nend,
+                    )
+                };
+                self.expr(ExprType::AttrSel(lhs, attr), start, end)
+            }
+            SyntaxKind::FOLD_EXPR => {
+                let has_init = has_token(node, SyntaxKind::COLON);
+                let (func, init, input) = if has_init {
+                    (&children[0], Some(&children[1]), &children[2])
+                } else {
+                    (&children[0], None, &children[1])
+                };
+                self.expr(
+                    ExprType::Fold {
+                        func: self.visit_expr(func)?,
+                        init: init.map(|n| self.visit_expr(n)).transpose()?,
+                        input: self.visit_expr(input)?,
                     },
-                ),
-                loc,
-            ),
-            PbNodeKind::Fold { func, init, input } => self.expr(
-                ExprType::Fold {
-                    func: self.visit_expr(func)?,
-                    init: init
-                        .as_ref()
-                        .map(|value| self.visit_expr(value))
-                        .transpose()?,
-                    input: self.visit_expr(input)?,
-                },
-                loc,
-            ),
-            PbNodeKind::Map {
-                kind,
-                func,
-                input,
-                filter,
-            } => self.expr(
-                ExprType::Map(
-                    match kind {
-                        MapKind::List => ExprMapType::List,
-                        MapKind::Object => ExprMapType::Object,
-                    },
-                    self.visit_expr(func)?,
-                    self.visit_expr(input)?,
-                    filter
-                        .as_ref()
-                        .map(|value| self.visit_expr(value))
-                        .transpose()?,
-                ),
-                loc,
-            ),
-            PbNodeKind::Switch {
-                input,
-                cases,
-                default,
-            } => self.expr(
-                ExprType::Switch(
-                    self.visit_expr(input)?,
-                    cases
-                        .iter()
-                        .map(|case| {
-                            Ok((
-                                self.visit_expr(&case.matcher)?,
-                                self.visit_expr(&case.value)?,
-                            ))
-                        })
-                        .collect::<Result<_, F>>()?,
-                    default
-                        .as_ref()
-                        .map(|value| self.visit_expr(value))
-                        .transpose()?,
-                ),
-                loc,
-            ),
-            PbNodeKind::Object(assignments) => self.expr(
-                ExprType::Object(
-                    assignments
-                        .iter()
-                        .map(|assignment| {
-                            Ok((
-                                match &assignment.key {
-                                    Key::Ident(key, _) => StrKey::from(key),
-                                    Key::String(parts, span) => {
-                                        let key_loc = span.as_ref().unwrap_or(loc);
-                                        if let [StringPart::Chunk(part)] = &parts[..] {
-                                            StrKey::from(part)
-                                        } else {
-                                            return Err(Error::new(
-                                                ErrorType::Parse,
-                                                "object keys cannot contain string interpolation",
-                                            )
-                                            .loc(key_loc.start, key_loc.end, self.file));
-                                        }
-                                    }
-                                },
-                                self.visit_expr(&assignment.value)?,
-                            ))
-                        })
-                        .collect::<Result<ExprSet<T, F>, F>>()?,
-                ),
-                loc,
-            ),
-            PbNodeKind::Bind(assignments, body) => self.expr(
-                ExprType::Bind(
-                    assignments
-                        .iter()
-                        .map(|assignment| {
-                            Ok((
-                                match &assignment.key {
-                                    Key::Ident(key, _) => StrKey::from(key),
-                                    Key::String(_, _) => unreachable!("bind keys are identifiers"),
-                                },
-                                self.visit_expr(&assignment.value)?,
-                            ))
-                        })
-                        .collect::<Result<ExprSet<T, F>, F>>()?,
-                    self.visit_expr(body)?,
-                ),
-                loc,
-            ),
-            PbNodeKind::List(items) => self.expr(
-                ExprType::List(
-                    items
-                        .items
-                        .iter()
-                        .map(|item| self.visit_expr(item))
-                        .collect::<Result<_, F>>()?,
-                ),
-                loc,
-            ),
-            PbNodeKind::Tuple(items) => self.expr(
-                ExprType::Tuple(
-                    items
-                        .items
-                        .iter()
-                        .map(|item| self.visit_expr(item))
-                        .collect::<Result<_, F>>()?,
-                ),
-                loc,
-            ),
-            PbNodeKind::Bool(value) => self.expr(ExprType::Value(T::from_bool(*value)), loc),
-            PbNodeKind::Int(value) => self.expr(
-                ExprType::Value(T::parse_int(value).expect("Error parsing int")),
-                loc,
-            ),
-            PbNodeKind::String(parts) => {
-                let pieces = parts
+                    start,
+                    end,
+                )
+            }
+            SyntaxKind::MAP_EXPR => {
+                let kind = match first_non_trivia_token(node).kind() {
+                    SyntaxKind::L_BRACKET => ExprMapType::List,
+                    SyntaxKind::L_BRACE => ExprMapType::Object,
+                    other => unreachable!("MAP_EXPR starts with unexpected token {other:?}"),
+                };
+                let has_filter = has_token(node, SyntaxKind::IF_KW);
+                let (func, input, filter) = if has_filter {
+                    (&children[0], &children[1], Some(&children[2]))
+                } else {
+                    (&children[0], &children[1], None)
+                };
+                self.expr(
+                    ExprType::Map(
+                        kind,
+                        self.visit_expr(func)?,
+                        self.visit_expr(input)?,
+                        filter.map(|n| self.visit_expr(n)).transpose()?,
+                    ),
+                    start,
+                    end,
+                )
+            }
+            SyntaxKind::SWITCH_EXPR => {
+                let mut iter = children.iter();
+                let input = iter.next().expect("SWITCH_EXPR has an input");
+                let mut cases = Vec::new();
+                let mut default = None;
+                for child in iter {
+                    if child.kind() == SyntaxKind::SWITCH_CASE {
+                        let cc: Vec<SyntaxNode> = child.children().collect();
+                        cases.push((self.visit_expr(&cc[0])?, self.visit_expr(&cc[1])?));
+                    } else {
+                        default = Some(self.visit_expr(child)?);
+                    }
+                }
+                self.expr(
+                    ExprType::Switch(self.visit_expr(input)?, cases, default),
+                    start,
+                    end,
+                )
+            }
+            SyntaxKind::OBJECT_EXPR => {
+                let items = children
                     .iter()
+                    .map(|assignment| {
+                        let (key, value) = self.assignment_key_value(assignment)?;
+                        Ok((key, self.visit_expr(&value)?))
+                    })
+                    .collect::<Result<ExprSet<T, F>, F>>()?;
+                self.expr(ExprType::Object(items), start, end)
+            }
+            SyntaxKind::LIST_EXPR => self.expr(
+                ExprType::List(
+                    children
+                        .iter()
+                        .map(|item| self.visit_expr(item))
+                        .collect::<Result<_, F>>()?,
+                ),
+                start,
+                end,
+            ),
+            SyntaxKind::TUPLE_EXPR => self.expr(
+                ExprType::Tuple(
+                    children
+                        .iter()
+                        .map(|item| self.visit_expr(item))
+                        .collect::<Result<_, F>>()?,
+                ),
+                start,
+                end,
+            ),
+            SyntaxKind::LITERAL_EXPR => {
+                let tok = first_non_trivia_token(node);
+                match tok.kind() {
+                    SyntaxKind::TRUE_KW => {
+                        self.expr(ExprType::Value(T::from_bool(true)), start, end)
+                    }
+                    SyntaxKind::FALSE_KW => {
+                        self.expr(ExprType::Value(T::from_bool(false)), start, end)
+                    }
+                    SyntaxKind::NUMBER => self.expr(
+                        ExprType::Value(T::parse_int(tok.text()).expect("Error parsing int")),
+                        start,
+                        end,
+                    ),
+                    SyntaxKind::NULL_KW => self.expr(ExprType::Null, start, end),
+                    other => unreachable!("LITERAL_EXPR wraps unexpected token {other:?}"),
+                }
+            }
+            SyntaxKind::STRING_LIT => {
+                let pieces = string_lit_parts(node)
+                    .into_iter()
                     .map(|part| match part {
-                        StringPart::Chunk(raw) => T::parse_string(unescape_chunk(raw))
-                            .map(|value| self.expr(ExprType::Value(value), loc))
+                        StringPart::Chunk(raw) => T::parse_string(unescape_chunk(&raw))
+                            .map(|value| self.expr(ExprType::Value(value), start, end))
                             .ok_or_else(|| {
                                 Error::new(ErrorType::Parse, "Error parsing string")
-                                    .loc(loc.start, loc.end, self.file)
+                                    .loc(start, end, self.file)
                             }),
-                        StringPart::Embed(expr) => self.visit_expr(expr),
+                        StringPart::Embed(embed) => {
+                            let inner =
+                                embed.children().next().expect("STRING_EMBED wraps an expr");
+                            self.visit_expr(&inner)
+                        }
                     })
                     .collect::<Result<Vec<_>, F>>()?;
                 if pieces.len() == 1 {
                     pieces.into_iter().next().unwrap()
                 } else {
-                    self.expr(ExprType::Concat(pieces), loc)
+                    self.expr(ExprType::Concat(pieces), start, end)
                 }
             }
-            PbNodeKind::Var(name) => self.expr(ExprType::Var(StrKey::from(name)), loc),
-            PbNodeKind::Null => self.expr(ExprType::Null, loc),
-            PbNodeKind::OutputPlaceholder(_)
-            | PbNodeKind::OutputElided { .. }
-            | PbNodeKind::OutputCycle => {
-                return Err(Error::new(
-                    ErrorType::Parse,
-                    "diagnostic CST nodes cannot be parsed",
-                ));
+            SyntaxKind::VAR_EXPR => {
+                let name = first_non_trivia_token(node);
+                self.expr(ExprType::Var(StrKey::from(name.text())), start, end)
             }
+            other => unreachable!("unexpected expression node kind {other:?}"),
         };
         Ok(value)
     }
 
-    fn visit_matcher(&self, matcher: &pblang::Matcher) -> Self::MatcherOutput {
-        Ok(match &matcher.kind {
-            MatcherKind::Alias(inner, name, _) => {
-                Matcher::Alias(Box::new(self.visit_matcher(inner)?), StrKey::from(name))
+    fn visit_matcher(&self, node: &SyntaxNode) -> Result<Matcher<T, F>, F> {
+        let children: Vec<SyntaxNode> = node.children().collect();
+        Ok(match node.kind() {
+            SyntaxKind::MATCHER_IDENT => {
+                Matcher::Ident(StrKey::from(first_non_trivia_token(node).text()))
             }
-            MatcherKind::DontCare => Matcher::DontCare,
-            MatcherKind::Ident(name) => Matcher::Ident(StrKey::from(name)),
-            MatcherKind::Tuple(items) => Matcher::Tuple(
-                items
-                    .items
+            SyntaxKind::MATCHER_WILDCARD => Matcher::DontCare,
+            SyntaxKind::MATCHER_ALIAS => {
+                let inner = self.visit_matcher(&children[0])?;
+                let name = find_token(node, SyntaxKind::IDENT).expect("MATCHER_ALIAS has a name");
+                Matcher::Alias(Box::new(inner), StrKey::from(name.text()))
+            }
+            SyntaxKind::MATCHER_TUPLE => Matcher::Tuple(
+                children
                     .iter()
                     .map(|item| self.visit_matcher(item))
                     .collect::<Result<_, F>>()?,
             ),
-            MatcherKind::Object { fields, exhaustive } => Matcher::Object(
-                fields
+            SyntaxKind::MATCHER_OBJECT => {
+                let exhaustive = !has_token(node, SyntaxKind::DOT_DOT_DOT);
+                let fields = children
                     .iter()
-                    .map(|field| {
-                        Ok((
-                            StrKey::from(&field.key),
-                            self.visit_matcher(&field.matcher)?,
-                            field
-                                .default
-                                .as_ref()
-                                .map(|value| self.visit_expr(value))
-                                .transpose()?,
-                        ))
-                    })
-                    .collect::<Result<Vec<ObjectMatch<T, F>>, F>>()?,
-                *exhaustive,
-            ),
+                    .map(|field| self.visit_object_matcher_field(field))
+                    .collect::<Result<Vec<ObjectMatch<T, F>>, F>>()?;
+                Matcher::Object(fields, exhaustive)
+            }
+            other => unreachable!("unexpected matcher node kind {other:?}"),
         })
     }
 }

@@ -49,45 +49,45 @@ pub enum Tok {
     #[token("?")]
     BinOpHasAttr,
     #[token("++")]
-    BinOpListConcat,
+    PlusPlus,
     #[token("*")]
-    BinOpMult,
+    Star,
     #[token("/")]
-    BinOpDiv,
+    Slash,
     #[token("+")]
-    BinOpAdd,
+    Plus,
     #[token("//")]
-    BinOpUpdate,
+    SlashSlash,
     #[token("<")]
-    BinOpLt,
+    Lt,
     #[token("<=")]
-    BinOpLe,
+    LtEq,
     #[token(">")]
-    BinOpGt,
+    Gt,
     #[token(">=")]
-    BinOpGe,
+    GtEq,
     #[token("==")]
-    BinOpEq,
+    EqEq,
     #[token("!=")]
-    BinOpNeq,
+    BangEq,
     #[token("&&")]
-    BinOpLogAnd,
+    AmpAmp,
     #[token("||")]
-    BinOpLogOr,
+    PipePipe,
     #[token("->")]
-    BinOpLogImpl,
+    ThinArrow,
     #[token("{")]
     LBrace,
     #[token("}")]
     RBrace,
     #[token("(")]
-    LPar,
+    LParen,
     #[token(")")]
-    RPar,
+    RParen,
     #[token("[")]
-    LSqBracket,
+    LBracket,
     #[token("]")]
-    RSqBracket,
+    RBracket,
 
     #[regex(r"[a-zA-Z][a-zA-Z0-9_]*", |lex| lex.slice().to_string())]
     Ident(String),

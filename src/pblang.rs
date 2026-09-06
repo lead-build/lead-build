@@ -1,196 +1,27 @@
-pub mod export;
 pub mod lexer;
-
-use std::ops::Range;
+pub mod syntaxtree;
 
 use lalrpop_util::lalrpop_mod;
 use lexer::{LexError, Lexer};
+use syntaxtree::SyntaxNode;
 
 lalrpop_mod!(pub grammar, "pblang/grammar.rs");
 
 pub type ParseError<'input> = lalrpop_util::ParseError<usize, lexer::Tok, LexError>;
 
-pub fn parse(code: &str) -> std::result::Result<PbNode, ParseError<'_>> {
+pub fn parse(code: &str) -> std::result::Result<SyntaxNode, ParseError<'_>> {
     let tokens = Lexer::new(code);
-    let tree = grammar::ExprParser::new().parse(&(), tokens)?;
-    Ok(tree)
-}
-
-pub type Span = Range<usize>;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PbNode {
-    pub kind: PbNodeKind,
-    pub span: Option<Span>,
-}
-
-impl PbNode {
-    pub fn new<F>(kind: PbNodeKind, start: usize, end: usize, _file: &F) -> Self {
-        Self {
-            kind,
-            span: Some(Span { start, end }),
-        }
-    }
-
-    pub fn generated(kind: PbNodeKind) -> Self {
-        Self { kind, span: None }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum PbNodeKind {
-    Group(Box<PbNode>),
-    Let(Vec<LetBinding>, Box<PbNode>),
-    Bind(Vec<Assignment>, Box<PbNode>),
-    FuncDef(Vec<Matcher>, Box<PbNode>),
-    Binary(BinaryOp, Box<PbNode>, Box<PbNode>),
-    Unary(UnaryOp, Box<PbNode>),
-    FuncCall(Box<PbNode>, Box<PbNode>),
-    AttrSel(Box<PbNode>, Attr),
-    Fold {
-        func: Box<PbNode>,
-        init: Option<Box<PbNode>>,
-        input: Box<PbNode>,
-    },
-    Map {
-        kind: MapKind,
-        func: Box<PbNode>,
-        input: Box<PbNode>,
-        filter: Option<Box<PbNode>>,
-    },
-    Switch {
-        input: Box<PbNode>,
-        cases: Vec<SwitchCase>,
-        default: Option<Box<PbNode>>,
-    },
-    Object(Vec<Assignment>),
-    List(Delimited<PbNode>),
-    Tuple(Delimited<PbNode>),
-    Bool(bool),
-    Int(String),
-    String(Vec<StringPart>),
-    Var(String),
-    Null,
-    OutputPlaceholder(String),
-    OutputElided {
-        label: String,
-        omitted: usize,
-    },
-    OutputCycle,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub enum StringPart {
-    /// Raw source text, escape sequences undecoded, for exact round-trip.
-    Chunk(String),
-    Embed(Box<PbNode>),
-}
-
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum BinaryOp {
-    HasAttr,
-    ListConcat,
-    Mult,
-    Div,
-    Sub,
-    Add,
-    Update,
-    Lt,
-    Le,
-    Gt,
-    Ge,
-    Eq,
-    Neq,
-    LogAnd,
-    LogOr,
-    LogImpl,
-}
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum UnaryOp {
-    Neg,
-    Not,
-}
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub enum MapKind {
-    List,
-    Object,
-}
-#[derive(Debug, Clone, PartialEq)]
-pub struct Delimited<T> {
-    pub items: Vec<T>,
-    pub trailing: bool,
-}
-#[derive(Debug, Clone, PartialEq)]
-pub enum Attr {
-    Ident(String, Option<Span>),
-    Dynamic(Box<PbNode>),
-}
-#[derive(Debug, Clone, PartialEq)]
-pub struct LetBinding {
-    pub matcher: Matcher,
-    pub value: PbNode,
-    pub span: Option<Span>,
-}
-#[derive(Debug, Clone, PartialEq)]
-pub struct Assignment {
-    pub key: Key,
-    pub value: PbNode,
-    pub span: Option<Span>,
-}
-#[derive(Debug, Clone, PartialEq)]
-pub enum Key {
-    Ident(String, Option<Span>),
-    String(Vec<StringPart>, Option<Span>),
-}
-#[derive(Debug, Clone, PartialEq)]
-pub struct SwitchCase {
-    pub matcher: PbNode,
-    pub value: PbNode,
-    pub span: Option<Span>,
-}
-#[derive(Debug, Clone, PartialEq)]
-pub struct Matcher {
-    pub kind: MatcherKind,
-    pub span: Option<Span>,
-}
-impl Matcher {
-    pub fn new<F>(kind: MatcherKind, start: usize, end: usize, _file: &F) -> Self {
-        Self {
-            kind,
-            span: Some(Span { start, end }),
-        }
-    }
-}
-#[derive(Debug, Clone, PartialEq)]
-pub enum MatcherKind {
-    Alias(Box<Matcher>, String, Option<Span>),
-    DontCare,
-    Ident(String),
-    Tuple(Delimited<Matcher>),
-    Object {
-        fields: Vec<ObjectMatcher>,
-        exhaustive: bool,
-    },
-}
-#[derive(Debug, Clone, PartialEq)]
-pub struct ObjectMatcher {
-    pub key: String,
-    pub matcher: Matcher,
-    pub default: Option<PbNode>,
-    pub span: Option<Span>,
-}
-
-pub trait Visitor<T, F> {
-    type ExprOutput;
-    type MatcherOutput;
-    fn visit_expr(&self, expr: &PbNode) -> Self::ExprOutput;
-    fn visit_matcher(&self, matcher: &Matcher) -> Self::MatcherOutput;
+    let root = grammar::ExprParser::new().parse(tokens)?;
+    Ok(SyntaxNode::new_root(
+        root.green
+            .into_node()
+            .expect("the top-level Expr rule always produces a node"),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::parse;
-    use crate::pblang::export::PbLangExportable;
     use std::fs;
     use std::path::{Path, PathBuf};
 
@@ -216,12 +47,14 @@ mod tests {
             let source = fs::read_to_string(&path).unwrap();
             let tree = parse(&source)
                 .unwrap_or_else(|error| panic!("failed to parse {}: {error:?}", path.display()));
-            let mut output = String::new();
-            tree.export(&mut output).unwrap();
+            let output = tree.text().to_string();
 
             // FIXME: This is not entirely correct. Comments needs to be
-            // preserved in CST, since it's important when used by an auto
-            // formatter
+            // preserved in the tree, since it's important when used by an
+            // auto formatter. The synthetic TRIVIA padding `green_node`
+            // inserts for skipped whitespace/comments is spaces, not the
+            // original text, which is why this comparison strips all
+            // whitespace rather than comparing byte-for-byte.
             let clean_source: String = source
                 .lines()
                 .map(|line| line.split("#").next().unwrap_or("").trim())

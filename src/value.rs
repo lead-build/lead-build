@@ -1,10 +1,12 @@
-use std::{fmt::Display, rc::Rc};
+use std::{
+    fmt::{Display, Write},
+    rc::Rc,
+};
 
 use crate::{
     path::VirtPath,
     pbbuild::PbBuild,
-    pbexpr::{Error, ErrorType, Exportable, ExprOps, ParsableValue, Result},
-    pblang::export::PbLangExportable,
+    pbexpr::{Error, ErrorType, Exportable, ExprOps, ParsableValue, Printer, Result},
     strkey::StrKey,
 };
 
@@ -46,32 +48,23 @@ impl Value {
 }
 
 impl Exportable for Value {
-    fn export(&self) -> crate::pbexpr::ExportResult<crate::pblang::PbNode> {
+    fn export(&self, out: &mut Printer<'_>) -> std::fmt::Result {
         match self {
-            Value::Int(v) => Ok(crate::pblang::PbNode::generated(
-                crate::pblang::PbNodeKind::Int(v.to_string()),
-            )),
-            Value::String(v) => Ok(crate::pblang::PbNode::generated(
-                crate::pblang::PbNodeKind::String(vec![crate::pblang::StringPart::Chunk(
-                    v.clone(),
-                )]),
-            )),
-            Value::Bool(v) => Ok(crate::pblang::PbNode::generated(
-                crate::pblang::PbNodeKind::Bool(*v),
-            )),
-            _ => Err(crate::pbexpr::ExportError(
-                "value cannot be exported".into(),
-            )),
+            Value::Int(v) => write!(out, "{v}"),
+            Value::String(v) => write!(out, "\"{v}\""),
+            Value::Bool(v) => write!(out, "{v}"),
+            Value::Path { path, .. } => write!(out, "<path: {path}>"),
+            Value::BuildVar(key) => write!(out, "<build var: {key}>"),
+            Value::BuildConcat(parts) => out.nested("build concat", |p| {
+                p.list(parts.iter(), "", |p, part| part.export(p))
+            }),
         }
     }
 }
 
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.export() {
-            Ok(node) => node.to_source().fmt(f),
-            Err(error) => error.fmt(f),
-        }
+        self.export(&mut Printer::new(f))
     }
 }
 
