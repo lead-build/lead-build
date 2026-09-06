@@ -419,10 +419,6 @@ fn format_node(node: SyntaxNode) -> Piece {
     }
 }
 
-pub fn format_source(tree: &SyntaxNode) -> String {
-    tree.text().to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -430,7 +426,19 @@ mod tests {
 
     fn format(source: &str) -> String {
         let tree = parse(source).unwrap_or_else(|e| panic!("failed to parse {source:?}: {e}"));
-        format_source(&format_tree(&tree))
+        format_tree(&tree).text().to_string().trim_end().to_string()
+    }
+
+    #[test]
+    fn trailing_newline_is_always_exactly_one() {
+        let tree = parse("1").unwrap();
+        assert_eq!(tree.text().to_string(), "1");
+
+        let tree = parse("1\n\n\n").unwrap();
+        assert_eq!(tree.text().to_string(), "1");
+
+        let tree = parse("1\n").unwrap();
+        assert_eq!(tree.text().to_string(), "1");
     }
 
     #[test]
