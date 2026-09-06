@@ -644,6 +644,13 @@ fn test_object_string_key_assign_and_select() {
 }
 
 #[test]
+fn test_object_string_key_interpolation_is_error() {
+    let result: Result<Expr<TestValue, FRef>, FRef> =
+        parse_str(r#"let var = "test"; in { "${var}" = 123; }"#, &FRef);
+    assert!(result.is_err());
+}
+
+#[test]
 fn test_attr_select_computed_from_paren_expr() {
     assert_eq!(
         eval(
@@ -1122,6 +1129,28 @@ fn test_string_concat() {
             "#
         ),
         eval("\"fooaaafoobbbfoo\"")
+    );
+}
+
+#[test]
+fn test_string_interp_embed_with_object_literal() {
+    // The embed's `{`/`}` (object literal + nested string) must not be
+    // mistaken for the embed's own closing brace by the lexer.
+    assert_eq!(eval(r#""value: ${ {a = "x";}.a }""#), eval("\"value: x\""));
+}
+
+#[test]
+fn test_string_interp_nested_string_in_embed() {
+    assert_eq!(
+        eval(
+            r#"
+            let
+                var = "bar";
+            in
+                "outer ${ "inner ${var} end" } tail"
+            "#
+        ),
+        eval("\"outer inner bar end tail\"")
     );
 }
 

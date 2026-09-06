@@ -1,9 +1,9 @@
-use std::fmt::Display;
+use std::fmt::{Display, Write};
 
 use strum::EnumTryAs;
 
 use super::{
-    Exportable,
+    Exportable, Printer,
     error::{Error, ErrorType, Referrable, Result},
     expr::ExprOps,
     parser::ParsableValue,
@@ -15,11 +15,11 @@ pub struct FRef;
 impl Referrable for FRef {
     fn format_ref(
         &self,
-        left: usize,
-        right: usize,
+        start: usize,
+        end: usize,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
-        write!(f, "FRef({},{})", left, right)
+        write!(f, "FRef({},{})", start, end)
     }
 }
 
@@ -31,18 +31,18 @@ pub enum TestValue {
 }
 
 impl Exportable for TestValue {
-    fn export(&self, _indent: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn export(&self, out: &mut Printer<'_>) -> std::fmt::Result {
         match self {
-            TestValue::Int(v) => v.fmt(f),
-            TestValue::String(v) => v.fmt(f),
-            TestValue::Bool(v) => v.fmt(f),
+            TestValue::Int(v) => write!(out, "{v}"),
+            TestValue::String(v) => write!(out, "\"{v}\""),
+            TestValue::Bool(v) => write!(out, "{v}"),
         }
     }
 }
 
 impl Display for TestValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.export(0, f)
+        self.export(&mut Printer::new(f))
     }
 }
 

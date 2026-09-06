@@ -1,0 +1,437 @@
+use super::{
+    lexer::{Tok, LexError},
+    syntaxtree::{GreenSpan, SyntaxKind, green_node, green_token},
+};
+
+grammar(src: &str);
+
+extern {
+    type Location = usize;
+    type Error = LexError;
+
+    enum Tok {
+        "bind"      => Tok::Bind,
+        "let"       => Tok::Let,
+        "in"        => Tok::In,
+        "if"        => Tok::If,
+        "for"       => Tok::For,
+        "switch"    => Tok::Switch,
+        "null"      => Tok::Null,
+        "true"      => Tok::True,
+        "false"     => Tok::False,
+        "@"         => Tok::At,
+        "_"         => Tok::Underscore,
+        "..."       => Tok::TripleDots,
+        "=>"        => Tok::RDoubleArrow,
+        ":"         => Tok::Colon,
+        ";"         => Tok::SemiColon,
+        "="         => Tok::Assign,
+        "|"         => Tok::Pipe,
+        "."         => Tok::Dot,
+        ","         => Tok::Comma,
+        "-"         => Tok::Minus,
+        "!"         => Tok::UnOpNot,
+        "?"         => Tok::BinOpHasAttr,
+        "++"        => Tok::PlusPlus,
+        "*"         => Tok::Star,
+        "/"         => Tok::Slash,
+        "+"         => Tok::Plus,
+        "//"        => Tok::SlashSlash,
+        "<"         => Tok::Lt,
+        "<="        => Tok::LtEq,
+        ">"         => Tok::Gt,
+        ">="        => Tok::GtEq,
+        "=="        => Tok::EqEq,
+        "!="        => Tok::BangEq,
+        "&&"        => Tok::AmpAmp,
+        "||"        => Tok::PipePipe,
+        "->"        => Tok::ThinArrow,
+        "{"         => Tok::LBrace,
+        "}"         => Tok::RBrace,
+        "("         => Tok::LParen,
+        ")"         => Tok::RParen,
+        "["         => Tok::LBracket,
+        "]"         => Tok::RBracket,
+
+        "ident"     => Tok::Ident(<String>),
+        "num"       => Tok::Number(<String>),
+
+        "strquote"      => Tok::StringQuote,
+        "strchunk"      => Tok::StringChunk(<String>),
+        "strembedstart" => Tok::StringEmbedStart,
+        "strembedend"   => Tok::StringEmbedEnd,
+    }
+}
+
+// --- terminal wrappers -----------------------------------------------------
+// One tiny rule per literal token, turning it into a `GreenSpan` (kind +
+// position + its own fixed text) so every grammar rule below can splice it
+// directly into a children list instead of matching it silently.
+
+T_Bind: GreenSpan = <l:@L> "bind" <r:@R> => green_token(SyntaxKind::BIND_KW, l, r, "bind");
+T_Let: GreenSpan = <l:@L> "let" <r:@R> => green_token(SyntaxKind::LET_KW, l, r, "let");
+T_In: GreenSpan = <l:@L> "in" <r:@R> => green_token(SyntaxKind::IN_KW, l, r, "in");
+T_If: GreenSpan = <l:@L> "if" <r:@R> => green_token(SyntaxKind::IF_KW, l, r, "if");
+T_For: GreenSpan = <l:@L> "for" <r:@R> => green_token(SyntaxKind::FOR_KW, l, r, "for");
+T_Switch: GreenSpan = <l:@L> "switch" <r:@R> => green_token(SyntaxKind::SWITCH_KW, l, r, "switch");
+T_Null: GreenSpan = <l:@L> "null" <r:@R> => green_token(SyntaxKind::NULL_KW, l, r, "null");
+T_True: GreenSpan = <l:@L> "true" <r:@R> => green_token(SyntaxKind::TRUE_KW, l, r, "true");
+T_False: GreenSpan = <l:@L> "false" <r:@R> => green_token(SyntaxKind::FALSE_KW, l, r, "false");
+
+T_At: GreenSpan = <l:@L> "@" <r:@R> => green_token(SyntaxKind::AT, l, r, "@");
+T_Underscore: GreenSpan = <l:@L> "_" <r:@R> => green_token(SyntaxKind::UNDERSCORE, l, r, "_");
+T_DotDotDot: GreenSpan = <l:@L> "..." <r:@R> => green_token(SyntaxKind::DOT_DOT_DOT, l, r, "...");
+T_FatArrow: GreenSpan = <l:@L> "=>" <r:@R> => green_token(SyntaxKind::FAT_ARROW, l, r, "=>");
+T_Colon: GreenSpan = <l:@L> ":" <r:@R> => green_token(SyntaxKind::COLON, l, r, ":");
+T_Semi: GreenSpan = <l:@L> ";" <r:@R> => green_token(SyntaxKind::SEMICOLON, l, r, ";");
+T_Eq: GreenSpan = <l:@L> "=" <r:@R> => green_token(SyntaxKind::EQ, l, r, "=");
+T_Pipe: GreenSpan = <l:@L> "|" <r:@R> => green_token(SyntaxKind::PIPE, l, r, "|");
+T_Dot: GreenSpan = <l:@L> "." <r:@R> => green_token(SyntaxKind::DOT, l, r, ".");
+T_Comma: GreenSpan = <l:@L> "," <r:@R> => green_token(SyntaxKind::COMMA, l, r, ",");
+T_Minus: GreenSpan = <l:@L> "-" <r:@R> => green_token(SyntaxKind::MINUS, l, r, "-");
+T_Bang: GreenSpan = <l:@L> "!" <r:@R> => green_token(SyntaxKind::BANG, l, r, "!");
+T_Question: GreenSpan = <l:@L> "?" <r:@R> => green_token(SyntaxKind::QUESTION, l, r, "?");
+T_PlusPlus: GreenSpan = <l:@L> "++" <r:@R> => green_token(SyntaxKind::PLUS_PLUS, l, r, "++");
+T_Star: GreenSpan = <l:@L> "*" <r:@R> => green_token(SyntaxKind::STAR, l, r, "*");
+T_Slash: GreenSpan = <l:@L> "/" <r:@R> => green_token(SyntaxKind::SLASH, l, r, "/");
+T_Plus: GreenSpan = <l:@L> "+" <r:@R> => green_token(SyntaxKind::PLUS, l, r, "+");
+T_SlashSlash: GreenSpan = <l:@L> "//" <r:@R> => green_token(SyntaxKind::SLASH_SLASH, l, r, "//");
+T_Lt: GreenSpan = <l:@L> "<" <r:@R> => green_token(SyntaxKind::LT, l, r, "<");
+T_LtEq: GreenSpan = <l:@L> "<=" <r:@R> => green_token(SyntaxKind::LT_EQ, l, r, "<=");
+T_Gt: GreenSpan = <l:@L> ">" <r:@R> => green_token(SyntaxKind::GT, l, r, ">");
+T_GtEq: GreenSpan = <l:@L> ">=" <r:@R> => green_token(SyntaxKind::GT_EQ, l, r, ">=");
+T_EqEq: GreenSpan = <l:@L> "==" <r:@R> => green_token(SyntaxKind::EQ_EQ, l, r, "==");
+T_BangEq: GreenSpan = <l:@L> "!=" <r:@R> => green_token(SyntaxKind::BANG_EQ, l, r, "!=");
+T_AmpAmp: GreenSpan = <l:@L> "&&" <r:@R> => green_token(SyntaxKind::AMP_AMP, l, r, "&&");
+T_PipePipe: GreenSpan = <l:@L> "||" <r:@R> => green_token(SyntaxKind::PIPE_PIPE, l, r, "||");
+T_ThinArrow: GreenSpan = <l:@L> "->" <r:@R> => green_token(SyntaxKind::THIN_ARROW, l, r, "->");
+T_LBrace: GreenSpan = <l:@L> "{" <r:@R> => green_token(SyntaxKind::L_BRACE, l, r, "{");
+T_RBrace: GreenSpan = <l:@L> "}" <r:@R> => green_token(SyntaxKind::R_BRACE, l, r, "}");
+T_LParen: GreenSpan = <l:@L> "(" <r:@R> => green_token(SyntaxKind::L_PAREN, l, r, "(");
+T_RParen: GreenSpan = <l:@L> ")" <r:@R> => green_token(SyntaxKind::R_PAREN, l, r, ")");
+T_LBracket: GreenSpan = <l:@L> "[" <r:@R> => green_token(SyntaxKind::L_BRACKET, l, r, "[");
+T_RBracket: GreenSpan = <l:@L> "]" <r:@R> => green_token(SyntaxKind::R_BRACKET, l, r, "]");
+
+T_StrQuote: GreenSpan = <l:@L> "strquote" <r:@R> => green_token(SyntaxKind::STRING_QUOTE, l, r, "\"");
+T_StrEmbedStart: GreenSpan = <l:@L> "strembedstart" <r:@R> => green_token(SyntaxKind::STRING_EMBED_START, l, r, "${");
+T_StrEmbedEnd: GreenSpan = <l:@L> "strembedend" <r:@R> => green_token(SyntaxKind::STRING_EMBED_END, l, r, "}");
+
+Ident: GreenSpan = <l:@L> <s:"ident"> <r:@R> => green_token(SyntaxKind::IDENT, l, r, &s);
+Number: GreenSpan = <l:@L> <s:"num"> <r:@R> => green_token(SyntaxKind::NUMBER, l, r, &s);
+StrChunk: GreenSpan = <l:@L> <s:"strchunk"> <r:@R> => green_token(SyntaxKind::STRING_CHUNK, l, r, &s);
+
+// --- expressions -------------------------------------------------------
+
+pub Expr: GreenSpan = {
+    <ExprBindBlocks>,
+};
+
+ExprBindBlocks: GreenSpan = {
+    <l:@L> <let_kw:T_Let> <s:LetSetStmt*> <in_kw:T_In> <e:ExprBindBlocks> <r:@R> => {
+        let mut children = vec![let_kw];
+        children.extend(s);
+        children.push(in_kw);
+        children.push(e);
+        green_node(src, SyntaxKind::LET_EXPR, l, r, children)
+    },
+    <l:@L> <bind_kw:T_Bind> <s:BindSetStmt*> <in_kw:T_In> <e:ExprBindBlocks> <r:@R> => {
+        let mut children = vec![bind_kw];
+        children.extend(s);
+        children.push(in_kw);
+        children.push(e);
+        green_node(src, SyntaxKind::BIND_EXPR, l, r, children)
+    },
+    <l:@L> <p1:T_Pipe> <ms:Matcher*> <p2:T_Pipe> <e:ExprBindBlocks> <r:@R> => {
+        let mut children = vec![p1];
+        children.extend(ms);
+        children.push(p2);
+        children.push(e);
+        green_node(src, SyntaxKind::FUNC_DEF, l, r, children)
+    },
+    <ExprLogImpl>,
+};
+
+ExprLogImpl: GreenSpan = {
+    <l:@L> <lhs:ExprLogImpl> <op:T_ThinArrow> <rhs:ExprLogOr> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <ExprLogOr>,
+};
+ExprLogOr: GreenSpan = {
+    <l:@L> <lhs:ExprLogOr> <op:T_PipePipe> <rhs:ExprLogAnd> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <ExprLogAnd>,
+};
+ExprLogAnd: GreenSpan = {
+    <l:@L> <lhs:ExprLogAnd> <op:T_AmpAmp> <rhs:ExprEq> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <ExprEq>,
+};
+ExprEq: GreenSpan = {
+    <l:@L> <lhs:ExprCompare> <op:T_EqEq> <rhs:ExprCompare> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <l:@L> <lhs:ExprCompare> <op:T_BangEq> <rhs:ExprCompare> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <ExprCompare>,
+};
+ExprCompare: GreenSpan = {
+    <l:@L> <lhs:ExprUpdate> <op:T_Lt> <rhs:ExprUpdate> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <l:@L> <lhs:ExprUpdate> <op:T_LtEq> <rhs:ExprUpdate> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <l:@L> <lhs:ExprUpdate> <op:T_Gt> <rhs:ExprUpdate> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <l:@L> <lhs:ExprUpdate> <op:T_GtEq> <rhs:ExprUpdate> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <ExprUpdate>,
+};
+ExprUpdate: GreenSpan = {
+    <l:@L> <lhs:ExprUpdate> <op:T_SlashSlash> <rhs:ExprNot> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <ExprNot>,
+};
+ExprNot: GreenSpan = {
+    <l:@L> <op:T_Bang> <rhs:ExprAddSub> <r:@R> =>
+        green_node(src, SyntaxKind::UNARY_EXPR, l, r, vec![op, rhs]),
+    <ExprAddSub>,
+};
+ExprAddSub: GreenSpan = {
+    <l:@L> <lhs:ExprAddSub> <op:T_Minus> <rhs:ExprMultDiv> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <l:@L> <lhs:ExprAddSub> <op:T_Plus> <rhs:ExprMultDiv> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <ExprMultDiv>,
+};
+ExprMultDiv: GreenSpan = {
+    <l:@L> <lhs:ExprMultDiv> <op:T_Star> <rhs:ExprConcat> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <l:@L> <lhs:ExprMultDiv> <op:T_Slash> <rhs:ExprConcat> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <ExprConcat>,
+};
+ExprConcat: GreenSpan = {
+    <l:@L> <lhs:ExprConcat> <op:T_PlusPlus> <rhs:ExprHasAttr> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <ExprHasAttr>,
+};
+ExprHasAttr: GreenSpan = {
+    <l:@L> <lhs:ExprNeg> <op:T_Question> <rhs:ExprNeg> <r:@R> =>
+        green_node(src, SyntaxKind::BINARY_EXPR, l, r, vec![lhs, op, rhs]),
+    <ExprNeg>,
+};
+ExprNeg: GreenSpan = {
+    <l:@L> <op:T_Minus> <rhs:ExprFuncCall> <r:@R> =>
+        green_node(src, SyntaxKind::UNARY_EXPR, l, r, vec![op, rhs]),
+    <ExprFuncCall>,
+};
+ExprFuncCall: GreenSpan = {
+    <l:@L> <func:ExprFuncCall> <arg:ExprAttrSel> <r:@R> =>
+        green_node(src, SyntaxKind::FUNC_CALL, l, r, vec![func, arg]),
+    <ExprAttrSel>,
+};
+ExprAttrSel: GreenSpan = {
+    <l:@L> <lhs:ExprAttrSel> <dot:T_Dot> <rhs:Ident> <r:@R> =>
+        green_node(src, SyntaxKind::ATTR_SEL, l, r, vec![lhs, dot, rhs]),
+    <l:@L> <lhs:ExprAttrSel> <dot:T_Dot> <lb:T_LBrace> <rhs:Expr> <rb:T_RBrace> <r:@R> => {
+        let dynamic = green_node(src, SyntaxKind::DYNAMIC_ATTR, lb.start, rb.end, vec![lb, rhs, rb]);
+        green_node(src, SyntaxKind::ATTR_SEL, l, r, vec![lhs, dot, dynamic])
+    },
+    <ExprListComp>,
+};
+ExprListComp: GreenSpan = {
+    <l:@L> <lp:T_LParen> <func:Expr> <for_kw:T_For> <init:(<Expr> <T_Colon>)?> <source:Expr> <rp:T_RParen> <r:@R> => {
+        let mut children = vec![lp, func, for_kw];
+        if let Some((init_expr, colon)) = init {
+            children.push(init_expr);
+            children.push(colon);
+        }
+        children.push(source);
+        children.push(rp);
+        green_node(src, SyntaxKind::FOLD_EXPR, l, r, children)
+    },
+    <l:@L> <lb:T_LBracket> <func:Expr> <for_kw:T_For> <source:Expr>
+        <filter:(<T_If> <Expr>)?> <rb:T_RBracket> <r:@R> => {
+        let mut children = vec![lb, func, for_kw, source];
+        if let Some((if_kw, filter_expr)) = filter {
+            children.push(if_kw);
+            children.push(filter_expr);
+        }
+        children.push(rb);
+        green_node(src, SyntaxKind::MAP_EXPR, l, r, children)
+    },
+    <l:@L> <lb:T_LBrace> <func:Expr> <for_kw:T_For> <source:Expr>
+        <filter:(<T_If> <Expr>)?> <rb:T_RBrace> <r:@R> => {
+        let mut children = vec![lb, func, for_kw, source];
+        if let Some((if_kw, filter_expr)) = filter {
+            children.push(if_kw);
+            children.push(filter_expr);
+        }
+        children.push(rb);
+        green_node(src, SyntaxKind::MAP_EXPR, l, r, children)
+    },
+    <ExprSwitch>,
+};
+ExprSwitch: GreenSpan = {
+    <l:@L> <sw:T_Switch> <source:ExprTerm> <lb:T_LBrace> <cases:SwitchCase*>
+        <default:(<T_Underscore> <T_FatArrow> <Expr> <T_Semi>)?> <rb:T_RBrace> <r:@R> => {
+        let mut children = vec![sw, source, lb];
+        children.extend(cases);
+        if let Some((us, fa, expr, semi)) = default {
+            children.push(us);
+            children.push(fa);
+            children.push(expr);
+            children.push(semi);
+        }
+        children.push(rb);
+        green_node(src, SyntaxKind::SWITCH_EXPR, l, r, children)
+    },
+    <ExprTerm>,
+};
+SwitchCase: GreenSpan =
+    <l:@L> <matcher:Expr> <fa:T_FatArrow> <value:Expr> <semi:T_Semi> <r:@R> =>
+        green_node(src, SyntaxKind::SWITCH_CASE, l, r, vec![matcher, fa, value, semi]);
+
+ExprTerm: GreenSpan = {
+    <ExprObject>,
+    <ExprList>,
+    <ExprTuple>,
+    <ExprValue>,
+    <ExprVar>,
+    <ExprNull>,
+    <l:@L> <lp:T_LParen> <value:Expr> <rp:T_RParen> <r:@R> =>
+        green_node(src, SyntaxKind::GROUP_EXPR, l, r, vec![lp, value, rp]),
+};
+ExprObject: GreenSpan =
+    <l:@L> <lb:T_LBrace> <items:AssignStmt*> <rb:T_RBrace> <r:@R> => {
+        let mut children = vec![lb];
+        children.extend(items);
+        children.push(rb);
+        green_node(src, SyntaxKind::OBJECT_EXPR, l, r, children)
+    };
+ExprList: GreenSpan =
+    <l:@L> <lb:T_LBracket> <items:Comma<Expr>> <rb:T_RBracket> <r:@R> => {
+        let mut children = vec![lb];
+        children.extend(items);
+        children.push(rb);
+        green_node(src, SyntaxKind::LIST_EXPR, l, r, children)
+    };
+ExprTuple: GreenSpan =
+    <l:@L> <lp:T_LParen> <items:TupleComma<Expr>> <rp:T_RParen> <r:@R> => {
+        let mut children = vec![lp];
+        children.extend(items);
+        children.push(rp);
+        green_node(src, SyntaxKind::TUPLE_EXPR, l, r, children)
+    };
+
+LetSetStmt: GreenSpan =
+    <l:@L> <matcher:Matcher> <eq:T_Eq> <value:Expr> <semi:T_Semi> <r:@R> =>
+        green_node(src, SyntaxKind::LET_BINDING, l, r, vec![matcher, eq, value, semi]);
+BindSetStmt: GreenSpan =
+    <l:@L> <key:Ident> <eq:T_Eq> <value:Expr> <semi:T_Semi> <r:@R> =>
+        green_node(src, SyntaxKind::ASSIGNMENT, l, r, vec![key, eq, value, semi]);
+AssignStmt: GreenSpan = {
+    <l:@L> <key:Ident> <eq:T_Eq> <value:Expr> <semi:T_Semi> <r:@R> =>
+        green_node(src, SyntaxKind::ASSIGNMENT, l, r, vec![key, eq, value, semi]),
+    <l:@L> <key:StringLit> <eq:T_Eq> <value:Expr> <semi:T_Semi> <r:@R> =>
+        green_node(src, SyntaxKind::ASSIGNMENT, l, r, vec![key, eq, value, semi]),
+};
+ExprVar: GreenSpan =
+    <l:@L> <name:Ident> <r:@R> => green_node(src, SyntaxKind::VAR_EXPR, l, r, vec![name]);
+ExprNull: GreenSpan =
+    <l:@L> <kw:T_Null> <r:@R> => green_node(src, SyntaxKind::LITERAL_EXPR, l, r, vec![kw]);
+
+Matcher: GreenSpan = {
+    <l:@L> <matcher:MatcherInner> <at:T_At> <name:Ident> <r:@R> =>
+        green_node(src, SyntaxKind::MATCHER_ALIAS, l, r, vec![matcher, at, name]),
+    <MatcherInner>,
+};
+MatcherInner: GreenSpan = {
+    <l:@L> <name:Ident> <r:@R> => green_node(src, SyntaxKind::MATCHER_IDENT, l, r, vec![name]),
+    <l:@L> <us:T_Underscore> <r:@R> => green_node(src, SyntaxKind::MATCHER_WILDCARD, l, r, vec![us]),
+    <l:@L> <lp:T_LParen> <items:TupleComma<Matcher>> <rp:T_RParen> <r:@R> => {
+        let mut children = vec![lp];
+        children.extend(items);
+        children.push(rp);
+        green_node(src, SyntaxKind::MATCHER_TUPLE, l, r, children)
+    },
+    <l:@L> <lb:T_LBrace> <fields:(<ObjectMatcher> <T_Comma>)*>
+        <last:ObjectMatcher?> <rb:T_RBrace> <r:@R> => {
+        let mut children = vec![lb];
+        for (field, comma) in fields {
+            children.push(field);
+            children.push(comma);
+        }
+        if let Some(last) = last {
+            children.push(last);
+        }
+        children.push(rb);
+        green_node(src, SyntaxKind::MATCHER_OBJECT, l, r, children)
+    },
+    <l:@L> <lb:T_LBrace> <fields:(<ObjectMatcher> <T_Comma>)*> <dots:T_DotDotDot> <rb:T_RBrace> <r:@R> => {
+        let mut children = vec![lb];
+        for (field, comma) in fields {
+            children.push(field);
+            children.push(comma);
+        }
+        children.push(dots);
+        children.push(rb);
+        green_node(src, SyntaxKind::MATCHER_OBJECT, l, r, children)
+    },
+};
+ObjectMatcher: GreenSpan = {
+    <l:@L> <key:Ident> <r:@R> =>
+        green_node(src, SyntaxKind::OBJECT_MATCHER_FIELD, l, r, vec![key]),
+    <l:@L> <key:Ident> <eq:T_Eq> <matcher:Matcher> <r:@R> =>
+        green_node(src, SyntaxKind::OBJECT_MATCHER_FIELD, l, r, vec![key, eq, matcher]),
+    <l:@L> <key:Ident> <q:T_Question> <default:ExprTerm> <r:@R> =>
+        green_node(src, SyntaxKind::OBJECT_MATCHER_FIELD, l, r, vec![key, q, default]),
+    <l:@L> <key:Ident> <eq:T_Eq> <matcher:Matcher> <q:T_Question> <default:ExprTerm> <r:@R> =>
+        green_node(src, SyntaxKind::OBJECT_MATCHER_FIELD, l, r, vec![key, eq, matcher, q, default]),
+};
+
+ExprValue: GreenSpan = {
+    <l:@L> <kw:T_True> <r:@R> => green_node(src, SyntaxKind::LITERAL_EXPR, l, r, vec![kw]),
+    <l:@L> <kw:T_False> <r:@R> => green_node(src, SyntaxKind::LITERAL_EXPR, l, r, vec![kw]),
+    <l:@L> <value:Number> <r:@R> => green_node(src, SyntaxKind::LITERAL_EXPR, l, r, vec![value]),
+    <StringLit>,
+};
+
+StringLit: GreenSpan =
+    <l:@L> <q1:T_StrQuote> <parts:StringPart*> <q2:T_StrQuote> <r:@R> => {
+        let mut children = vec![q1];
+        children.extend(parts);
+        children.push(q2);
+        green_node(src, SyntaxKind::STRING_LIT, l, r, children)
+    };
+StringPart: GreenSpan = {
+    <StrChunk>,
+    <l:@L> <es:T_StrEmbedStart> <e:Expr> <ee:T_StrEmbedEnd> <r:@R> =>
+        green_node(src, SyntaxKind::STRING_EMBED, l, r, vec![es, e, ee]),
+};
+
+Comma<T>: Vec<GreenSpan> = {
+    <values:(<T> <T_Comma>)*> <last:T?> => {
+        let mut out = Vec::new();
+        for (item, comma) in values {
+            out.push(item);
+            out.push(comma);
+        }
+        if let Some(last) = last {
+            out.push(last);
+        }
+        out
+    },
+};
+TupleComma<T>: Vec<GreenSpan> = {
+    <c:T_Comma> => vec![c],
+    <values:(<T> <T_Comma>)+> <last:T?> => {
+        let mut out = Vec::new();
+        for (item, comma) in values {
+            out.push(item);
+            out.push(comma);
+        }
+        if let Some(last) = last {
+            out.push(last);
+        }
+        out
+    },
+};

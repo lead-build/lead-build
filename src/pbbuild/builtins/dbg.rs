@@ -2,10 +2,9 @@ use std::fmt::Debug;
 
 use crate::{
     Expr,
-    lang::{Error, ErrorType, ExprBuiltin, ExprSet, ExprType, Result},
-    path::VirtPath,
+    pbbuild::{path::VirtPath, value::Value},
+    pbexpr::{Error, ErrorType, ExprBuiltin, ExprSet, ExprType, Result},
     strkey::StrKey,
-    value::Value,
 };
 
 #[derive(Debug)]

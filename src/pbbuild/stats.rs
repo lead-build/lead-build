@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use log::info;
 
-use crate::path::VirtPath;
+use crate::pbbuild::path::VirtPath;
 
 #[derive(Debug, Default)]
 pub struct NinjaFileStats {
@@ -28,14 +28,14 @@ impl NinjaFileStats {
             .iter()
             .map(|(name, count)| (name.clone(), *count))
             .collect::<Vec<_>>();
-        rules.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+        rules.sort_by(|start, end| end.1.cmp(&start.1).then_with(|| start.0.cmp(&end.0)));
 
         let mut outputs = self
             .output_additions
             .iter()
             .map(|(path, count)| (path.to_path_buf().display().to_string(), *count))
             .collect::<Vec<_>>();
-        outputs.sort_by(|left, right| right.1.cmp(&left.1).then_with(|| left.0.cmp(&right.0)));
+        outputs.sort_by(|start, end| end.1.cmp(&start.1).then_with(|| start.0.cmp(&end.0)));
 
         info!("stats rules added:");
         if rules.is_empty() {

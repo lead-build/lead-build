@@ -1,0 +1,5 @@
+|{ dbg, ... }|
+# this is some TRIVIA to pad before dbg.break
+# the exact location of the dbg statement in this file is what is tested, so
+# the length of the comment needs to be preserved
+dbg.break "An error"

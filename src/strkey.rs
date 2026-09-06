@@ -82,6 +82,12 @@ impl From<&String> for StrKey {
     }
 }
 
+impl From<&StrKey> for String {
+    fn from(value: &StrKey) -> Self {
+        value.to_string()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -1,9 +1,9 @@
 mod export;
 pub mod matcher;
 
-use super::error::{Error, ErrorType, Loc, Referrable, Result};
+use super::error::{Error, ErrorType, Loc, Referrable, Result, Span};
 use crate::strkey::StrKey;
-pub use export::Exportable;
+pub use export::{Exportable, Printer};
 pub use matcher::Matcher;
 use std::{
     cell::{Ref, RefCell},
@@ -194,18 +194,17 @@ where
 
 impl<T, F> ExprType<T, F>
 where
-    T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug + Referrable,
+    T: Clone + PartialEq + Display + ExprOps<F>,
+    F: Clone,
 {
     pub fn reref(self: ExprType<T, F>, loc: Option<Loc<F>>) -> Expr<T, F> {
         Expr(Rc::new(RefCell::new(ExprStorage { tok: self, loc })))
     }
 
-    pub fn toexpr(self: ExprType<T, F>, left: usize, right: usize, f: &F) -> Expr<T, F> {
+    pub fn toexpr(self: ExprType<T, F>, start: usize, end: usize, f: &F) -> Expr<T, F> {
         self.reref(Some(Loc {
             file: f.clone(),
-            left,
-            right,
+            span: Span { start, end },
         }))
     }
 
@@ -275,7 +274,7 @@ where
     F: Clone + Debug + Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.export(0, f)
+        Exportable::export(self, &mut Printer::new(f))
     }
 }
 
@@ -285,7 +284,7 @@ where
     F: Clone + Debug + Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.export(0, f)
+        Exportable::export(self, &mut Printer::new(f))
     }
 }
 
@@ -329,8 +328,8 @@ where
 
 impl<T, F> Default for ExprStorage<T, F>
 where
-    T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-    F: Clone + Debug + Referrable,
+    T: Clone + PartialEq + Display + ExprOps<F>,
+    F: Clone,
 {
     fn default() -> Self {
         Self {

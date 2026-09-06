@@ -1,10 +1,10 @@
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Display};
 
-use crate::lang::Referrable;
+use crate::pbexpr::Referrable;
 use crate::{
     Expr,
-    lang::{Error, ErrorType, Exportable, ExprBuiltin, ExprOps, ExprSet, ExprType, Result},
+    pbexpr::{Error, ErrorType, Exportable, ExprBuiltin, ExprOps, ExprSet, ExprType, Result},
     strkey::StrKey,
 };
 
@@ -215,7 +215,10 @@ where
     F: Clone + Debug + Referrable,
 {
     let mut opsset = ExprSet::new();
-    opsset.insert(StrKey::from("transpose"), Expr::new_builtin(BuiltinOpsTranspose));
+    opsset.insert(
+        StrKey::from("transpose"),
+        Expr::new_builtin(BuiltinOpsTranspose),
+    );
     opsset.insert(
         StrKey::from("transposeObjs"),
         Expr::new_builtin(BuiltinOpsTransposeObjs),

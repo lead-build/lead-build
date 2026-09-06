@@ -3,15 +3,32 @@ use std::{
     result,
 };
 
+pub type Span = std::ops::Range<usize>;
+
 pub type Result<T, F> = result::Result<T, Error<F>>;
 
 pub trait Referrable {
     fn format_ref(
         &self,
-        left: usize,
-        right: usize,
+        start: usize,
+        end: usize,
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result;
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Loc<F> {
+    pub file: F,
+    pub span: Span,
+}
+
+impl<F> Display for Loc<F>
+where
+    F: Referrable,
+{
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.file.format_ref(self.span.start, self.span.end, f)
+    }
 }
 
 #[derive(Debug)]
@@ -38,22 +55,6 @@ impl Display for ErrorType {
             ErrorType::NoValue => write!(f, "No value: "),
             ErrorType::Custom => Ok(()),
         }
-    }
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Loc<F> {
-    pub file: F,
-    pub left: usize,
-    pub right: usize,
-}
-
-impl<F> Display for Loc<F>
-where
-    F: Referrable,
-{
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.file.format_ref(self.left, self.right, f)
     }
 }
 
@@ -95,12 +96,11 @@ where
         }
     }
 
-    pub fn loc(self, left: usize, right: usize, file: &F) -> Self {
+    pub fn loc(self, start: usize, end: usize, file: &F) -> Self {
         let mut out = self;
         out.locs.push(Loc {
-            left,
-            right,
             file: file.clone(),
+            span: Span { start, end },
         });
         out
     }

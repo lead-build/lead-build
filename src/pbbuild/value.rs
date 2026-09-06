@@ -1,9 +1,11 @@
-use std::{fmt::Display, rc::Rc};
+use std::{
+    fmt::{Display, Write},
+    rc::Rc,
+};
 
 use crate::{
-    lang::{Error, ErrorType, Exportable, ExprOps, ParsableValue, Result},
-    path::VirtPath,
-    pbbuild::PbBuild,
+    pbbuild::{PbBuild, path::VirtPath},
+    pbexpr::{Error, ErrorType, Exportable, ExprOps, ParsableValue, Printer, Result},
     strkey::StrKey,
 };
 
@@ -45,29 +47,23 @@ impl Value {
 }
 
 impl Exportable for Value {
-    fn export(&self, _indent: i32, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn export(&self, out: &mut Printer<'_>) -> std::fmt::Result {
         match self {
-            Value::Int(v) => v.fmt(f),
-            Value::String(v) => write!(f, "\"{}\"", v),
-            Value::Path { path: v, .. } => v.fmt(f),
-            Value::Bool(v) => v.fmt(f),
-            Value::BuildVar(v) => write!(f, "${}", v),
-            Value::BuildConcat(vs) => {
-                for (i, v) in vs.iter().enumerate() {
-                    if i != 0 {
-                        write!(f, " + ")?;
-                    }
-                    v.fmt(f)?;
-                }
-                Ok(())
-            }
+            Value::Int(v) => write!(out, "{v}"),
+            Value::String(v) => write!(out, "\"{v}\""),
+            Value::Bool(v) => write!(out, "{v}"),
+            Value::Path { path, .. } => write!(out, "<path: {path}>"),
+            Value::BuildVar(key) => write!(out, "<build var: {key}>"),
+            Value::BuildConcat(parts) => out.nested("build concat", |p| {
+                p.list(parts.iter(), "", |p, part| part.export(p))
+            }),
         }
     }
 }
 
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.export(0, f)
+        self.export(&mut Printer::new(f))
     }
 }
 
