@@ -6,14 +6,11 @@ use std::{
 
 use crate::{
     Expr,
-    ninjawriter::NinjaArg,
-    path::VirtPath,
-    pbbuild::{PbBuild, PbBuildRule},
+    pbbuild::{PbBuild, PbBuildRule, ninjawriter::NinjaArg, path::VirtPath, value::Value},
     pbexpr::{
         Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Referrable, Result,
     },
     strkey::StrKey,
-    value::Value,
 };
 
 macro_rules! expr_get_arg (

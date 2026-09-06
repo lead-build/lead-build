@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use log::info;
 
-use crate::path::VirtPath;
+use crate::pbbuild::path::VirtPath;
 
 #[derive(Debug, Default)]
 pub struct NinjaFileStats {

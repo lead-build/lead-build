@@ -1,3 +1,11 @@
+pub mod builtins;
+pub mod context;
+pub mod ninjaexpr;
+pub mod ninjawriter;
+pub mod path;
+pub mod stats;
+pub mod value;
+
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt::{Debug, Display},
@@ -5,8 +13,10 @@ use std::{
 };
 
 use crate::{
-    ninjawriter::{NinjaArg, NinjaBuild, NinjaFile, NinjaRule, NinjaRuleRef},
-    path::VirtPath,
+    pbbuild::{
+        ninjawriter::{NinjaArg, NinjaBuild, NinjaFile, NinjaRule, NinjaRuleRef},
+        path::VirtPath,
+    },
     pbexpr::{Error, ErrorType, Referrable, Result},
     strkey::StrKey,
 };

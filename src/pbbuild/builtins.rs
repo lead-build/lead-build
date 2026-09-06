@@ -4,7 +4,7 @@ mod pb;
 
 use crate::{
     Value,
-    path::VirtPath,
+    pbbuild::path::VirtPath,
     pbexpr::{ExprSet, Result},
     strkey::StrKey,
 };

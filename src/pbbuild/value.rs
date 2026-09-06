@@ -4,8 +4,7 @@ use std::{
 };
 
 use crate::{
-    path::VirtPath,
-    pbbuild::PbBuild,
+    pbbuild::{PbBuild, path::VirtPath},
     pbexpr::{Error, ErrorType, Exportable, ExprOps, ParsableValue, Printer, Result},
     strkey::StrKey,
 };
