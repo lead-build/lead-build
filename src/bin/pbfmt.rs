@@ -1,5 +1,8 @@
 use clap::Parser;
-use lead_build::pblang::{self, fmt::format_source};
+use lead_build::pblang::{
+    self,
+    fmt::{format_source, format_tree},
+};
 use std::{fs, path::PathBuf, process::exit};
 
 #[derive(Parser, Debug)]
@@ -7,6 +10,10 @@ use std::{fs, path::PathBuf, process::exit};
 struct Args {
     /// The .pbb file to format
     file: PathBuf,
+
+    /// Only check that the file parses, without reformatting it
+    #[arg(short, long)]
+    lint: bool,
 }
 
 fn run(args: Args) -> Result<(), String> {
@@ -16,7 +23,11 @@ fn run(args: Args) -> Result<(), String> {
     let tree = pblang::parse(&source)
         .map_err(|e| format!("Error parsing {}: {}", args.file.display(), e))?;
 
-    print!("{}", format_source(&tree));
+    if args.lint {
+        print!("{}", format_source(&tree));
+    } else {
+        print!("{}", format_source(&format_tree(&tree)));
+    }
 
     Ok(())
 }
