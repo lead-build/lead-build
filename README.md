@@ -4,12 +4,44 @@ Lead build is a declarative build system, providing modularity and reusability.
 
 # Documentation
 
-Documentation can be found in [docs/index.md](docs/index.md)
+If you want to read about how to use lead-build and lead-lib in your project,
+the user guide on https://lead-build.readthedocs.io is for you.
+
+There you will learn how this works:
+
+```pbb
+|{ cwd, include, ... }|
+let
+    lib = include "${cwd}/lead-lib/lead-lib.pbb" { };
+
+    my_app = lib.merge [
+        lib.lang.c.mod {
+            src = [ "${cwd}/src/main.c" ];
+            inc = [ "${cwd}/src/" ];
+        },
+        lib.lang.rust.mod {
+            name = "myrustlib";
+            dir = "${cwd}/myrustlib";
+        },
+    ];
+in
+lib.build [
+    lib.lang.config.simple "${cwd}",
+    lib.lang.c.app_build "my_app",
+    my_app,
+]
+```
+
+If you want to get started with the internals of the lead-build language
+interpreter, the [documetnation](docs/index.md) in this reposistory is your
+starting point.
 
 # Versioning
 
 From version 1.0.0 and forward, [semantic versioning](https://semver.org/) will
 be used.
+
+The interepretation goes as:
 
 - Between major versions (for example 1.x.x and 2.x.x) will not guarantee
   compatibility for build scripts. This will not happen often.
@@ -19,17 +51,12 @@ be used.
 - Patch versions is intended only for bug fixes and cosmetic changes, without
   changing of functionality.
 
-Before version 1.0.0, the versioning is as follows:
-- Versions 0.0.x - non-working, but proof of concept of parts
-- Versions 0.1.x - working version, but rapidly updating. Please try out and
-  give feedback. But no guarantees in stability.
-- Versions 0.2.x to 0.9.x - Syntax is stabilizing, but may change based on
-  feedback. Don't expect compatilbity between versions, but changes should not
-  be major. Feedback is appreciated.
+Debug output and similar are not considered part of the API and may improve in
+any version. This includes the exact format of the `pb -E` output.
 
-# Status of the project
-
-The project is still in early development.
+Before version 1.0.0, the versioning is focused on stabilization. At the point
+of writing, the implementation is quite API stable, but breaking changes may
+still occur whenever necessary.
 
 # License
 
