@@ -13,6 +13,7 @@ enum ExpectKind {
     ErrEval,
     ErrType,
     ErrCustom,
+    ErrDebug,
 }
 
 #[derive(Debug, Deserialize)]
@@ -52,6 +53,7 @@ fn matches_kind(actual: &ErrorType, expected: ExpectKind) -> bool {
             | (ErrorType::Eval, ExpectKind::ErrEval)
             | (ErrorType::Type, ExpectKind::ErrType)
             | (ErrorType::Custom, ExpectKind::ErrCustom)
+            | (ErrorType::Debug, ExpectKind::ErrDebug)
     )
 }
 
@@ -99,12 +101,16 @@ fn run_parsing_fixture_cases() {
                     err
                 );
                 if let Some(needle) = expect.error_contains.as_ref() {
+                    // Checked against the full rendered error, not just
+                    // `err.msg`, so `error_contains` can also assert on the
+                    // backtrace (e.g. a `file:line:col` location).
+                    let rendered = format!("{}", err);
                     assert!(
-                        err.msg.contains(needle),
-                        "case '{}' expected error message to contain '{}', got '{}'",
+                        rendered.contains(needle),
+                        "case '{}' expected error output to contain '{}', got '{}'",
                         case_name,
                         needle,
-                        err.msg
+                        rendered
                     );
                 }
             }

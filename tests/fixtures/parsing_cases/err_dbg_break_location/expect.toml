@@ -1,0 +1,5 @@
+kind = "err_debug"
+# Only pins down that the backtrace correctly locates "An error" (line 5,
+# column 11) despite the leading comment/TRIVIA padding above it -- not the
+# rest of the backtrace's exact shape, which is free to change later.
+error_contains = "main.pbb:5:11"
