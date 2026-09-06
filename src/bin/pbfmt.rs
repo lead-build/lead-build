@@ -21,6 +21,10 @@ struct Args {
     /// Only check that the file parses, without reformatting it
     #[arg(short, long)]
     lint: bool,
+
+    /// Format the file in place instead of printing to stdout
+    #[arg(short, long, alias = "inplace", conflicts_with_all = ["stdin", "lint"])]
+    in_place: bool,
 }
 
 fn run(args: Args) -> Result<(), String> {
@@ -45,7 +49,17 @@ fn run(args: Args) -> Result<(), String> {
     if args.lint {
         println!("{}", tree.text());
     } else {
-        println!("{}", format_tree(&tree).text());
+        let formatted = format_tree(&tree).text().to_string();
+        if args.in_place {
+            let file = args
+                .file
+                .as_ref()
+                .expect("clap requires `file` unless --stdin is set");
+            fs::write(file, &formatted)
+                .map_err(|e| format!("Error writing {}: {}", file.display(), e))?;
+        } else {
+            println!("{}", formatted);
+        }
     }
 
     Ok(())
