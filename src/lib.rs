@@ -1,6 +1,7 @@
 pub mod pbbuild;
 pub mod pbexpr;
 pub mod pblang;
+pub mod pbls;
 pub mod strkey;
 
 pub use crate::pbbuild::ninjaexpr::add_expr_to_ninjafile;

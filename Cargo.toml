@@ -17,6 +17,9 @@ name = "pb"
 [[bin]]
 name = "pbfmt"
 
+[[bin]]
+name = "pbls"
+
 [build-dependencies]
 lalrpop = { version = "0.23.1" }
 
@@ -31,6 +34,8 @@ pathdiff = "0.2.3"
 pretty = "0.12.5"
 rowan = "0.17.0"
 strum = { version = "0.28.0", features = ["derive"] }
+tokio = { version = "1", features = ["rt", "macros", "io-std"] }
+tower-lsp = "0.20.0"
 
 [dev-dependencies]
 serde = { version = "1.0", features = ["derive"] }
