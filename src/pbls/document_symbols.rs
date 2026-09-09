@@ -10,6 +10,7 @@ use tower_lsp::lsp_types::{DocumentSymbol, SymbolKind};
 use crate::pblang::syntaxtree::{SyntaxElement, SyntaxKind, SyntaxNode};
 
 use super::convert::LineIndex;
+use super::document::OpenDocument;
 
 /// `ASSIGNMENT` and `LET_BINDING` both have exactly four non-trivia children,
 /// in a fixed order — see `grammar.lalrpop`'s `BindSetStmt`/`AssignStmt`
@@ -85,23 +86,23 @@ fn collect_symbols(node: &SyntaxNode, line_index: &LineIndex, source: &str) -> V
     symbols
 }
 
-pub fn document_symbols_for_source(
-    node: &SyntaxNode,
-    line_index: &LineIndex,
-    source: &str,
-) -> Vec<DocumentSymbol> {
-    collect_symbols(node, line_index, source)
+impl OpenDocument {
+    /// `None` when the document's latest parse failed — nothing to
+    /// outline until it parses again.
+    pub fn document_symbols(&self) -> Option<Vec<DocumentSymbol>> {
+        let node = self.syntax_node()?;
+        Some(collect_symbols(&node, &self.line_index, &self.text))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pblang;
 
     fn symbols_for(source: &str) -> Vec<DocumentSymbol> {
-        let node = pblang::parse(source).expect("valid source");
-        let line_index = LineIndex::new(source);
-        document_symbols_for_source(&node, &line_index, source)
+        OpenDocument::new(source.to_string())
+            .document_symbols()
+            .expect("valid source")
     }
 
     #[test]

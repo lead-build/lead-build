@@ -6,9 +6,9 @@
 
 use tower_lsp::lsp_types::FoldingRange;
 
-use crate::pblang::syntaxtree::{SyntaxKind, SyntaxNode};
+use crate::pblang::syntaxtree::SyntaxKind;
 
-use super::convert::LineIndex;
+use super::document::OpenDocument;
 
 fn is_foldable_kind(kind: SyntaxKind) -> bool {
     matches!(
@@ -24,38 +24,38 @@ fn is_foldable_kind(kind: SyntaxKind) -> bool {
     )
 }
 
-pub fn folding_ranges_for_source(
-    node: &SyntaxNode,
-    line_index: &LineIndex,
-    source: &str,
-) -> Vec<FoldingRange> {
-    let mut ranges = Vec::new();
-    for descendant in node.descendants() {
-        if !is_foldable_kind(descendant.kind()) {
-            continue;
+impl OpenDocument {
+    /// `None` when the document's latest parse failed — nothing to fold
+    /// until it parses again.
+    pub fn folding_ranges(&self) -> Option<Vec<FoldingRange>> {
+        let node = self.syntax_node()?;
+        let mut ranges = Vec::new();
+        for descendant in node.descendants() {
+            if !is_foldable_kind(descendant.kind()) {
+                continue;
+            }
+            let span = descendant.text_range().into();
+            let range = self.line_index.range(&self.text, span);
+            if range.end.line > range.start.line {
+                ranges.push(FoldingRange {
+                    start_line: range.start.line,
+                    end_line: range.end.line,
+                    ..FoldingRange::default()
+                });
+            }
         }
-        let span = descendant.text_range().into();
-        let range = line_index.range(source, span);
-        if range.end.line > range.start.line {
-            ranges.push(FoldingRange {
-                start_line: range.start.line,
-                end_line: range.end.line,
-                ..FoldingRange::default()
-            });
-        }
+        Some(ranges)
     }
-    ranges
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pblang;
 
     fn ranges_for(source: &str) -> Vec<FoldingRange> {
-        let node = pblang::parse(source).expect("valid source");
-        let line_index = LineIndex::new(source);
-        folding_ranges_for_source(&node, &line_index, source)
+        OpenDocument::new(source.to_string())
+            .folding_ranges()
+            .expect("valid source")
     }
 
     #[test]

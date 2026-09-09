@@ -18,6 +18,7 @@ use tower_lsp::lsp_types::{
 use crate::pblang::syntaxtree::{SyntaxKind, SyntaxNode};
 
 use super::convert::LineIndex;
+use super::document::OpenDocument;
 
 pub fn legend() -> SemanticTokensLegend {
     SemanticTokensLegend {
@@ -100,12 +101,17 @@ fn encode_semantic_tokens(
     tokens
 }
 
-pub fn semantic_tokens_for_source(
-    source: &str,
-    node: &SyntaxNode,
-    line_index: &LineIndex,
-) -> Vec<SemanticToken> {
-    encode_semantic_tokens(source, line_index, &classify_tokens(node))
+impl OpenDocument {
+    /// `None` when the document's latest parse failed — nothing to
+    /// highlight until it parses again.
+    pub fn semantic_tokens(&self) -> Option<Vec<SemanticToken>> {
+        let node = self.syntax_node()?;
+        Some(encode_semantic_tokens(
+            &self.text,
+            &self.line_index,
+            &classify_tokens(&node),
+        ))
+    }
 }
 
 #[cfg(test)]
@@ -114,9 +120,9 @@ mod tests {
     use crate::pblang;
 
     fn tokens_for(source: &str) -> Vec<SemanticToken> {
-        let node = pblang::parse(source).expect("valid source");
-        let line_index = LineIndex::new(source);
-        semantic_tokens_for_source(source, &node, &line_index)
+        OpenDocument::new(source.to_string())
+            .semantic_tokens()
+            .expect("valid source")
     }
 
     #[test]

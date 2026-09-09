@@ -6,7 +6,7 @@ use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
 use crate::pblang::{self, ParseError};
 
-use super::convert::LineIndex;
+use super::document::OpenDocument;
 
 /// Extracts the byte span and a human-readable message from any
 /// `ParseError` variant lalrpop can produce for pblang.
@@ -43,22 +43,26 @@ fn error_span_and_message(source: &str, err: &ParseError<'_>) -> (Range<usize>, 
     (span.start.min(len)..span.end.min(len), message)
 }
 
-/// Parses `source` and returns the diagnostics for it — empty if it parses
-/// successfully, which is what clears any previously published diagnostics.
-/// lalrpop stops at the first error, so this is never more than one
-/// diagnostic today.
-pub fn diagnostics_for_source(source: &str, line_index: &LineIndex) -> Vec<Diagnostic> {
-    match pblang::parse(source) {
-        Ok(_) => Vec::new(),
-        Err(err) => {
-            let (span, message) = error_span_and_message(source, &err);
-            vec![Diagnostic {
-                range: line_index.range(source, span),
-                severity: Some(DiagnosticSeverity::ERROR),
-                source: Some("pblang".to_string()),
-                message,
-                ..Diagnostic::default()
-            }]
+impl OpenDocument {
+    /// Parses `self.text` and returns the diagnostics for it — empty if it
+    /// parses successfully, which is what clears any previously published
+    /// diagnostics. Reparses rather than using the cached tree, since it
+    /// needs the *error* a failed parse produces, which the cached tree
+    /// (just `None` on failure) doesn't carry. lalrpop stops at the first
+    /// error, so this is never more than one diagnostic today.
+    pub fn diagnostics(&self) -> Vec<Diagnostic> {
+        match pblang::parse(&self.text) {
+            Ok(_) => Vec::new(),
+            Err(err) => {
+                let (span, message) = error_span_and_message(&self.text, &err);
+                vec![Diagnostic {
+                    range: self.line_index.range(&self.text, span),
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    source: Some("pblang".to_string()),
+                    message,
+                    ..Diagnostic::default()
+                }]
+            }
         }
     }
 }
@@ -69,16 +73,14 @@ mod tests {
 
     #[test]
     fn valid_source_has_no_diagnostics() {
-        let source = "null";
-        let line_index = LineIndex::new(source);
-        assert_eq!(diagnostics_for_source(source, &line_index), Vec::new());
+        let doc = OpenDocument::new("null".to_string());
+        assert_eq!(doc.diagnostics(), Vec::new());
     }
 
     #[test]
     fn invalid_source_has_one_diagnostic_with_a_message() {
-        let source = "let x = in x";
-        let line_index = LineIndex::new(source);
-        let diagnostics = diagnostics_for_source(source, &line_index);
+        let doc = OpenDocument::new("let x = in x".to_string());
+        let diagnostics = doc.diagnostics();
         assert_eq!(diagnostics.len(), 1);
         assert!(!diagnostics[0].message.is_empty());
     }
@@ -104,13 +106,8 @@ mod tests {
         let fixture_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures");
         for path in fixture_files(&fixture_root) {
             let source = fs::read_to_string(&path).unwrap();
-            let line_index = LineIndex::new(&source);
-            assert_eq!(
-                diagnostics_for_source(&source, &line_index),
-                Vec::new(),
-                "fixture {}",
-                path.display()
-            );
+            let doc = OpenDocument::new(source);
+            assert_eq!(doc.diagnostics(), Vec::new(), "fixture {}", path.display());
         }
     }
 }
