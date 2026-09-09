@@ -35,7 +35,10 @@ pub struct OpenDocument {
 impl OpenDocument {
     pub fn new(text: String) -> Self {
         let line_index = LineIndex::new(&text);
-        let green = pblang::parse(&text).ok().map(|node| node.green().to_owned());
+        let green = pblang::parse(&text)
+            .tree
+            .ok()
+            .map(|node| node.green().to_owned());
         Self {
             text,
             line_index,
@@ -84,8 +87,18 @@ mod tests {
     }
 
     #[test]
-    fn invalid_text_has_no_tree() {
-        let state = OpenDocument::new("let x = in x".to_string());
+    fn fatally_invalid_text_has_no_tree() {
+        // No LetSetStmt/BindSetStmt/AssignStmt in scope for error recovery
+        // to kick in at all — a bare `)` is invalid anywhere.
+        let state = OpenDocument::new(")".to_string());
         assert!(state.syntax_node().is_none());
+    }
+
+    #[test]
+    fn recoverably_invalid_text_still_has_a_tree() {
+        // A malformed `let` binding is exactly what grammar-level error
+        // recovery covers — the rest of the file still parses.
+        let state = OpenDocument::new("let x = in x".to_string());
+        assert!(state.syntax_node().is_some());
     }
 }

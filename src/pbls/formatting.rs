@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn already_formatted_source_produces_no_edits() {
-        let formatted = format_tree(&pblang::parse("null").unwrap()).text().to_string();
+        let formatted = format_tree(&pblang::parse("null").tree.unwrap()).text().to_string();
         assert_eq!(edits_for(&formatted), Vec::new());
     }
 

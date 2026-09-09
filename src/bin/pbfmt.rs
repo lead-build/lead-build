@@ -42,7 +42,21 @@ fn run_file(file: Option<&PathBuf>, args: &Args) -> Result<(), String> {
         (source, file.display().to_string())
     };
 
-    let tree = pblang::parse(&source).map_err(|e| format!("Error parsing {name}: {e}"))?;
+    let parsed = pblang::parse(&source);
+    if !parsed.errors.is_empty() || parsed.tree.is_err() {
+        let mut lines: Vec<String> = parsed.errors.iter().map(|r| r.error.to_string()).collect();
+        if let Err(fatal) = &parsed.tree {
+            lines.push(fatal.to_string());
+        }
+        let numbered = lines
+            .iter()
+            .enumerate()
+            .map(|(i, l)| format!("  {}. {}", i + 1, l))
+            .collect::<Vec<_>>()
+            .join("\n");
+        return Err(format!("Error parsing {name}:\n{numbered}"));
+    }
+    let tree = parsed.tree.expect("checked above");
 
     if args.lint {
         println!("{}", tree.text());

@@ -10,7 +10,7 @@ use super::document::OpenDocument;
 
 /// Extracts the byte span and a human-readable message from any
 /// `ParseError` variant lalrpop can produce for pblang.
-fn error_span_and_message(source: &str, err: &ParseError<'_>) -> (Range<usize>, String) {
+fn error_span_and_message(source: &str, err: &ParseError) -> (Range<usize>, String) {
     let (span, message) = match err {
         ParseError::InvalidToken { location } => {
             (*location..*location, "invalid token".to_string())
@@ -45,24 +45,34 @@ fn error_span_and_message(source: &str, err: &ParseError<'_>) -> (Range<usize>, 
 
 impl OpenDocument {
     /// Parses `self.text` and returns the diagnostics for it — empty if it
-    /// parses successfully, which is what clears any previously published
-    /// diagnostics. Reparses rather than using the cached tree, since it
-    /// needs the *error* a failed parse produces, which the cached tree
-    /// (just `None` on failure) doesn't carry. lalrpop stops at the first
-    /// error, so this is never more than one diagnostic today.
+    /// parses successfully with no recovered errors, which is what clears
+    /// any previously published diagnostics. Reparses rather than using the
+    /// cached tree, since it needs the *errors* a parse produces, which the
+    /// cached tree (just `None` on total failure) doesn't carry. One
+    /// diagnostic per recovered error (a malformed `let`/`bind` binding or
+    /// object assignment — see `grammar.lalrpop`), plus one more if parsing
+    /// still failed outright somewhere recovery couldn't help.
     pub fn diagnostics(&self) -> Vec<Diagnostic> {
-        match pblang::parse(&self.text) {
-            Ok(_) => Vec::new(),
-            Err(err) => {
-                let (span, message) = error_span_and_message(&self.text, &err);
-                vec![Diagnostic {
-                    range: self.line_index.range(&self.text, span),
-                    severity: Some(DiagnosticSeverity::ERROR),
-                    source: Some("pblang".to_string()),
-                    message,
-                    ..Diagnostic::default()
-                }]
-            }
+        let parsed = pblang::parse(&self.text);
+        let mut diagnostics: Vec<Diagnostic> = parsed
+            .errors
+            .iter()
+            .map(|recovery| self.diagnostic_for(&recovery.error))
+            .collect();
+        if let Err(fatal) = &parsed.tree {
+            diagnostics.push(self.diagnostic_for(fatal));
+        }
+        diagnostics
+    }
+
+    fn diagnostic_for(&self, err: &ParseError) -> Diagnostic {
+        let (span, message) = error_span_and_message(&self.text, err);
+        Diagnostic {
+            range: self.line_index.range(&self.text, span),
+            severity: Some(DiagnosticSeverity::ERROR),
+            source: Some("pblang".to_string()),
+            message,
+            ..Diagnostic::default()
         }
     }
 }
@@ -83,6 +93,16 @@ mod tests {
         let diagnostics = doc.diagnostics();
         assert_eq!(diagnostics.len(), 1);
         assert!(!diagnostics[0].message.is_empty());
+    }
+
+    #[test]
+    fn two_malformed_bindings_produce_two_diagnostics() {
+        let doc = OpenDocument::new("bind x = ; y = ; in null".to_string());
+        let diagnostics = doc.diagnostics();
+        assert_eq!(diagnostics.len(), 2);
+        assert!(!diagnostics[0].message.is_empty());
+        assert!(!diagnostics[1].message.is_empty());
+        assert_ne!(diagnostics[0].range, diagnostics[1].range);
     }
 
     #[test]

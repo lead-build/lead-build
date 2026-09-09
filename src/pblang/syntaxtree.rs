@@ -101,6 +101,12 @@ pub enum SyntaxKind {
     /// `Tok::StringEmbedEnd` — the `}` closing an interpolated expression.
     STRING_EMBED_END,
 
+    /// A malformed `let`/`bind` binding or object assignment
+    /// (`LetSetStmt`/`BindSetStmt`/`AssignStmt` in `grammar.lalrpop`) that
+    /// LALRPOP's error recovery skipped over rather than aborting the whole
+    /// parse. A *token*, not a node — its text is the verbatim skipped
+    /// source slice (lossless, like `TRIVIA`, but semantically an error
+    /// rather than incidental whitespace/comments).
     ERROR,
 
     // --- nodes (composites, from `PbNodeKind` and friends) ---

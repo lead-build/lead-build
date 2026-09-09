@@ -1,0 +1,2 @@
+kind = "err_parse"
+error_contains = "2. Unrecognized token"

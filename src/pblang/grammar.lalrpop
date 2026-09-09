@@ -2,8 +2,9 @@ use super::{
     lexer::{Tok, LexError},
     syntaxtree::{GreenSpan, SyntaxKind, green_node, green_token},
 };
+use lalrpop_util::ErrorRecovery;
 
-grammar(src: &str);
+grammar(src: &str, errors: &mut Vec<ErrorRecovery<usize, Tok, LexError>>);
 
 extern {
     type Location = usize;
@@ -322,17 +323,31 @@ ExprTuple: GreenSpan =
         green_node(src, SyntaxKind::TUPLE_EXPR, l, r, children)
     };
 
-LetSetStmt: GreenSpan =
+LetSetStmt: GreenSpan = {
     <l:@L> <matcher:Matcher> <eq:T_Eq> <value:Expr> <semi:T_Semi> <r:@R> =>
-        green_node(src, SyntaxKind::LET_BINDING, l, r, vec![matcher, eq, value, semi]);
-BindSetStmt: GreenSpan =
+        green_node(src, SyntaxKind::LET_BINDING, l, r, vec![matcher, eq, value, semi]),
+    <l:@L> <e:!> <r:@R> => {
+        errors.push(e);
+        green_token(SyntaxKind::ERROR, l, r, &src[l..r])
+    },
+};
+BindSetStmt: GreenSpan = {
     <l:@L> <key:Ident> <eq:T_Eq> <value:Expr> <semi:T_Semi> <r:@R> =>
-        green_node(src, SyntaxKind::ASSIGNMENT, l, r, vec![key, eq, value, semi]);
+        green_node(src, SyntaxKind::ASSIGNMENT, l, r, vec![key, eq, value, semi]),
+    <l:@L> <e:!> <r:@R> => {
+        errors.push(e);
+        green_token(SyntaxKind::ERROR, l, r, &src[l..r])
+    },
+};
 AssignStmt: GreenSpan = {
     <l:@L> <key:Ident> <eq:T_Eq> <value:Expr> <semi:T_Semi> <r:@R> =>
         green_node(src, SyntaxKind::ASSIGNMENT, l, r, vec![key, eq, value, semi]),
     <l:@L> <key:StringLit> <eq:T_Eq> <value:Expr> <semi:T_Semi> <r:@R> =>
         green_node(src, SyntaxKind::ASSIGNMENT, l, r, vec![key, eq, value, semi]),
+    <l:@L> <e:!> <r:@R> => {
+        errors.push(e);
+        green_token(SyntaxKind::ERROR, l, r, &src[l..r])
+    },
 };
 ExprVar: GreenSpan =
     <l:@L> <name:Ident> <r:@R> => green_node(src, SyntaxKind::VAR_EXPR, l, r, vec![name]);

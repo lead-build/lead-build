@@ -53,7 +53,7 @@ const INDENT: isize = 4;
 pub fn format_tree(tree: &SyntaxNode) -> SyntaxNode {
     let piece = format_node(tree.clone());
     let rendered = piece.doc.pretty(WIDTH).to_string();
-    super::parse(&rendered).unwrap_or_else(|error| {
+    super::parse(&rendered).tree.unwrap_or_else(|error| {
         panic!(
             "pblang::fmt produced text that failed to re-parse (this is a formatter bug, \
              not a problem with the input): {error}\n\n--- formatted output ---\n{rendered}"
@@ -425,19 +425,19 @@ mod tests {
     use crate::pblang::parse;
 
     fn format(source: &str) -> String {
-        let tree = parse(source).unwrap_or_else(|e| panic!("failed to parse {source:?}: {e}"));
+        let tree = parse(source).tree.unwrap_or_else(|e| panic!("failed to parse {source:?}: {e}"));
         format_tree(&tree).text().to_string().trim_end().to_string()
     }
 
     #[test]
     fn trailing_newline_is_always_exactly_one() {
-        let tree = parse("1").unwrap();
+        let tree = parse("1").tree.unwrap();
         assert_eq!(tree.text().to_string(), "1");
 
-        let tree = parse("1\n\n\n").unwrap();
+        let tree = parse("1\n\n\n").tree.unwrap();
         assert_eq!(tree.text().to_string(), "1");
 
-        let tree = parse("1\n").unwrap();
+        let tree = parse("1\n").tree.unwrap();
         assert_eq!(tree.text().to_string(), "1");
     }
 

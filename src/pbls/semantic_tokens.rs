@@ -152,7 +152,7 @@ mod tests {
     fn encoding_deltas_are_relative_to_previous_token() {
         let source = "let\n    x = null;\nin x";
         let line_index = LineIndex::new(source);
-        let node = pblang::parse(source).unwrap();
+        let node = pblang::parse(source).tree.unwrap();
         let classified = classify_tokens(&node);
         let tokens = encode_semantic_tokens(source, &line_index, &classified);
         assert_eq!(tokens.len(), 2);

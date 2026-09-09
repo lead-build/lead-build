@@ -21,7 +21,7 @@ where
     fn from_bool(value: bool) -> Self;
 }
 
-fn transform_parse_error<F>(input: pblang::ParseError<'_>, file: &F) -> Error<F>
+fn transform_parse_error<F>(input: pblang::ParseError, file: &F) -> Error<F>
 where
     F: Clone,
 {
@@ -56,17 +56,62 @@ where
     }
 }
 
+/// Renders one `ParseError` as `"<message> (<location>)"`, reusing
+/// `transform_parse_error` for both parts (every variant it produces
+/// always carries exactly one location).
+fn one_line<F>(err: pblang::ParseError, file: &F) -> String
+where
+    F: Clone + Referrable,
+{
+    let sub = transform_parse_error(err, file);
+    match sub.locs.first() {
+        Some(loc) => format!("{} ({})", sub.msg, loc),
+        None => sub.msg,
+    }
+}
+
+/// Combines every recovered parse error (and, if parsing ultimately failed
+/// outright, the final fatal one too) into a single numbered `Error` —
+/// rather than surfacing only the first, as a plain `Result` would.
+fn transform_parse_errors<F>(
+    recovered: Vec<pblang::ErrorRecovery>,
+    fatal: Option<pblang::ParseError>,
+    file: &F,
+) -> Error<F>
+where
+    F: Clone + Referrable,
+{
+    let mut lines: Vec<String> = recovered
+        .into_iter()
+        .map(|recovery| one_line(recovery.error, file))
+        .collect();
+    if let Some(fatal) = fatal {
+        lines.push(one_line(fatal, file));
+    }
+    let msg = lines
+        .into_iter()
+        .enumerate()
+        .map(|(i, line)| format!("{}. {}", i + 1, line))
+        .collect::<Vec<_>>()
+        .join("\n");
+    Error::new(ErrorType::Parse, msg)
+}
+
 pub fn parse_str<T, F>(code: &str, file: &F) -> Result<Expr<T, F>, F>
 where
     T: ParsableValue + Clone + PartialEq + Display + ExprOps<F> + Exportable + Debug,
     F: Clone + Debug + Referrable,
 {
-    let tree = pblang::parse(code).map_err(|error| transform_parse_error(error, file))?;
-    ExprGenerator {
-        file,
-        _value: std::marker::PhantomData,
+    let parsed = pblang::parse(code);
+    match parsed.tree {
+        Ok(tree) if parsed.errors.is_empty() => ExprGenerator {
+            file,
+            _value: std::marker::PhantomData,
+        }
+        .visit_expr(&tree),
+        Ok(_) => Err(transform_parse_errors(parsed.errors, None, file)),
+        Err(fatal) => Err(transform_parse_errors(parsed.errors, Some(fatal), file)),
     }
-    .visit_expr(&tree)
 }
 
 /// Decodes escape sequences in a raw string chunk (as produced by the lexer:
