@@ -1,4 +1,4 @@
-use super::error::{Error, ErrorType, Result};
+use super::error::{Error, ErrorType, Loc, Result};
 use super::expr::matcher::ObjectMatch;
 use super::expr::{
     Exportable, Expr, ExprBinOp, ExprMapType, ExprOps, ExprSet, ExprType, ExprUnOp, Matcher,
@@ -21,58 +21,56 @@ where
     fn from_bool(value: bool) -> Self;
 }
 
-fn transform_parse_error<F>(input: pblang::ParseError, file: &F) -> Error<F>
-where
-    F: Clone,
-{
-    match input {
+/// Splits a `ParseError` into its byte span, a short category label, and a
+/// detail message — kept apart (rather than one combined string) so each
+/// can land on its own line in the rendered error block.
+fn parse_error_parts(err: &pblang::ParseError) -> (std::ops::Range<usize>, &'static str, String) {
+    match err {
         lalrpop_util::ParseError::InvalidToken { location } => {
-            Error::new(ErrorType::Parse, "Invalid token").loc(location, location, file)
+            (*location..*location, "Invalid token", String::new())
         }
-        lalrpop_util::ParseError::UnrecognizedEof { location, expected } => Error::new(
-            ErrorType::Parse,
-            format!("Unexpected end of file, expected {}", expected.join(", ")),
-        )
-        .loc(location, location, file),
+        lalrpop_util::ParseError::UnrecognizedEof { location, expected } => (
+            *location..*location,
+            "Unexpected end of file",
+            format!("expected one of: {}", expected.join(", ")),
+        ),
         lalrpop_util::ParseError::UnrecognizedToken {
             token: (start, token, end),
             expected,
-        } => Error::new(
-            ErrorType::Parse,
-            format!(
-                "Unrecognized token: {}, expected {}",
-                token,
-                expected.join(", ")
-            ),
-        )
-        .loc(start, end, file),
-
+        } => (
+            *start..*end,
+            "Unrecognized token",
+            format!("found `{token}`, expected one of: {}", expected.join(", ")),
+        ),
         lalrpop_util::ParseError::ExtraToken {
             token: (start, token, end),
-        } => Error::new(ErrorType::Parse, format!("Extra token: {}", token)).loc(start, end, file),
+        } => (*start..*end, "Extra token", format!("found `{token}`")),
         lalrpop_util::ParseError::User { error } => {
-            Error::new(ErrorType::Parse, error).loc(0, 0, file)
+            (error.span.clone(), "Lexer error", error.message.clone())
         }
     }
 }
 
-/// Renders one `ParseError` as `"<message> (<location>)"`, reusing
-/// `transform_parse_error` for both parts (every variant it produces
-/// always carries exactly one location).
-fn one_line<F>(err: pblang::ParseError, file: &F) -> String
+/// Renders one `ParseError` as a three-line block: location, category,
+/// detail message (the last omitted when there's nothing beyond the
+/// category itself, e.g. `InvalidToken`).
+fn parse_error_block<F>(err: pblang::ParseError, file: &F) -> String
 where
     F: Clone + Referrable,
 {
-    let sub = transform_parse_error(err, file);
-    match sub.locs.first() {
-        Some(loc) => format!("{} ({})", sub.msg, loc),
-        None => sub.msg,
+    let (span, kind, detail) = parse_error_parts(&err);
+    let loc = Loc { file: file.clone(), span };
+    if detail.is_empty() {
+        format!("{loc}\n{kind}")
+    } else {
+        format!("{loc}\n{kind}\n{detail}")
     }
 }
 
 /// Combines every recovered parse error (and, if parsing ultimately failed
-/// outright, the final fatal one too) into a single numbered `Error` —
-/// rather than surfacing only the first, as a plain `Result` would.
+/// outright, the final fatal one too) into a single `Error` with one
+/// blank-line-separated block per error — rather than surfacing only the
+/// first, as a plain `Result` would.
 fn transform_parse_errors<F>(
     recovered: Vec<pblang::ErrorRecovery>,
     fatal: Option<pblang::ParseError>,
@@ -81,20 +79,14 @@ fn transform_parse_errors<F>(
 where
     F: Clone + Referrable,
 {
-    let mut lines: Vec<String> = recovered
+    let mut blocks: Vec<String> = recovered
         .into_iter()
-        .map(|recovery| one_line(recovery.error, file))
+        .map(|recovery| parse_error_block(recovery.error, file))
         .collect();
     if let Some(fatal) = fatal {
-        lines.push(one_line(fatal, file));
+        blocks.push(parse_error_block(fatal, file));
     }
-    let msg = lines
-        .into_iter()
-        .enumerate()
-        .map(|(i, line)| format!("{}. {}", i + 1, line))
-        .collect::<Vec<_>>()
-        .join("\n");
-    Error::new(ErrorType::Parse, msg)
+    Error::new(ErrorType::Parse, blocks.join("\n\n"))
 }
 
 pub fn parse_str<T, F>(code: &str, file: &F) -> Result<Expr<T, F>, F>

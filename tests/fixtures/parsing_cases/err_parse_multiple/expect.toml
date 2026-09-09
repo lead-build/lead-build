@@ -1,2 +1,2 @@
 kind = "err_parse"
-error_contains = "2. Unrecognized token"
+error_contains = ":1:26"

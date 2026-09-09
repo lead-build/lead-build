@@ -46,13 +46,13 @@ pub enum ErrorType {
 impl Display for ErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ErrorType::Parse => write!(f, "Parse error: "),
-            ErrorType::Scope => write!(f, "Scope error: "),
-            ErrorType::Eval => write!(f, "Eval error: "),
-            ErrorType::Debug => write!(f, "Debug: "),
-            ErrorType::Type => write!(f, "Type error: "),
-            ErrorType::DupKey => write!(f, "Duplicate key: "),
-            ErrorType::NoValue => write!(f, "No value: "),
+            ErrorType::Parse => write!(f, "Parse error:"),
+            ErrorType::Scope => write!(f, "Scope error:"),
+            ErrorType::Eval => write!(f, "Eval error:"),
+            ErrorType::Debug => write!(f, "Debug:"),
+            ErrorType::Type => write!(f, "Type error:"),
+            ErrorType::DupKey => write!(f, "Duplicate key:"),
+            ErrorType::NoValue => write!(f, "No value:"),
             ErrorType::Custom => Ok(()),
         }
     }
@@ -72,7 +72,13 @@ where
     F: Referrable,
 {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{}{}", self.typ, self.msg)?;
+        if matches!(self.typ, ErrorType::Custom) {
+            writeln!(f, "{}", self.msg)?;
+        } else {
+            writeln!(f, "{}", self.typ)?;
+            writeln!(f)?;
+            writeln!(f, "{}", self.msg)?;
+        }
         if !self.locs.is_empty() {
             writeln!(f)?;
             writeln!(f, "Backtrace:")?;
