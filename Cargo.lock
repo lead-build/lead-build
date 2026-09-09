@@ -691,7 +691,7 @@ dependencies = [
 
 [[package]]
 name = "lead-build"
-version = "0.8.5"
+version = "0.8.6"
 dependencies = [
  "clap",
  "env_logger",
