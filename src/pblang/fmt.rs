@@ -425,7 +425,9 @@ mod tests {
     use crate::pblang::parse;
 
     fn format(source: &str) -> String {
-        let tree = parse(source).tree.unwrap_or_else(|e| panic!("failed to parse {source:?}: {e}"));
+        let tree = parse(source)
+            .tree
+            .unwrap_or_else(|e| panic!("failed to parse {source:?}: {e}"));
         format_tree(&tree).text().to_string().trim_end().to_string()
     }
 

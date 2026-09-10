@@ -19,7 +19,10 @@ impl OpenDocument {
         }
         Some(vec![TextEdit {
             range: Range {
-                start: Position { line: 0, character: 0 },
+                start: Position {
+                    line: 0,
+                    character: 0,
+                },
                 end: self.line_index.position(&self.text, self.text.len()),
             },
             new_text: formatted,
@@ -40,7 +43,9 @@ mod tests {
 
     #[test]
     fn already_formatted_source_produces_no_edits() {
-        let formatted = format_tree(&pblang::parse("null").tree.unwrap()).text().to_string();
+        let formatted = format_tree(&pblang::parse("null").tree.unwrap())
+            .text()
+            .to_string();
         assert_eq!(edits_for(&formatted), Vec::new());
     }
 
@@ -49,7 +54,13 @@ mod tests {
         let source = "let   x=null;in x";
         let edits = edits_for(source);
         assert_eq!(edits.len(), 1);
-        assert_eq!(edits[0].range.start, Position { line: 0, character: 0 });
+        assert_eq!(
+            edits[0].range.start,
+            Position {
+                line: 0,
+                character: 0
+            }
+        );
         assert_ne!(edits[0].new_text, source);
     }
 }

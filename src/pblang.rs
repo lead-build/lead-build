@@ -1,6 +1,7 @@
 pub mod fmt;
 pub mod lexer;
 pub mod syntaxtree;
+pub mod visit;
 
 use lalrpop_util::lalrpop_mod;
 use lexer::{LexError, Lexer};

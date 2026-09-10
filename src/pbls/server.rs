@@ -10,7 +10,7 @@ use tower_lsp::lsp_types::{
     SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
     TextDocumentSyncKind, TextEdit, Url,
 };
-use tower_lsp::{async_trait, Client, LanguageServer};
+use tower_lsp::{Client, LanguageServer, async_trait};
 
 use super::document::ClientDocuments;
 use super::semantic_tokens::legend;
@@ -78,7 +78,8 @@ impl LanguageServer for Backend {
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
         let uri = params.text_document.uri;
-        self.documents.insert(uri.clone(), params.text_document.text);
+        self.documents
+            .insert(uri.clone(), params.text_document.text);
         self.publish_diagnostics_for(uri).await;
     }
 
@@ -105,7 +106,12 @@ impl LanguageServer for Backend {
             .documents
             .get(&params.text_document.uri)
             .and_then(|doc| doc.semantic_tokens());
-        Ok(data.map(|data| SemanticTokensResult::Tokens(SemanticTokens { result_id: None, data })))
+        Ok(data.map(|data| {
+            SemanticTokensResult::Tokens(SemanticTokens {
+                result_id: None,
+                data,
+            })
+        }))
     }
 
     async fn document_symbol(
@@ -129,7 +135,10 @@ impl LanguageServer for Backend {
             .and_then(|doc| doc.folding_ranges()))
     }
 
-    async fn formatting(&self, params: DocumentFormattingParams) -> RpcResult<Option<Vec<TextEdit>>> {
+    async fn formatting(
+        &self,
+        params: DocumentFormattingParams,
+    ) -> RpcResult<Option<Vec<TextEdit>>> {
         Ok(self
             .documents
             .get(&params.text_document.uri)
