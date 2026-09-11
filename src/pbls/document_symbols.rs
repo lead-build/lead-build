@@ -18,7 +18,8 @@ use tower_lsp::lsp_types::{DocumentSymbol, Range as LspRange, SymbolKind};
 
 use crate::pblang::syntaxtree::SyntaxToken;
 use crate::pblang::visit::{
-    AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, walk_expr,
+    AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, UnvisitedExpr,
+    UnvisitedMatcher, visit_all, walk_expr,
 };
 
 use super::convert::LineIndex;
@@ -100,84 +101,100 @@ impl LangVisitor for SymbolVisitor<'_> {
     /// and selection range. Nothing is recursed into a matcher's internals
     /// for symbols — matches today's behavior of only ever surfacing
     /// `ASSIGNMENT`/`LET_BINDING` as symbols, never anything nested inside a
-    /// matcher pattern.
+    /// matcher pattern. Since that text/range comes straight off an
+    /// `UnvisitedMatcher`'s own span, every `visit_matcher_*` method below
+    /// this impl is simply never called — no matcher subtree is walked at
+    /// all.
     type Matcher = (String, TextRange);
     type Error = Infallible;
+    type Down = ();
 
     fn visit_let(
         &mut self,
         _range: TextRange,
-        bindings: Vec<(TextRange, (String, TextRange), Vec<DocumentSymbol>)>,
-        body: Vec<DocumentSymbol>,
+        down: &(),
+        bindings: Vec<(TextRange, UnvisitedMatcher, UnvisitedExpr)>,
+        body: UnvisitedExpr,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
         let mut symbols = Vec::new();
-        for (stmt_range, (name, name_range), nested) in bindings {
+        for (stmt_range, matcher, value) in bindings {
+            let name_range = matcher.range();
+            let name = self.text_at(name_range);
+            let nested = value.visit(self, down)?;
             symbols.push(self.binding_symbol(stmt_range, name, name_range, nested));
         }
-        symbols.extend(body);
+        symbols.extend(body.visit(self, down)?);
         Ok(symbols)
     }
 
     fn visit_bind(
         &mut self,
         _range: TextRange,
-        items: Vec<(TextRange, AssignKey, Vec<DocumentSymbol>)>,
-        body: Vec<DocumentSymbol>,
+        down: &(),
+        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        body: UnvisitedExpr,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
         let mut symbols = Vec::new();
-        for (stmt_range, key, nested) in items {
+        for (stmt_range, key, value) in items {
             let (name, name_range) = self.assign_key_text_and_range(&key);
+            let nested = value.visit(self, down)?;
             symbols.push(self.binding_symbol(stmt_range, name, name_range, nested));
         }
-        symbols.extend(body);
+        symbols.extend(body.visit(self, down)?);
         Ok(symbols)
     }
 
     fn visit_func_def(
         &mut self,
         _range: TextRange,
-        _params: Vec<(String, TextRange)>,
-        body: Vec<DocumentSymbol>,
+        down: &(),
+        _params: Vec<UnvisitedMatcher>,
+        body: UnvisitedExpr,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
-        Ok(body)
+        body.visit(self, down)
     }
 
     fn visit_binary(
         &mut self,
         _range: TextRange,
+        down: &(),
         _op: SyntaxToken,
-        lhs: Vec<DocumentSymbol>,
-        rhs: Vec<DocumentSymbol>,
+        lhs: UnvisitedExpr,
+        rhs: UnvisitedExpr,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
-        Ok(concat(lhs, rhs))
+        Ok(concat(lhs.visit(self, down)?, rhs.visit(self, down)?))
     }
 
     fn visit_unary(
         &mut self,
         _range: TextRange,
+        down: &(),
         _op: SyntaxToken,
-        operand: Vec<DocumentSymbol>,
+        operand: UnvisitedExpr,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
-        Ok(operand)
+        operand.visit(self, down)
     }
 
     fn visit_func_call(
         &mut self,
         _range: TextRange,
-        func: Vec<DocumentSymbol>,
-        arg: Vec<DocumentSymbol>,
+        down: &(),
+        func: UnvisitedExpr,
+        arg: UnvisitedExpr,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
-        Ok(concat(func, arg))
+        Ok(concat(func.visit(self, down)?, arg.visit(self, down)?))
     }
 
     fn visit_attr_sel(
         &mut self,
         _range: TextRange,
-        base: Vec<DocumentSymbol>,
-        attr: AttrSelector<Vec<DocumentSymbol>>,
+        down: &(),
+        base: UnvisitedExpr,
+        attr: AttrSelector<UnvisitedExpr>,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
+        let base = base.visit(self, down)?;
         let attr = match attr {
-            AttrSelector::Dynamic(nested) => nested,
+            AttrSelector::Dynamic(nested) => nested.visit(self, down)?,
             AttrSelector::Static(_) => Vec::new(),
         };
         Ok(concat(base, attr))
@@ -186,54 +203,65 @@ impl LangVisitor for SymbolVisitor<'_> {
     fn visit_fold(
         &mut self,
         _range: TextRange,
-        func: Vec<DocumentSymbol>,
-        init: Option<Vec<DocumentSymbol>>,
-        input: Vec<DocumentSymbol>,
+        down: &(),
+        func: UnvisitedExpr,
+        init: Option<UnvisitedExpr>,
+        input: UnvisitedExpr,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
-        let mut out = func;
-        out.extend(init.into_iter().flatten());
-        out.extend(input);
+        let mut out = func.visit(self, down)?;
+        if let Some(init) = init {
+            out.extend(init.visit(self, down)?);
+        }
+        out.extend(input.visit(self, down)?);
         Ok(out)
     }
 
     fn visit_map(
         &mut self,
         _range: TextRange,
+        down: &(),
         _kind: MapKind,
-        func: Vec<DocumentSymbol>,
-        input: Vec<DocumentSymbol>,
-        filter: Option<Vec<DocumentSymbol>>,
+        func: UnvisitedExpr,
+        input: UnvisitedExpr,
+        filter: Option<UnvisitedExpr>,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
-        let mut out = func;
-        out.extend(input);
-        out.extend(filter.into_iter().flatten());
+        let mut out = func.visit(self, down)?;
+        out.extend(input.visit(self, down)?);
+        if let Some(filter) = filter {
+            out.extend(filter.visit(self, down)?);
+        }
         Ok(out)
     }
 
     fn visit_switch(
         &mut self,
         _range: TextRange,
-        input: Vec<DocumentSymbol>,
-        cases: Vec<(Vec<DocumentSymbol>, Vec<DocumentSymbol>)>,
-        default: Option<Vec<DocumentSymbol>>,
+        down: &(),
+        input: UnvisitedExpr,
+        cases: Vec<(UnvisitedExpr, UnvisitedExpr)>,
+        default: Option<UnvisitedExpr>,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
-        let mut out = input;
+        let mut out = input.visit(self, down)?;
         for (pattern, result) in cases {
-            out.extend(pattern);
-            out.extend(result);
+            out.extend(pattern.visit(self, down)?);
+            out.extend(result.visit(self, down)?);
         }
-        out.extend(default.into_iter().flatten());
+        if let Some(default) = default {
+            out.extend(default.visit(self, down)?);
+        }
         Ok(out)
     }
 
     fn visit_object(
         &mut self,
         _range: TextRange,
-        items: Vec<(TextRange, AssignKey, Vec<DocumentSymbol>)>,
+        down: &(),
+        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
         let mut symbols = Vec::new();
-        for (stmt_range, key, nested) in items {
+        for (stmt_range, key, value) in items {
             let (name, name_range) = self.assign_key_text_and_range(&key);
+            let nested = value.visit(self, down)?;
             symbols.push(self.binding_symbol(stmt_range, name, name_range, nested));
         }
         Ok(symbols)
@@ -242,22 +270,31 @@ impl LangVisitor for SymbolVisitor<'_> {
     fn visit_list(
         &mut self,
         _range: TextRange,
-        items: Vec<Vec<DocumentSymbol>>,
+        down: &(),
+        items: Vec<UnvisitedExpr>,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
-        Ok(items.into_iter().flatten().collect())
+        Ok(visit_all(items, self, down)?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 
     fn visit_tuple(
         &mut self,
         _range: TextRange,
-        items: Vec<Vec<DocumentSymbol>>,
+        down: &(),
+        items: Vec<UnvisitedExpr>,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
-        Ok(items.into_iter().flatten().collect())
+        Ok(visit_all(items, self, down)?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 
     fn visit_literal(
         &mut self,
         _range: TextRange,
+        _down: &(),
         _token: SyntaxToken,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
         Ok(Vec::new())
@@ -266,21 +303,22 @@ impl LangVisitor for SymbolVisitor<'_> {
     fn visit_string(
         &mut self,
         _range: TextRange,
-        parts: Vec<StringPart<Vec<DocumentSymbol>>>,
+        down: &(),
+        parts: Vec<StringPart<UnvisitedExpr>>,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
-        Ok(parts
-            .into_iter()
-            .filter_map(|part| match part {
-                StringPart::Embed(nested) => Some(nested),
-                StringPart::Chunk(_) => None,
-            })
-            .flatten()
-            .collect())
+        let mut out = Vec::new();
+        for part in parts {
+            if let StringPart::Embed(nested) = part {
+                out.extend(nested.visit(self, down)?);
+            }
+        }
+        Ok(out)
     }
 
     fn visit_var(
         &mut self,
         _range: TextRange,
+        _down: &(),
         _name: SyntaxToken,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
         Ok(Vec::new())
@@ -289,6 +327,7 @@ impl LangVisitor for SymbolVisitor<'_> {
     fn visit_matcher_ident(
         &mut self,
         range: TextRange,
+        _down: &(),
         _name: SyntaxToken,
     ) -> Result<(String, TextRange), Infallible> {
         Ok((self.text_at(range), range))
@@ -297,6 +336,7 @@ impl LangVisitor for SymbolVisitor<'_> {
     fn visit_matcher_wildcard(
         &mut self,
         range: TextRange,
+        _down: &(),
     ) -> Result<(String, TextRange), Infallible> {
         Ok((self.text_at(range), range))
     }
@@ -304,7 +344,8 @@ impl LangVisitor for SymbolVisitor<'_> {
     fn visit_matcher_alias(
         &mut self,
         range: TextRange,
-        _inner: (String, TextRange),
+        _down: &(),
+        _inner: UnvisitedMatcher,
         _name: SyntaxToken,
     ) -> Result<(String, TextRange), Infallible> {
         Ok((self.text_at(range), range))
@@ -313,7 +354,8 @@ impl LangVisitor for SymbolVisitor<'_> {
     fn visit_matcher_tuple(
         &mut self,
         range: TextRange,
-        _items: Vec<(String, TextRange)>,
+        _down: &(),
+        _items: Vec<UnvisitedMatcher>,
     ) -> Result<(String, TextRange), Infallible> {
         Ok((self.text_at(range), range))
     }
@@ -321,8 +363,9 @@ impl LangVisitor for SymbolVisitor<'_> {
     fn visit_matcher_object(
         &mut self,
         range: TextRange,
+        _down: &(),
         _exhaustive: bool,
-        _fields: Vec<ObjectField<(String, TextRange), Vec<DocumentSymbol>>>,
+        _fields: Vec<ObjectField<UnvisitedMatcher, UnvisitedExpr>>,
     ) -> Result<(String, TextRange), Infallible> {
         Ok((self.text_at(range), range))
     }
@@ -337,7 +380,7 @@ impl OpenDocument {
             line_index: &self.line_index,
             source: &self.text,
         };
-        Some(walk_expr(&node, &mut visitor).unwrap())
+        Some(walk_expr(&node, &mut visitor, &()).unwrap())
     }
 }
 

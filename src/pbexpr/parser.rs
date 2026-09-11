@@ -6,7 +6,10 @@ use crate::pbexpr::Referrable;
 use crate::pblang::{
     self,
     syntaxtree::{SyntaxKind, SyntaxNode, SyntaxToken},
-    visit::{AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, walk_expr},
+    visit::{
+        AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, UnvisitedExpr,
+        UnvisitedMatcher, visit_all, visit_all_matchers, walk_expr,
+    },
 };
 use crate::strkey::StrKey;
 use rowan::NodeOrToken;
@@ -105,7 +108,7 @@ where
                 file,
                 _value: std::marker::PhantomData,
             };
-            walk_expr(&tree, &mut generator)
+            walk_expr(&tree, &mut generator, &())
         }
         Ok(_) => Err(transform_parse_errors(parsed.errors, None, file)),
         Err(fatal) => Err(transform_parse_errors(parsed.errors, Some(fatal), file)),
@@ -246,40 +249,47 @@ where
     type Expr = Expr<T, F>;
     type Matcher = Matcher<T, F>;
     type Error = Error<F>;
+    type Down = ();
 
     fn visit_let(
         &mut self,
         range: TextRange,
-        bindings: Vec<(TextRange, Matcher<T, F>, Expr<T, F>)>,
-        body: Expr<T, F>,
+        down: &(),
+        bindings: Vec<(TextRange, UnvisitedMatcher, UnvisitedExpr)>,
+        body: UnvisitedExpr,
     ) -> Result<Expr<T, F>, F> {
         let bindings = bindings
             .into_iter()
-            .map(|(_, matcher, value)| (matcher, value))
-            .collect();
+            .map(|(_, matcher, value)| Ok((matcher.visit(self, down)?, value.visit(self, down)?)))
+            .collect::<Result<Vec<_>, F>>()?;
+        let body = body.visit(self, down)?;
         Ok(self.expr(ExprType::Let(bindings, body), range))
     }
 
     fn visit_bind(
         &mut self,
         range: TextRange,
-        items: Vec<(TextRange, AssignKey, Expr<T, F>)>,
-        body: Expr<T, F>,
+        down: &(),
+        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        body: UnvisitedExpr,
     ) -> Result<Expr<T, F>, F> {
         let items = items
             .into_iter()
-            .map(|(_, key, value)| Ok((self.resolve_assign_key(key)?, value)))
+            .map(|(_, key, value)| Ok((self.resolve_assign_key(key)?, value.visit(self, down)?)))
             .collect::<Result<ExprSet<T, F>, F>>()?;
+        let body = body.visit(self, down)?;
         Ok(self.expr(ExprType::Bind(items, body), range))
     }
 
     fn visit_func_def(
         &mut self,
         range: TextRange,
-        params: Vec<Matcher<T, F>>,
-        body: Expr<T, F>,
+        down: &(),
+        params: Vec<UnvisitedMatcher>,
+        body: UnvisitedExpr,
     ) -> Result<Expr<T, F>, F> {
-        let mut result = body;
+        let params = visit_all_matchers(params, self, down)?;
+        let mut result = body.visit(self, down)?;
         for matcher in params.into_iter().rev() {
             result = self.expr(ExprType::FuncDef(matcher, result), range);
         }
@@ -289,45 +299,55 @@ where
     fn visit_binary(
         &mut self,
         range: TextRange,
+        down: &(),
         op: SyntaxToken,
-        lhs: Expr<T, F>,
-        rhs: Expr<T, F>,
+        lhs: UnvisitedExpr,
+        rhs: UnvisitedExpr,
     ) -> Result<Expr<T, F>, F> {
         let op = binary_op_from_kind(op.kind());
+        let lhs = lhs.visit(self, down)?;
+        let rhs = rhs.visit(self, down)?;
         Ok(self.expr(ExprType::BinOp(op, lhs, rhs), range))
     }
 
     fn visit_unary(
         &mut self,
         range: TextRange,
+        down: &(),
         op: SyntaxToken,
-        operand: Expr<T, F>,
+        operand: UnvisitedExpr,
     ) -> Result<Expr<T, F>, F> {
         let op = match op.kind() {
             SyntaxKind::MINUS => ExprUnOp::Neg,
             SyntaxKind::BANG => ExprUnOp::Not,
             other => unreachable!("UNARY_EXPR has unexpected operator {other:?}"),
         };
+        let operand = operand.visit(self, down)?;
         Ok(self.expr(ExprType::UnOp(op, operand), range))
     }
 
     fn visit_func_call(
         &mut self,
         range: TextRange,
-        func: Expr<T, F>,
-        arg: Expr<T, F>,
+        down: &(),
+        func: UnvisitedExpr,
+        arg: UnvisitedExpr,
     ) -> Result<Expr<T, F>, F> {
+        let func = func.visit(self, down)?;
+        let arg = arg.visit(self, down)?;
         Ok(self.expr(ExprType::FuncCall { func, arg }, range))
     }
 
     fn visit_attr_sel(
         &mut self,
         range: TextRange,
-        base: Expr<T, F>,
-        attr: AttrSelector<Expr<T, F>>,
+        down: &(),
+        base: UnvisitedExpr,
+        attr: AttrSelector<UnvisitedExpr>,
     ) -> Result<Expr<T, F>, F> {
+        let base = base.visit(self, down)?;
         let attr = match attr {
-            AttrSelector::Dynamic(expr) => expr,
+            AttrSelector::Dynamic(expr) => expr.visit(self, down)?,
             AttrSelector::Static(name) => self.expr(
                 ExprType::Value(T::new_from_string(name.text())),
                 name.text_range(),
@@ -339,59 +359,92 @@ where
     fn visit_fold(
         &mut self,
         range: TextRange,
-        func: Expr<T, F>,
-        init: Option<Expr<T, F>>,
-        input: Expr<T, F>,
+        down: &(),
+        func: UnvisitedExpr,
+        init: Option<UnvisitedExpr>,
+        input: UnvisitedExpr,
     ) -> Result<Expr<T, F>, F> {
+        let func = func.visit(self, down)?;
+        let init = init.map(|i| i.visit(self, down)).transpose()?;
+        let input = input.visit(self, down)?;
         Ok(self.expr(ExprType::Fold { func, init, input }, range))
     }
 
     fn visit_map(
         &mut self,
         range: TextRange,
+        down: &(),
         kind: MapKind,
-        func: Expr<T, F>,
-        input: Expr<T, F>,
-        filter: Option<Expr<T, F>>,
+        func: UnvisitedExpr,
+        input: UnvisitedExpr,
+        filter: Option<UnvisitedExpr>,
     ) -> Result<Expr<T, F>, F> {
         let kind = match kind {
             MapKind::List => ExprMapType::List,
             MapKind::Object => ExprMapType::Object,
         };
+        let func = func.visit(self, down)?;
+        let input = input.visit(self, down)?;
+        let filter = filter.map(|f| f.visit(self, down)).transpose()?;
         Ok(self.expr(ExprType::Map(kind, func, input, filter), range))
     }
 
     fn visit_switch(
         &mut self,
         range: TextRange,
-        input: Expr<T, F>,
-        cases: Vec<(Expr<T, F>, Expr<T, F>)>,
-        default: Option<Expr<T, F>>,
+        down: &(),
+        input: UnvisitedExpr,
+        cases: Vec<(UnvisitedExpr, UnvisitedExpr)>,
+        default: Option<UnvisitedExpr>,
     ) -> Result<Expr<T, F>, F> {
+        let input = input.visit(self, down)?;
+        let cases = cases
+            .into_iter()
+            .map(|(pattern, result)| Ok((pattern.visit(self, down)?, result.visit(self, down)?)))
+            .collect::<Result<Vec<_>, F>>()?;
+        let default = default.map(|d| d.visit(self, down)).transpose()?;
         Ok(self.expr(ExprType::Switch(input, cases, default), range))
     }
 
     fn visit_object(
         &mut self,
         range: TextRange,
-        items: Vec<(TextRange, AssignKey, Expr<T, F>)>,
+        down: &(),
+        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
     ) -> Result<Expr<T, F>, F> {
         let items = items
             .into_iter()
-            .map(|(_, key, value)| Ok((self.resolve_assign_key(key)?, value)))
+            .map(|(_, key, value)| Ok((self.resolve_assign_key(key)?, value.visit(self, down)?)))
             .collect::<Result<ExprSet<T, F>, F>>()?;
         Ok(self.expr(ExprType::Object(items), range))
     }
 
-    fn visit_list(&mut self, range: TextRange, items: Vec<Expr<T, F>>) -> Result<Expr<T, F>, F> {
+    fn visit_list(
+        &mut self,
+        range: TextRange,
+        down: &(),
+        items: Vec<UnvisitedExpr>,
+    ) -> Result<Expr<T, F>, F> {
+        let items = visit_all(items, self, down)?;
         Ok(self.expr(ExprType::List(items), range))
     }
 
-    fn visit_tuple(&mut self, range: TextRange, items: Vec<Expr<T, F>>) -> Result<Expr<T, F>, F> {
+    fn visit_tuple(
+        &mut self,
+        range: TextRange,
+        down: &(),
+        items: Vec<UnvisitedExpr>,
+    ) -> Result<Expr<T, F>, F> {
+        let items = visit_all(items, self, down)?;
         Ok(self.expr(ExprType::Tuple(items), range))
     }
 
-    fn visit_literal(&mut self, range: TextRange, token: SyntaxToken) -> Result<Expr<T, F>, F> {
+    fn visit_literal(
+        &mut self,
+        range: TextRange,
+        _down: &(),
+        token: SyntaxToken,
+    ) -> Result<Expr<T, F>, F> {
         Ok(match token.kind() {
             SyntaxKind::TRUE_KW => self.expr(ExprType::Value(T::from_bool(true)), range),
             SyntaxKind::FALSE_KW => self.expr(ExprType::Value(T::from_bool(false)), range),
@@ -407,7 +460,8 @@ where
     fn visit_string(
         &mut self,
         range: TextRange,
-        parts: Vec<StringPart<Expr<T, F>>>,
+        down: &(),
+        parts: Vec<StringPart<UnvisitedExpr>>,
     ) -> Result<Expr<T, F>, F> {
         let (start, end) = range_usize(range);
         let pieces = parts
@@ -419,7 +473,7 @@ where
                         Error::new(ErrorType::Parse, "Error parsing string")
                             .loc(start, end, self.file)
                     }),
-                StringPart::Embed(expr) => Ok(expr),
+                StringPart::Embed(expr) => expr.visit(self, down),
             })
             .collect::<Result<Vec<_>, F>>()?;
         Ok(if pieces.len() == 1 {
@@ -429,53 +483,72 @@ where
         })
     }
 
-    fn visit_var(&mut self, range: TextRange, name: SyntaxToken) -> Result<Expr<T, F>, F> {
+    fn visit_var(
+        &mut self,
+        range: TextRange,
+        _down: &(),
+        name: SyntaxToken,
+    ) -> Result<Expr<T, F>, F> {
         Ok(self.expr(ExprType::Var(StrKey::from(name.text())), range))
     }
 
     fn visit_matcher_ident(
         &mut self,
         _range: TextRange,
+        _down: &(),
         name: SyntaxToken,
     ) -> Result<Matcher<T, F>, F> {
         Ok(Matcher::Ident(StrKey::from(name.text())))
     }
 
-    fn visit_matcher_wildcard(&mut self, _range: TextRange) -> Result<Matcher<T, F>, F> {
+    fn visit_matcher_wildcard(
+        &mut self,
+        _range: TextRange,
+        _down: &(),
+    ) -> Result<Matcher<T, F>, F> {
         Ok(Matcher::DontCare)
     }
 
     fn visit_matcher_alias(
         &mut self,
         _range: TextRange,
-        inner: Matcher<T, F>,
+        down: &(),
+        inner: UnvisitedMatcher,
         name: SyntaxToken,
     ) -> Result<Matcher<T, F>, F> {
+        let inner = inner.visit(self, down)?;
         Ok(Matcher::Alias(Box::new(inner), StrKey::from(name.text())))
     }
 
     fn visit_matcher_tuple(
         &mut self,
         _range: TextRange,
-        items: Vec<Matcher<T, F>>,
+        down: &(),
+        items: Vec<UnvisitedMatcher>,
     ) -> Result<Matcher<T, F>, F> {
+        let items = visit_all_matchers(items, self, down)?;
         Ok(Matcher::Tuple(items))
     }
 
     fn visit_matcher_object(
         &mut self,
         _range: TextRange,
+        down: &(),
         exhaustive: bool,
-        fields: Vec<ObjectField<Matcher<T, F>, Expr<T, F>>>,
+        fields: Vec<ObjectField<UnvisitedMatcher, UnvisitedExpr>>,
     ) -> Result<Matcher<T, F>, F> {
         let fields = fields
             .into_iter()
             .map(|field| {
                 let key = StrKey::from(field.key.text());
-                let matcher = field.matcher.unwrap_or(Matcher::Ident(key));
-                (key, matcher, field.default)
+                let matcher = match field.matcher {
+                    Some(m) => m.visit(self, down)?,
+                    None => Matcher::Ident(key),
+                };
+                let default = field.default.map(|d| d.visit(self, down)).transpose()?;
+                Ok((key, matcher, default))
             })
-            .collect();
+            .collect::<Result<Vec<_>, F>>()?;
         Ok(Matcher::Object(fields, exhaustive))
     }
 }

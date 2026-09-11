@@ -26,7 +26,8 @@ use tower_lsp::lsp_types::{
 
 use crate::pblang::syntaxtree::{SyntaxNode, SyntaxToken};
 use crate::pblang::visit::{
-    AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, walk_expr,
+    AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, UnvisitedExpr,
+    UnvisitedMatcher, visit_all, visit_all_matchers, walk_expr,
 };
 
 use super::convert::LineIndex;
@@ -57,86 +58,98 @@ impl LangVisitor for SemanticVisitor {
     type Expr = Vec<Entry>;
     type Matcher = Vec<Entry>;
     type Error = Infallible;
+    type Down = ();
 
     fn visit_let(
         &mut self,
         _range: TextRange,
-        bindings: Vec<(TextRange, Vec<Entry>, Vec<Entry>)>,
-        body: Vec<Entry>,
+        down: &(),
+        bindings: Vec<(TextRange, UnvisitedMatcher, UnvisitedExpr)>,
+        body: UnvisitedExpr,
     ) -> Result<Vec<Entry>, Infallible> {
         let mut out = Vec::new();
         for (_, matcher, value) in bindings {
-            out.extend(matcher);
-            out.extend(value);
+            out.extend(matcher.visit(self, down)?);
+            out.extend(value.visit(self, down)?);
         }
-        out.extend(body);
+        out.extend(body.visit(self, down)?);
         Ok(out)
     }
 
     fn visit_bind(
         &mut self,
         _range: TextRange,
-        items: Vec<(TextRange, AssignKey, Vec<Entry>)>,
-        body: Vec<Entry>,
+        down: &(),
+        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        body: UnvisitedExpr,
     ) -> Result<Vec<Entry>, Infallible> {
         let mut out = Vec::new();
         for (_, key, value) in items {
             if let AssignKey::Ident(token) = key {
                 out.push((token.text_range(), true));
             }
-            out.extend(value);
+            out.extend(value.visit(self, down)?);
         }
-        out.extend(body);
+        out.extend(body.visit(self, down)?);
         Ok(out)
     }
 
     fn visit_func_def(
         &mut self,
         _range: TextRange,
-        params: Vec<Vec<Entry>>,
-        body: Vec<Entry>,
+        down: &(),
+        params: Vec<UnvisitedMatcher>,
+        body: UnvisitedExpr,
     ) -> Result<Vec<Entry>, Infallible> {
-        let mut out: Vec<Entry> = params.into_iter().flatten().collect();
-        out.extend(body);
+        let mut out: Vec<Entry> = visit_all_matchers(params, self, down)?
+            .into_iter()
+            .flatten()
+            .collect();
+        out.extend(body.visit(self, down)?);
         Ok(out)
     }
 
     fn visit_binary(
         &mut self,
         _range: TextRange,
+        down: &(),
         _op: SyntaxToken,
-        lhs: Vec<Entry>,
-        rhs: Vec<Entry>,
+        lhs: UnvisitedExpr,
+        rhs: UnvisitedExpr,
     ) -> Result<Vec<Entry>, Infallible> {
-        Ok(concat(lhs, rhs))
+        Ok(concat(lhs.visit(self, down)?, rhs.visit(self, down)?))
     }
 
     fn visit_unary(
         &mut self,
         _range: TextRange,
+        down: &(),
         _op: SyntaxToken,
-        operand: Vec<Entry>,
+        operand: UnvisitedExpr,
     ) -> Result<Vec<Entry>, Infallible> {
-        Ok(operand)
+        operand.visit(self, down)
     }
 
     fn visit_func_call(
         &mut self,
         _range: TextRange,
-        func: Vec<Entry>,
-        arg: Vec<Entry>,
+        down: &(),
+        func: UnvisitedExpr,
+        arg: UnvisitedExpr,
     ) -> Result<Vec<Entry>, Infallible> {
-        Ok(concat(func, arg))
+        Ok(concat(func.visit(self, down)?, arg.visit(self, down)?))
     }
 
     fn visit_attr_sel(
         &mut self,
         _range: TextRange,
-        base: Vec<Entry>,
-        attr: AttrSelector<Vec<Entry>>,
+        down: &(),
+        base: UnvisitedExpr,
+        attr: AttrSelector<UnvisitedExpr>,
     ) -> Result<Vec<Entry>, Infallible> {
+        let base = base.visit(self, down)?;
         let attr = match attr {
-            AttrSelector::Dynamic(entries) => entries,
+            AttrSelector::Dynamic(entries) => entries.visit(self, down)?,
             AttrSelector::Static(_) => Vec::new(),
         };
         Ok(concat(base, attr))
@@ -145,57 +158,67 @@ impl LangVisitor for SemanticVisitor {
     fn visit_fold(
         &mut self,
         _range: TextRange,
-        func: Vec<Entry>,
-        init: Option<Vec<Entry>>,
-        input: Vec<Entry>,
+        down: &(),
+        func: UnvisitedExpr,
+        init: Option<UnvisitedExpr>,
+        input: UnvisitedExpr,
     ) -> Result<Vec<Entry>, Infallible> {
-        let mut out = func;
-        out.extend(init.into_iter().flatten());
-        out.extend(input);
+        let mut out = func.visit(self, down)?;
+        if let Some(init) = init {
+            out.extend(init.visit(self, down)?);
+        }
+        out.extend(input.visit(self, down)?);
         Ok(out)
     }
 
     fn visit_map(
         &mut self,
         _range: TextRange,
+        down: &(),
         _kind: MapKind,
-        func: Vec<Entry>,
-        input: Vec<Entry>,
-        filter: Option<Vec<Entry>>,
+        func: UnvisitedExpr,
+        input: UnvisitedExpr,
+        filter: Option<UnvisitedExpr>,
     ) -> Result<Vec<Entry>, Infallible> {
-        let mut out = func;
-        out.extend(input);
-        out.extend(filter.into_iter().flatten());
+        let mut out = func.visit(self, down)?;
+        out.extend(input.visit(self, down)?);
+        if let Some(filter) = filter {
+            out.extend(filter.visit(self, down)?);
+        }
         Ok(out)
     }
 
     fn visit_switch(
         &mut self,
         _range: TextRange,
-        input: Vec<Entry>,
-        cases: Vec<(Vec<Entry>, Vec<Entry>)>,
-        default: Option<Vec<Entry>>,
+        down: &(),
+        input: UnvisitedExpr,
+        cases: Vec<(UnvisitedExpr, UnvisitedExpr)>,
+        default: Option<UnvisitedExpr>,
     ) -> Result<Vec<Entry>, Infallible> {
-        let mut out = input;
+        let mut out = input.visit(self, down)?;
         for (pattern, result) in cases {
-            out.extend(pattern);
-            out.extend(result);
+            out.extend(pattern.visit(self, down)?);
+            out.extend(result.visit(self, down)?);
         }
-        out.extend(default.into_iter().flatten());
+        if let Some(default) = default {
+            out.extend(default.visit(self, down)?);
+        }
         Ok(out)
     }
 
     fn visit_object(
         &mut self,
         _range: TextRange,
-        items: Vec<(TextRange, AssignKey, Vec<Entry>)>,
+        down: &(),
+        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
     ) -> Result<Vec<Entry>, Infallible> {
         let mut out = Vec::new();
         for (_, key, value) in items {
             if let AssignKey::Ident(token) = key {
                 out.push((token.text_range(), true));
             }
-            out.extend(value);
+            out.extend(value.visit(self, down)?);
         }
         Ok(out)
     }
@@ -203,22 +226,31 @@ impl LangVisitor for SemanticVisitor {
     fn visit_list(
         &mut self,
         _range: TextRange,
-        items: Vec<Vec<Entry>>,
+        down: &(),
+        items: Vec<UnvisitedExpr>,
     ) -> Result<Vec<Entry>, Infallible> {
-        Ok(items.into_iter().flatten().collect())
+        Ok(visit_all(items, self, down)?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 
     fn visit_tuple(
         &mut self,
         _range: TextRange,
-        items: Vec<Vec<Entry>>,
+        down: &(),
+        items: Vec<UnvisitedExpr>,
     ) -> Result<Vec<Entry>, Infallible> {
-        Ok(items.into_iter().flatten().collect())
+        Ok(visit_all(items, self, down)?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 
     fn visit_literal(
         &mut self,
         _range: TextRange,
+        _down: &(),
         _token: SyntaxToken,
     ) -> Result<Vec<Entry>, Infallible> {
         Ok(Vec::new())
@@ -227,21 +259,22 @@ impl LangVisitor for SemanticVisitor {
     fn visit_string(
         &mut self,
         _range: TextRange,
-        parts: Vec<StringPart<Vec<Entry>>>,
+        down: &(),
+        parts: Vec<StringPart<UnvisitedExpr>>,
     ) -> Result<Vec<Entry>, Infallible> {
-        Ok(parts
-            .into_iter()
-            .filter_map(|part| match part {
-                StringPart::Embed(entries) => Some(entries),
-                StringPart::Chunk(_) => None,
-            })
-            .flatten()
-            .collect())
+        let mut out = Vec::new();
+        for part in parts {
+            if let StringPart::Embed(entries) = part {
+                out.extend(entries.visit(self, down)?);
+            }
+        }
+        Ok(out)
     }
 
     fn visit_var(
         &mut self,
         _range: TextRange,
+        _down: &(),
         name: SyntaxToken,
     ) -> Result<Vec<Entry>, Infallible> {
         Ok(vec![(name.text_range(), false)])
@@ -250,22 +283,28 @@ impl LangVisitor for SemanticVisitor {
     fn visit_matcher_ident(
         &mut self,
         _range: TextRange,
+        _down: &(),
         name: SyntaxToken,
     ) -> Result<Vec<Entry>, Infallible> {
         Ok(vec![(name.text_range(), true)])
     }
 
-    fn visit_matcher_wildcard(&mut self, _range: TextRange) -> Result<Vec<Entry>, Infallible> {
+    fn visit_matcher_wildcard(
+        &mut self,
+        _range: TextRange,
+        _down: &(),
+    ) -> Result<Vec<Entry>, Infallible> {
         Ok(Vec::new())
     }
 
     fn visit_matcher_alias(
         &mut self,
         _range: TextRange,
-        inner: Vec<Entry>,
+        down: &(),
+        inner: UnvisitedMatcher,
         name: SyntaxToken,
     ) -> Result<Vec<Entry>, Infallible> {
-        let mut out = inner;
+        let mut out = inner.visit(self, down)?;
         out.push((name.text_range(), true));
         Ok(out)
     }
@@ -273,22 +312,31 @@ impl LangVisitor for SemanticVisitor {
     fn visit_matcher_tuple(
         &mut self,
         _range: TextRange,
-        items: Vec<Vec<Entry>>,
+        down: &(),
+        items: Vec<UnvisitedMatcher>,
     ) -> Result<Vec<Entry>, Infallible> {
-        Ok(items.into_iter().flatten().collect())
+        Ok(visit_all_matchers(items, self, down)?
+            .into_iter()
+            .flatten()
+            .collect())
     }
 
     fn visit_matcher_object(
         &mut self,
         _range: TextRange,
+        down: &(),
         _exhaustive: bool,
-        fields: Vec<ObjectField<Vec<Entry>, Vec<Entry>>>,
+        fields: Vec<ObjectField<UnvisitedMatcher, UnvisitedExpr>>,
     ) -> Result<Vec<Entry>, Infallible> {
         let mut out = Vec::new();
         for field in fields {
             out.push((field.key.text_range(), true));
-            out.extend(field.matcher.into_iter().flatten());
-            out.extend(field.default.into_iter().flatten());
+            if let Some(matcher) = field.matcher {
+                out.extend(matcher.visit(self, down)?);
+            }
+            if let Some(default) = field.default {
+                out.extend(default.visit(self, down)?);
+            }
         }
         Ok(out)
     }
@@ -299,7 +347,7 @@ impl LangVisitor for SemanticVisitor {
 /// from wire-format encoding so it's testable on its own.
 fn classify_tokens(node: &SyntaxNode) -> Vec<(Range<usize>, bool)> {
     let mut visitor = SemanticVisitor;
-    let mut entries = walk_expr(node, &mut visitor).unwrap();
+    let mut entries = walk_expr(node, &mut visitor, &()).unwrap();
     entries.sort_by_key(|(range, _)| range.start());
     entries
         .into_iter()

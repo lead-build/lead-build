@@ -3,12 +3,15 @@
 //! [`LangVisitor`] is the one place that knows how each `SyntaxKind` node is
 //! shaped (which child is the body, which children are a list of bindings,
 //! how a `switch` case splits into pattern/result, ...). [`walk_expr`] and
-//! [`walk_matcher`] do that extraction and the recursion, and hand already
-//! extracted, already visited parts to the matching `LangVisitor` method —
-//! an implementor never touches `SyntaxNode::children()` itself. This lets
-//! `pbexpr` (lowering the tree into its own `Expr`/`Matcher` runtime tree)
-//! and `pbls` (deriving lighter-weight semantic views for LSP features)
-//! share one traversal instead of each re-deriving the grammar's shape.
+//! [`walk_matcher`] do that extraction, and hand each child to the matching
+//! `LangVisitor` method as an [`UnvisitedExpr`]/[`UnvisitedMatcher`] handle
+//! rather than an already-visited value — an implementor never touches
+//! `SyntaxNode::children()` itself, but it does decide which handles to call
+//! `.visit()` on (skipping ones it won't use) and what [`LangVisitor::Down`]
+//! state to pass each. This lets `pbexpr` (lowering the tree into its own
+//! `Expr`/`Matcher` runtime tree) and `pbls` (deriving lighter-weight
+//! semantic views for LSP features) share one traversal instead of each
+//! re-deriving the grammar's shape.
 
 use super::syntaxtree::{SyntaxKind, SyntaxNode, SyntaxToken};
 use rowan::{NodeOrToken, TextRange};
@@ -51,17 +54,71 @@ pub struct ObjectField<M, E> {
     pub default: Option<E>,
 }
 
+/// A not-yet-walked expression child, handed to a `LangVisitor` method
+/// instead of an already-visited value. `walk_expr` builds these; a visitor
+/// calls [`UnvisitedExpr::visit`] on the ones it actually wants, passing
+/// whatever `Down` state applies to that child, and simply drops the rest —
+/// no work is done for a handle that's never visited.
+pub struct UnvisitedExpr(SyntaxNode);
+
+impl UnvisitedExpr {
+    /// The child's own span, available without visiting it.
+    pub fn range(&self) -> TextRange {
+        self.0.text_range()
+    }
+
+    pub fn visit<V: LangVisitor>(self, v: &mut V, down: &V::Down) -> Result<V::Expr, V::Error> {
+        walk_expr(&self.0, v, down)
+    }
+}
+
+/// The matcher counterpart of [`UnvisitedExpr`].
+pub struct UnvisitedMatcher(SyntaxNode);
+
+impl UnvisitedMatcher {
+    /// The child's own span, available without visiting it.
+    pub fn range(&self) -> TextRange {
+        self.0.text_range()
+    }
+
+    pub fn visit<V: LangVisitor>(self, v: &mut V, down: &V::Down) -> Result<V::Matcher, V::Error> {
+        walk_matcher(&self.0, v, down)
+    }
+}
+
+/// Visits every item in order with the same `down` state — the common case
+/// for a visitor that always wants every child, so it doesn't need to spell
+/// out the loop itself.
+pub fn visit_all<V: LangVisitor>(
+    items: impl IntoIterator<Item = UnvisitedExpr>,
+    v: &mut V,
+    down: &V::Down,
+) -> Result<Vec<V::Expr>, V::Error> {
+    items.into_iter().map(|u| u.visit(v, down)).collect()
+}
+
+/// The matcher counterpart of [`visit_all`].
+pub fn visit_all_matchers<V: LangVisitor>(
+    items: impl IntoIterator<Item = UnvisitedMatcher>,
+    v: &mut V,
+    down: &V::Down,
+) -> Result<Vec<V::Matcher>, V::Error> {
+    items.into_iter().map(|u| u.visit(v, down)).collect()
+}
+
 /// Implemented once per consumer of the parse tree. `Expr`/`Matcher` are
 /// whatever that consumer wants to produce per expression/matcher node
 /// (e.g. `pbexpr`'s own runtime `Expr<T,F>`/`Matcher<T,F>`, or `()` for a
-/// side-effecting LSP walk). There's no `visit_group` — `GROUP_EXPR`
-/// (`( <expr> )`) is transparent: `walk_expr` recurses straight through it
-/// without producing a node of its own, matching what parenthesization
-/// means.
+/// side-effecting LSP walk). `Down` is state threaded top-down through the
+/// walk (e.g. a scope environment); a visitor that doesn't need one uses
+/// `type Down = ();`. There's no `visit_group` — `GROUP_EXPR` (`( <expr> )`)
+/// is transparent: `walk_expr` recurses straight through it without
+/// producing a node of its own, matching what parenthesization means.
 pub trait LangVisitor {
     type Expr;
     type Matcher;
     type Error;
+    type Down;
 
     /// Each binding's own `range` is the whole `<matcher> = <expr> ;`
     /// statement (a `LET_BINDING` node) — distinct from `Self::Matcher`,
@@ -69,62 +126,71 @@ pub trait LangVisitor {
     fn visit_let(
         &mut self,
         range: TextRange,
-        bindings: Vec<(TextRange, Self::Matcher, Self::Expr)>,
-        body: Self::Expr,
+        down: &Self::Down,
+        bindings: Vec<(TextRange, UnvisitedMatcher, UnvisitedExpr)>,
+        body: UnvisitedExpr,
     ) -> Result<Self::Expr, Self::Error>;
     /// Each item's own `range` is the whole `<key> = <expr> ;` statement (an
     /// `ASSIGNMENT` node).
     fn visit_bind(
         &mut self,
         range: TextRange,
-        items: Vec<(TextRange, AssignKey, Self::Expr)>,
-        body: Self::Expr,
+        down: &Self::Down,
+        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        body: UnvisitedExpr,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_func_def(
         &mut self,
         range: TextRange,
-        params: Vec<Self::Matcher>,
-        body: Self::Expr,
+        down: &Self::Down,
+        params: Vec<UnvisitedMatcher>,
+        body: UnvisitedExpr,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_binary(
         &mut self,
         range: TextRange,
+        down: &Self::Down,
         op: SyntaxToken,
-        lhs: Self::Expr,
-        rhs: Self::Expr,
+        lhs: UnvisitedExpr,
+        rhs: UnvisitedExpr,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_unary(
         &mut self,
         range: TextRange,
+        down: &Self::Down,
         op: SyntaxToken,
-        operand: Self::Expr,
+        operand: UnvisitedExpr,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_func_call(
         &mut self,
         range: TextRange,
-        func: Self::Expr,
-        arg: Self::Expr,
+        down: &Self::Down,
+        func: UnvisitedExpr,
+        arg: UnvisitedExpr,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_attr_sel(
         &mut self,
         range: TextRange,
-        base: Self::Expr,
-        attr: AttrSelector<Self::Expr>,
+        down: &Self::Down,
+        base: UnvisitedExpr,
+        attr: AttrSelector<UnvisitedExpr>,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_fold(
         &mut self,
         range: TextRange,
-        func: Self::Expr,
-        init: Option<Self::Expr>,
-        input: Self::Expr,
+        down: &Self::Down,
+        func: UnvisitedExpr,
+        init: Option<UnvisitedExpr>,
+        input: UnvisitedExpr,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_map(
         &mut self,
         range: TextRange,
+        down: &Self::Down,
         kind: MapKind,
-        func: Self::Expr,
-        input: Self::Expr,
-        filter: Option<Self::Expr>,
+        func: UnvisitedExpr,
+        input: UnvisitedExpr,
+        filter: Option<UnvisitedExpr>,
     ) -> Result<Self::Expr, Self::Error>;
     /// `cases`' pattern side is `Self::Expr`, not `Self::Matcher`: despite
     /// `SwitchCase`'s grammar doc calling it a matcher, `SWITCH_CASE`'s
@@ -133,40 +199,50 @@ pub trait LangVisitor {
     fn visit_switch(
         &mut self,
         range: TextRange,
-        input: Self::Expr,
-        cases: Vec<(Self::Expr, Self::Expr)>,
-        default: Option<Self::Expr>,
+        down: &Self::Down,
+        input: UnvisitedExpr,
+        cases: Vec<(UnvisitedExpr, UnvisitedExpr)>,
+        default: Option<UnvisitedExpr>,
     ) -> Result<Self::Expr, Self::Error>;
     /// Each item's own `range` is the whole `<key> = <expr> ;` statement (an
     /// `ASSIGNMENT` node).
     fn visit_object(
         &mut self,
         range: TextRange,
-        items: Vec<(TextRange, AssignKey, Self::Expr)>,
+        down: &Self::Down,
+        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_list(
         &mut self,
         range: TextRange,
-        items: Vec<Self::Expr>,
+        down: &Self::Down,
+        items: Vec<UnvisitedExpr>,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_tuple(
         &mut self,
         range: TextRange,
-        items: Vec<Self::Expr>,
+        down: &Self::Down,
+        items: Vec<UnvisitedExpr>,
     ) -> Result<Self::Expr, Self::Error>;
     /// `token` is `TRUE_KW`/`FALSE_KW`/`NUMBER`/`NULL_KW`.
     fn visit_literal(
         &mut self,
         range: TextRange,
+        down: &Self::Down,
         token: SyntaxToken,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_string(
         &mut self,
         range: TextRange,
-        parts: Vec<StringPart<Self::Expr>>,
+        down: &Self::Down,
+        parts: Vec<StringPart<UnvisitedExpr>>,
     ) -> Result<Self::Expr, Self::Error>;
-    fn visit_var(&mut self, range: TextRange, name: SyntaxToken)
-    -> Result<Self::Expr, Self::Error>;
+    fn visit_var(
+        &mut self,
+        range: TextRange,
+        down: &Self::Down,
+        name: SyntaxToken,
+    ) -> Result<Self::Expr, Self::Error>;
 
     /// `range` is the whole matcher node's own span — kept on every matcher
     /// method (mirroring the expression methods) even though `pbexpr`'s own
@@ -176,25 +252,33 @@ pub trait LangVisitor {
     fn visit_matcher_ident(
         &mut self,
         range: TextRange,
+        down: &Self::Down,
         name: SyntaxToken,
     ) -> Result<Self::Matcher, Self::Error>;
-    fn visit_matcher_wildcard(&mut self, range: TextRange) -> Result<Self::Matcher, Self::Error>;
+    fn visit_matcher_wildcard(
+        &mut self,
+        range: TextRange,
+        down: &Self::Down,
+    ) -> Result<Self::Matcher, Self::Error>;
     fn visit_matcher_alias(
         &mut self,
         range: TextRange,
-        inner: Self::Matcher,
+        down: &Self::Down,
+        inner: UnvisitedMatcher,
         name: SyntaxToken,
     ) -> Result<Self::Matcher, Self::Error>;
     fn visit_matcher_tuple(
         &mut self,
         range: TextRange,
-        items: Vec<Self::Matcher>,
+        down: &Self::Down,
+        items: Vec<UnvisitedMatcher>,
     ) -> Result<Self::Matcher, Self::Error>;
     fn visit_matcher_object(
         &mut self,
         range: TextRange,
+        down: &Self::Down,
         exhaustive: bool,
-        fields: Vec<ObjectField<Self::Matcher, Self::Expr>>,
+        fields: Vec<ObjectField<UnvisitedMatcher, UnvisitedExpr>>,
     ) -> Result<Self::Matcher, Self::Error>;
 }
 
@@ -229,58 +313,62 @@ fn operator_token(node: &SyntaxNode) -> SyntaxToken {
         .unwrap_or_else(|| panic!("{:?} has an operator token", node.kind()))
 }
 
-fn extract_assignment<V: LangVisitor>(
-    assignment: &SyntaxNode,
-    v: &mut V,
-) -> Result<(TextRange, AssignKey, V::Expr), V::Error> {
+fn extract_assignment(assignment: &SyntaxNode) -> (TextRange, AssignKey, UnvisitedExpr) {
     let range = assignment.text_range();
     if let Some(ident) = find_token(assignment, SyntaxKind::IDENT) {
         let value_node = assignment
             .children()
             .next()
             .expect("ASSIGNMENT always has a value");
-        let value = walk_expr(&value_node, v)?;
-        return Ok((range, AssignKey::Ident(ident), value));
+        return (range, AssignKey::Ident(ident), UnvisitedExpr(value_node));
     }
     let mut children = assignment.children();
     let key_node = children.next().expect("ASSIGNMENT key is a STRING_LIT");
     let value_node = children.next().expect("ASSIGNMENT always has a value");
-    let value = walk_expr(&value_node, v)?;
-    Ok((range, AssignKey::StringLit(key_node), value))
+    (
+        range,
+        AssignKey::StringLit(key_node),
+        UnvisitedExpr(value_node),
+    )
 }
 
-fn extract_object_matcher_field<V: LangVisitor>(
+fn extract_object_matcher_field(
     field: &SyntaxNode,
-    v: &mut V,
-) -> Result<ObjectField<V::Matcher, V::Expr>, V::Error> {
+) -> ObjectField<UnvisitedMatcher, UnvisitedExpr> {
     let key = first_non_trivia_token(field);
     let has_eq = has_token(field, SyntaxKind::EQ);
     let has_default = has_token(field, SyntaxKind::QUESTION);
     let children: Vec<SyntaxNode> = field.children().collect();
     let (matcher, default) = match (has_eq, has_default) {
         (false, false) => (None, None),
-        (true, false) => (Some(walk_matcher(&children[0], v)?), None),
-        (false, true) => (None, Some(walk_expr(&children[0], v)?)),
+        (true, false) => (Some(UnvisitedMatcher(children[0].clone())), None),
+        (false, true) => (None, Some(UnvisitedExpr(children[0].clone()))),
         (true, true) => (
-            Some(walk_matcher(&children[0], v)?),
-            Some(walk_expr(&children[1], v)?),
+            Some(UnvisitedMatcher(children[0].clone())),
+            Some(UnvisitedExpr(children[1].clone())),
         ),
     };
-    Ok(ObjectField {
+    ObjectField {
         key,
         matcher,
         default,
-    })
+    }
 }
 
-/// Walks one expression node, extracting its children and recursing before
-/// handing the result to the matching [`LangVisitor`] method.
-pub fn walk_expr<V: LangVisitor>(node: &SyntaxNode, v: &mut V) -> Result<V::Expr, V::Error> {
+/// Walks one expression node, extracting its children and handing each one
+/// to the matching [`LangVisitor`] method as an [`UnvisitedExpr`]/
+/// [`UnvisitedMatcher`] handle — recursion only happens for the handles the
+/// visitor actually calls `.visit()` on.
+pub fn walk_expr<V: LangVisitor>(
+    node: &SyntaxNode,
+    v: &mut V,
+    down: &V::Down,
+) -> Result<V::Expr, V::Error> {
     let range = node.text_range();
     let children: Vec<SyntaxNode> = node.children().collect();
 
     match node.kind() {
-        SyntaxKind::GROUP_EXPR => walk_expr(&children[0], v),
+        SyntaxKind::GROUP_EXPR => walk_expr(&children[0], v, down),
 
         SyntaxKind::LET_EXPR => {
             let body_node = children.last().expect("LET_EXPR has a body").clone();
@@ -288,69 +376,70 @@ pub fn walk_expr<V: LangVisitor>(node: &SyntaxNode, v: &mut V) -> Result<V::Expr
             let mut bindings = Vec::with_capacity(binding_nodes.len());
             for binding in binding_nodes {
                 let bc: Vec<SyntaxNode> = binding.children().collect();
-                let matcher = walk_matcher(&bc[0], v)?;
-                let value = walk_expr(&bc[1], v)?;
-                bindings.push((binding.text_range(), matcher, value));
+                bindings.push((
+                    binding.text_range(),
+                    UnvisitedMatcher(bc[0].clone()),
+                    UnvisitedExpr(bc[1].clone()),
+                ));
             }
-            let body = walk_expr(&body_node, v)?;
-            v.visit_let(range, bindings, body)
+            v.visit_let(range, down, bindings, UnvisitedExpr(body_node))
         }
 
         SyntaxKind::BIND_EXPR => {
             let body_node = children.last().expect("BIND_EXPR has a body").clone();
             let assign_nodes = &children[..children.len() - 1];
-            let mut items = Vec::with_capacity(assign_nodes.len());
-            for assignment in assign_nodes {
-                items.push(extract_assignment(assignment, v)?);
-            }
-            let body = walk_expr(&body_node, v)?;
-            v.visit_bind(range, items, body)
+            let items = assign_nodes.iter().map(extract_assignment).collect();
+            v.visit_bind(range, down, items, UnvisitedExpr(body_node))
         }
 
         SyntaxKind::FUNC_DEF => {
             let body_node = children.last().expect("FUNC_DEF has a body").clone();
             let matcher_nodes = &children[..children.len() - 1];
-            let mut params = Vec::with_capacity(matcher_nodes.len());
-            for matcher in matcher_nodes {
-                params.push(walk_matcher(matcher, v)?);
-            }
-            let body = walk_expr(&body_node, v)?;
-            v.visit_func_def(range, params, body)
+            let params = matcher_nodes
+                .iter()
+                .cloned()
+                .map(UnvisitedMatcher)
+                .collect();
+            v.visit_func_def(range, down, params, UnvisitedExpr(body_node))
         }
 
         SyntaxKind::BINARY_EXPR => {
             let op = operator_token(node);
-            let lhs = walk_expr(&children[0], v)?;
-            let rhs = walk_expr(&children[1], v)?;
-            v.visit_binary(range, op, lhs, rhs)
+            v.visit_binary(
+                range,
+                down,
+                op,
+                UnvisitedExpr(children[0].clone()),
+                UnvisitedExpr(children[1].clone()),
+            )
         }
 
         SyntaxKind::UNARY_EXPR => {
             let op = operator_token(node);
-            let operand = walk_expr(&children[0], v)?;
-            v.visit_unary(range, op, operand)
+            v.visit_unary(range, down, op, UnvisitedExpr(children[0].clone()))
         }
 
-        SyntaxKind::FUNC_CALL => {
-            let func = walk_expr(&children[0], v)?;
-            let arg = walk_expr(&children[1], v)?;
-            v.visit_func_call(range, func, arg)
-        }
+        SyntaxKind::FUNC_CALL => v.visit_func_call(
+            range,
+            down,
+            UnvisitedExpr(children[0].clone()),
+            UnvisitedExpr(children[1].clone()),
+        ),
 
         SyntaxKind::ATTR_SEL => {
-            let base = walk_expr(&children[0], v)?;
+            let base = UnvisitedExpr(children[0].clone());
             let attr = if children.len() == 2 {
                 let inner = children[1]
                     .children()
                     .next()
                     .expect("DYNAMIC_ATTR wraps an expr");
-                AttrSelector::Dynamic(walk_expr(&inner, v)?)
+                AttrSelector::Dynamic(UnvisitedExpr(inner))
             } else {
                 let name = find_token(node, SyntaxKind::IDENT)
                     .expect("static ATTR_SEL has an IDENT token");
                 AttrSelector::Static(name)
             };
-            v.visit_attr_sel(range, base, attr)
+            v.visit_attr_sel(range, down, base, attr)
         }
 
         SyntaxKind::FOLD_EXPR => {
@@ -360,13 +449,10 @@ pub fn walk_expr<V: LangVisitor>(node: &SyntaxNode, v: &mut V) -> Result<V::Expr
             } else {
                 (&children[0], None, &children[1])
             };
-            let func = walk_expr(func_node, v)?;
-            let init = match init_node {
-                Some(n) => Some(walk_expr(n, v)?),
-                None => None,
-            };
-            let input = walk_expr(input_node, v)?;
-            v.visit_fold(range, func, init, input)
+            let func = UnvisitedExpr(func_node.clone());
+            let init = init_node.map(|n| UnvisitedExpr(n.clone()));
+            let input = UnvisitedExpr(input_node.clone());
+            v.visit_fold(range, down, func, init, input)
         }
 
         SyntaxKind::MAP_EXPR => {
@@ -381,61 +467,46 @@ pub fn walk_expr<V: LangVisitor>(node: &SyntaxNode, v: &mut V) -> Result<V::Expr
             } else {
                 (&children[0], &children[1], None)
             };
-            let func = walk_expr(func_node, v)?;
-            let input = walk_expr(input_node, v)?;
-            let filter = match filter_node {
-                Some(n) => Some(walk_expr(n, v)?),
-                None => None,
-            };
-            v.visit_map(range, kind, func, input, filter)
+            let func = UnvisitedExpr(func_node.clone());
+            let input = UnvisitedExpr(input_node.clone());
+            let filter = filter_node.map(|n| UnvisitedExpr(n.clone()));
+            v.visit_map(range, down, kind, func, input, filter)
         }
 
         SyntaxKind::SWITCH_EXPR => {
             let mut iter = children.iter();
-            let input_node = iter.next().expect("SWITCH_EXPR has an input");
+            let input_node = iter.next().expect("SWITCH_EXPR has an input").clone();
             let mut cases = Vec::new();
             let mut default = None;
             for child in iter {
                 if child.kind() == SyntaxKind::SWITCH_CASE {
                     let cc: Vec<SyntaxNode> = child.children().collect();
-                    let pattern = walk_expr(&cc[0], v)?;
-                    let result = walk_expr(&cc[1], v)?;
-                    cases.push((pattern, result));
+                    cases.push((UnvisitedExpr(cc[0].clone()), UnvisitedExpr(cc[1].clone())));
                 } else {
-                    default = Some(walk_expr(child, v)?);
+                    default = Some(UnvisitedExpr(child.clone()));
                 }
             }
-            let input = walk_expr(input_node, v)?;
-            v.visit_switch(range, input, cases, default)
+            v.visit_switch(range, down, UnvisitedExpr(input_node), cases, default)
         }
 
         SyntaxKind::OBJECT_EXPR => {
-            let mut items = Vec::with_capacity(children.len());
-            for assignment in &children {
-                items.push(extract_assignment(assignment, v)?);
-            }
-            v.visit_object(range, items)
+            let items = children.iter().map(extract_assignment).collect();
+            v.visit_object(range, down, items)
         }
 
         SyntaxKind::LIST_EXPR => {
-            let mut items = Vec::with_capacity(children.len());
-            for item in &children {
-                items.push(walk_expr(item, v)?);
-            }
-            v.visit_list(range, items)
+            let items = children.into_iter().map(UnvisitedExpr).collect();
+            v.visit_list(range, down, items)
         }
 
         SyntaxKind::TUPLE_EXPR => {
-            let mut items = Vec::with_capacity(children.len());
-            for item in &children {
-                items.push(walk_expr(item, v)?);
-            }
-            v.visit_tuple(range, items)
+            let items = children.into_iter().map(UnvisitedExpr).collect();
+            v.visit_tuple(range, down, items)
         }
 
         SyntaxKind::LITERAL_EXPR => {
             let token = first_non_trivia_token(node);
-            v.visit_literal(range, token)
+            v.visit_literal(range, down, token)
         }
 
         SyntaxKind::STRING_LIT => {
@@ -447,55 +518,56 @@ pub fn walk_expr<V: LangVisitor>(node: &SyntaxNode, v: &mut V) -> Result<V::Expr
                     }
                     NodeOrToken::Node(n) if n.kind() == SyntaxKind::STRING_EMBED => {
                         let inner = n.children().next().expect("STRING_EMBED wraps an expr");
-                        parts.push(StringPart::Embed(walk_expr(&inner, v)?));
+                        parts.push(StringPart::Embed(UnvisitedExpr(inner)));
                     }
                     _ => {}
                 }
             }
-            v.visit_string(range, parts)
+            v.visit_string(range, down, parts)
         }
 
         SyntaxKind::VAR_EXPR => {
             let name = first_non_trivia_token(node);
-            v.visit_var(range, name)
+            v.visit_var(range, down, name)
         }
 
         other => unreachable!("unexpected expression node kind {other:?}"),
     }
 }
 
-/// Walks one matcher node, extracting its children and recursing before
-/// handing the result to the matching [`LangVisitor`] method.
-pub fn walk_matcher<V: LangVisitor>(node: &SyntaxNode, v: &mut V) -> Result<V::Matcher, V::Error> {
+/// Walks one matcher node, extracting its children and handing each one to
+/// the matching [`LangVisitor`] method as an [`UnvisitedMatcher`]/
+/// [`UnvisitedExpr`] handle — see [`walk_expr`].
+pub fn walk_matcher<V: LangVisitor>(
+    node: &SyntaxNode,
+    v: &mut V,
+    down: &V::Down,
+) -> Result<V::Matcher, V::Error> {
     let range = node.text_range();
     let children: Vec<SyntaxNode> = node.children().collect();
 
     match node.kind() {
-        SyntaxKind::MATCHER_IDENT => v.visit_matcher_ident(range, first_non_trivia_token(node)),
+        SyntaxKind::MATCHER_IDENT => {
+            v.visit_matcher_ident(range, down, first_non_trivia_token(node))
+        }
 
-        SyntaxKind::MATCHER_WILDCARD => v.visit_matcher_wildcard(range),
+        SyntaxKind::MATCHER_WILDCARD => v.visit_matcher_wildcard(range, down),
 
         SyntaxKind::MATCHER_ALIAS => {
-            let inner = walk_matcher(&children[0], v)?;
+            let inner = UnvisitedMatcher(children[0].clone());
             let name = find_token(node, SyntaxKind::IDENT).expect("MATCHER_ALIAS has a name");
-            v.visit_matcher_alias(range, inner, name)
+            v.visit_matcher_alias(range, down, inner, name)
         }
 
         SyntaxKind::MATCHER_TUPLE => {
-            let mut items = Vec::with_capacity(children.len());
-            for item in &children {
-                items.push(walk_matcher(item, v)?);
-            }
-            v.visit_matcher_tuple(range, items)
+            let items = children.into_iter().map(UnvisitedMatcher).collect();
+            v.visit_matcher_tuple(range, down, items)
         }
 
         SyntaxKind::MATCHER_OBJECT => {
             let exhaustive = !has_token(node, SyntaxKind::DOT_DOT_DOT);
-            let mut fields = Vec::with_capacity(children.len());
-            for field in &children {
-                fields.push(extract_object_matcher_field(field, v)?);
-            }
-            v.visit_matcher_object(range, exhaustive, fields)
+            let fields = children.iter().map(extract_object_matcher_field).collect();
+            v.visit_matcher_object(range, down, exhaustive, fields)
         }
 
         other => unreachable!("unexpected matcher node kind {other:?}"),
