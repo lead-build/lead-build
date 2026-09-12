@@ -5,4 +5,5 @@ pub mod document_symbols;
 pub mod folding_ranges;
 pub mod formatting;
 pub mod semantic_tokens;
+pub mod semantic_visitor;
 pub mod server;

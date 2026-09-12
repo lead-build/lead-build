@@ -7,7 +7,12 @@ use lalrpop_util::lalrpop_mod;
 use lexer::{LexError, Lexer};
 use syntaxtree::SyntaxNode;
 
-lalrpop_mod!(pub grammar, "pblang/grammar.rs");
+lalrpop_mod!(
+    #[allow(clippy::ptr_arg)]
+    #[allow(clippy::type_complexity)]
+    pub grammar,
+    "pblang/grammar.rs"
+);
 
 pub type ParseError = lalrpop_util::ParseError<usize, lexer::Tok, LexError>;
 pub type ErrorRecovery = lalrpop_util::ErrorRecovery<usize, lexer::Tok, LexError>;
