@@ -1,5 +1,5 @@
 
-use super::{
+use super::super::{
     lexer::{Tok, LexError},
     syntaxtree::{GreenSpan, SyntaxKind, green_node, green_token},
 };
