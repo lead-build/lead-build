@@ -175,6 +175,14 @@ mod tests {
     }
 
     #[test]
+    fn static_attr_selector_is_not_flagged() {
+        // `foo` in `x.foo` is a property name, not a variable reference —
+        // it must not be flagged even though no variable named `foo` exists.
+        let doc = OpenDocument::new("let x = null; in x.foo".to_string());
+        assert_eq!(doc.diagnostics(), Vec::new());
+    }
+
+    #[test]
     fn all_valid_fixtures_have_no_diagnostics() {
         use std::fs;
         use std::path::{Path, PathBuf};

@@ -52,9 +52,16 @@ impl Scope {
     }
 }
 
-/// One classified identifier: its span, whether it's a binding target
-/// (`true`) or a variable reference (`false`), and — only for identifiers
-/// [`Scope`] actually tracks — which kind of variable it is.
+/// One classified identifier: its span, whether it's a binding target or
+/// property name (`true`) or a variable reference (`false`), and — only for
+/// identifiers [`Scope`] actually tracks — which kind of variable it is.
+/// `(true, None)` doesn't necessarily mean a binding target: an
+/// object-literal `ASSIGNMENT` key, an `OBJECT_MATCHER_FIELD`'s rename-form
+/// key, and a static `ATTR_SEL` right-hand side all name a *property*
+/// instead — `Scope` never tracks any of them — and share that same
+/// encoding, since consumers only need to tell "not a variable" apart from
+/// "unresolved variable reference" (`(false, None)`, produced only by
+/// `visit_var`).
 type Entry = (TextRange, bool, Option<VarKind>);
 
 fn concat(mut a: Vec<Entry>, b: Vec<Entry>) -> Vec<Entry> {
@@ -186,7 +193,10 @@ impl LangVisitor for SemanticVisitor {
         let base = base.visit(self, down)?;
         let attr = match attr {
             AttrSelector::Dynamic(entries) => entries.visit(self, down)?,
-            AttrSelector::Static(_) => Vec::new(),
+            // `.foo`: a property name, not a variable reference — same
+            // `(true, None)` encoding as an object-literal or
+            // object-matcher-field key (see `Entry`'s doc comment above).
+            AttrSelector::Static(token) => vec![(token.text_range(), true, None)],
         };
         Ok(concat(base, attr))
     }
