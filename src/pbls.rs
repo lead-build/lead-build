@@ -6,6 +6,7 @@ mod find_references;
 mod folding_ranges;
 mod formatting;
 mod goto_definition;
+mod rename;
 mod semantic_tokens;
 mod semantic_visitor;
 mod server;

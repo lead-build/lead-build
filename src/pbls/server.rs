@@ -1,19 +1,23 @@
 //! The `tower_lsp::LanguageServer` implementation for `pbls`.
 
-use tower_lsp::jsonrpc::Result as RpcResult;
+use std::collections::HashMap;
+
+use tower_lsp::jsonrpc::{Error as JsonRpcError, Result as RpcResult};
 use tower_lsp::lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DocumentFormattingParams, DocumentSymbolParams, DocumentSymbolResponse, FoldingRange,
     FoldingRangeParams, FoldingRangeProviderCapability, GotoDefinitionParams,
     GotoDefinitionResponse, InitializeParams, InitializeResult, InitializedParams, Location,
-    MessageType, OneOf, ReferenceParams, SemanticTokens, SemanticTokensFullOptions,
-    SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
-    SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextEdit, Url,
+    MessageType, OneOf, PrepareRenameResponse, ReferenceParams, RenameOptions, RenameParams,
+    SemanticTokens, SemanticTokensFullOptions, SemanticTokensOptions, SemanticTokensParams,
+    SemanticTokensResult, SemanticTokensServerCapabilities, ServerCapabilities,
+    TextDocumentPositionParams, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
+    WorkspaceEdit,
 };
 use tower_lsp::{Client, LanguageServer, async_trait};
 
 use super::document::ClientDocuments;
+use super::rename;
 use super::semantic_tokens::legend;
 
 pub struct Backend {
@@ -63,6 +67,10 @@ impl LanguageServer for Backend {
                 document_formatting_provider: Some(OneOf::Left(true)),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
+                rename_provider: Some(OneOf::Right(RenameOptions {
+                    prepare_provider: Some(true),
+                    work_done_progress_options: Default::default(),
+                })),
                 ..ServerCapabilities::default()
             },
             ..InitializeResult::default()
@@ -177,6 +185,45 @@ impl LanguageServer for Backend {
                     range,
                 })
                 .collect()
+        }))
+    }
+
+    async fn prepare_rename(
+        &self,
+        params: TextDocumentPositionParams,
+    ) -> RpcResult<Option<PrepareRenameResponse>> {
+        let range = self
+            .documents
+            .get(&params.text_document.uri)
+            .and_then(|doc| doc.prepare_rename(params.position));
+        Ok(range.map(PrepareRenameResponse::Range))
+    }
+
+    async fn rename(&self, params: RenameParams) -> RpcResult<Option<WorkspaceEdit>> {
+        if !rename::is_valid_new_name(&params.new_name) {
+            return Err(JsonRpcError::invalid_params(format!(
+                "\"{}\" is not a valid identifier",
+                params.new_name
+            )));
+        }
+        let uri = params.text_document_position.text_document.uri;
+        let position = params.text_document_position.position;
+        let ranges = self
+            .documents
+            .get(&uri)
+            .and_then(|doc| doc.rename(position));
+        Ok(ranges.map(|ranges| {
+            let edits = ranges
+                .into_iter()
+                .map(|range| TextEdit {
+                    range,
+                    new_text: params.new_name.clone(),
+                })
+                .collect();
+            WorkspaceEdit {
+                changes: Some(HashMap::from([(uri, edits)])),
+                ..WorkspaceEdit::default()
+            }
         }))
     }
 }
