@@ -208,22 +208,13 @@ impl LanguageServer for Backend {
         }
         let uri = params.text_document_position.text_document.uri;
         let position = params.text_document_position.position;
-        let ranges = self
+        let edits = self
             .documents
             .get(&uri)
-            .and_then(|doc| doc.rename(position));
-        Ok(ranges.map(|ranges| {
-            let edits = ranges
-                .into_iter()
-                .map(|range| TextEdit {
-                    range,
-                    new_text: params.new_name.clone(),
-                })
-                .collect();
-            WorkspaceEdit {
-                changes: Some(HashMap::from([(uri, edits)])),
-                ..WorkspaceEdit::default()
-            }
+            .and_then(|doc| doc.rename(position, &params.new_name));
+        Ok(edits.map(|edits| WorkspaceEdit {
+            changes: Some(HashMap::from([(uri, edits)])),
+            ..WorkspaceEdit::default()
         }))
     }
 }
