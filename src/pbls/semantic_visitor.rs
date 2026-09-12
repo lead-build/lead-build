@@ -72,6 +72,8 @@ impl Scope {
 ///   → `T = ()`.
 /// - `goto_definition.rs` needs to jump to the declaration →
 ///   `T = (VarKind, TextRange)`.
+/// - `find_references.rs` needs to group entries by declaration site, never
+///   the `VarKind` → `T = TextRange`.
 pub trait Resolved {
     fn resolved(kind: VarKind, range: TextRange) -> Self;
 }
@@ -84,6 +86,12 @@ impl Resolved for VarKind {
 
 impl Resolved for () {
     fn resolved(_kind: VarKind, _range: TextRange) -> Self {}
+}
+
+impl Resolved for TextRange {
+    fn resolved(_kind: VarKind, range: TextRange) -> Self {
+        range
+    }
 }
 
 impl Resolved for (VarKind, TextRange) {
