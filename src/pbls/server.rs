@@ -4,11 +4,11 @@ use tower_lsp::jsonrpc::Result as RpcResult;
 use tower_lsp::lsp_types::{
     DidChangeTextDocumentParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     DocumentFormattingParams, DocumentSymbolParams, DocumentSymbolResponse, FoldingRange,
-    FoldingRangeParams, FoldingRangeProviderCapability, InitializeParams, InitializeResult,
-    InitializedParams, MessageType, OneOf, SemanticTokens, SemanticTokensFullOptions,
-    SemanticTokensOptions, SemanticTokensParams, SemanticTokensResult,
-    SemanticTokensServerCapabilities, ServerCapabilities, TextDocumentSyncCapability,
-    TextDocumentSyncKind, TextEdit, Url,
+    FoldingRangeParams, FoldingRangeProviderCapability, GotoDefinitionParams,
+    GotoDefinitionResponse, InitializeParams, InitializeResult, InitializedParams, Location,
+    MessageType, OneOf, SemanticTokens, SemanticTokensFullOptions, SemanticTokensOptions,
+    SemanticTokensParams, SemanticTokensResult, SemanticTokensServerCapabilities,
+    ServerCapabilities, TextDocumentSyncCapability, TextDocumentSyncKind, TextEdit, Url,
 };
 use tower_lsp::{Client, LanguageServer, async_trait};
 
@@ -60,6 +60,7 @@ impl LanguageServer for Backend {
                 document_symbol_provider: Some(OneOf::Left(true)),
                 folding_range_provider: Some(FoldingRangeProviderCapability::Simple(true)),
                 document_formatting_provider: Some(OneOf::Left(true)),
+                definition_provider: Some(OneOf::Left(true)),
                 ..ServerCapabilities::default()
             },
             ..InitializeResult::default()
@@ -143,5 +144,18 @@ impl LanguageServer for Backend {
             .documents
             .get(&params.text_document.uri)
             .and_then(|doc| doc.formatting_edits()))
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> RpcResult<Option<GotoDefinitionResponse>> {
+        let uri = params.text_document_position_params.text_document.uri;
+        let position = params.text_document_position_params.position;
+        let range = self
+            .documents
+            .get(&uri)
+            .and_then(|doc| doc.goto_definition(position));
+        Ok(range.map(|range| GotoDefinitionResponse::Scalar(Location { uri, range })))
     }
 }

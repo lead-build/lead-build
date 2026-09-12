@@ -47,6 +47,31 @@ impl LineIndex {
             end: self.position(text, span.end),
         }
     }
+
+    /// Converts an LSP `Position` back to a byte offset into `text` — the
+    /// inverse of [`Self::position`]. `text` must be the same source this
+    /// index was built from. Clamps out-of-range input (a line beyond the
+    /// document, or a character count past the line's actual UTF-16
+    /// length) to the nearest valid offset, rather than panicking, since a
+    /// client's position can be stale by the time a request is handled.
+    pub fn offset(&self, text: &str, position: Position) -> usize {
+        let line = (position.line as usize).min(self.line_starts.len() - 1);
+        let line_start = self.line_starts[line];
+        let line_end = self
+            .line_starts
+            .get(line + 1)
+            .copied()
+            .unwrap_or(text.len());
+        let line_text = &text[line_start..line_end];
+        let mut utf16_used = 0u32;
+        for (byte_idx, ch) in line_text.char_indices() {
+            if utf16_used >= position.character {
+                return line_start + byte_idx;
+            }
+            utf16_used += ch.len_utf16() as u32;
+        }
+        line_start + line_text.trim_end_matches(['\n', '\r']).len()
+    }
 }
 
 #[cfg(test)]
@@ -150,5 +175,114 @@ mod tests {
                 },
             }
         );
+    }
+
+    #[test]
+    fn offset_within_single_line() {
+        let text = "hello world";
+        let index = LineIndex::new(text);
+        assert_eq!(
+            index.offset(
+                text,
+                Position {
+                    line: 0,
+                    character: 6
+                }
+            ),
+            6
+        );
+    }
+
+    #[test]
+    fn offset_across_multiple_lines() {
+        let text = "foo\nbar\nbaz";
+        let index = LineIndex::new(text);
+        assert_eq!(
+            index.offset(
+                text,
+                Position {
+                    line: 1,
+                    character: 0
+                }
+            ),
+            4
+        );
+        assert_eq!(
+            index.offset(
+                text,
+                Position {
+                    line: 2,
+                    character: 2
+                }
+            ),
+            10
+        );
+    }
+
+    #[test]
+    fn offset_counts_utf16_code_units_not_bytes() {
+        // Same fixture as `position_counts_utf16_code_units_not_bytes`,
+        // inverted: character 3 (1 for "é" + 2 for the "😀" surrogate
+        // pair) lands right at "x"'s byte offset.
+        let text = "é😀x";
+        let index = LineIndex::new(text);
+        let x_byte_offset = "é😀".len();
+        assert_eq!(
+            index.offset(
+                text,
+                Position {
+                    line: 0,
+                    character: 3
+                }
+            ),
+            x_byte_offset
+        );
+    }
+
+    #[test]
+    fn offset_clamps_character_past_end_of_line() {
+        let text = "ab\ncd";
+        let index = LineIndex::new(text);
+        // Line 0 is "ab" (2 UTF-16 units); asking for character 10 clamps
+        // to the end of that line's content, not into the line break.
+        assert_eq!(
+            index.offset(
+                text,
+                Position {
+                    line: 0,
+                    character: 10
+                }
+            ),
+            2
+        );
+    }
+
+    #[test]
+    fn offset_clamps_line_past_end_of_document() {
+        let text = "ab\ncd";
+        let index = LineIndex::new(text);
+        assert_eq!(
+            index.offset(
+                text,
+                Position {
+                    line: 99,
+                    character: 0
+                }
+            ),
+            3
+        );
+    }
+
+    #[test]
+    fn position_and_offset_round_trip() {
+        let text = "let x = 1;\nin x + é😀";
+        let index = LineIndex::new(text);
+        for byte_offset in 0..=text.len() {
+            if !text.is_char_boundary(byte_offset) {
+                continue;
+            }
+            let position = index.position(text, byte_offset);
+            assert_eq!(index.offset(text, position), byte_offset);
+        }
     }
 }

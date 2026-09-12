@@ -4,6 +4,7 @@ mod document;
 mod document_symbols;
 mod folding_ranges;
 mod formatting;
+mod goto_definition;
 mod semantic_tokens;
 mod semantic_visitor;
 mod server;

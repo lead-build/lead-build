@@ -93,7 +93,11 @@ impl OpenDocument {
         let Some(node) = self.syntax_node() else {
             return Vec::new();
         };
-        let entries = walk_expr(&node, &mut SemanticVisitor, &Scope::default()).unwrap();
+        // Only "did this resolve at all?" matters here, not to what —
+        // `SemanticVisitor<()>` skips carrying a `VarKind`/range nobody
+        // reads.
+        let mut visitor = SemanticVisitor::<()>::default();
+        let entries = walk_expr(&node, &mut visitor, &Scope::default()).unwrap();
         entries
             .into_iter()
             .filter(|(_, is_declaration, kind)| !is_declaration && kind.is_none())

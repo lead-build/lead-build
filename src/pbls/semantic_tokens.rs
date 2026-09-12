@@ -74,7 +74,10 @@ pub fn legend() -> SemanticTokensLegend {
 /// returns them in document order. Pure tree-shape lookup, kept separate
 /// from wire-format encoding so it's testable on its own.
 fn classify_tokens(node: &SyntaxNode) -> Vec<(Range<usize>, bool, Option<VarKind>)> {
-    let mut visitor = SemanticVisitor;
+    // Coloring only needs which `VarKind`, not a declaration-site range
+    // (that's `goto_definition.rs`'s concern) — `SemanticVisitor<VarKind>`
+    // carries just that.
+    let mut visitor = SemanticVisitor::<VarKind>::default();
     let mut entries = walk_expr(node, &mut visitor, &Scope::default()).unwrap();
     entries.sort_by_key(|(range, _, _)| range.start());
     entries
