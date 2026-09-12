@@ -4,9 +4,10 @@ use std::ops::Range;
 
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
-use crate::pblang::{self, ParseError};
+use crate::pblang::{self, ParseError, visit::walk_expr};
 
 use super::document::OpenDocument;
+use super::semantic_visitor::{Scope, SemanticVisitor};
 
 /// Extracts the byte span and a human-readable message from any
 /// `ParseError` variant lalrpop can produce for pblang.
@@ -61,6 +62,12 @@ impl OpenDocument {
             .collect();
         if let Err(fatal) = &parsed.tree {
             diagnostics.push(self.diagnostic_for(fatal));
+        } else if parsed.errors.is_empty() {
+            // Only when the source parsed with no errors at all: after
+            // recovery, a malformed binding can leave names genuinely
+            // unbound, which would otherwise cascade a confusing second
+            // diagnostic from the same root cause.
+            diagnostics.extend(self.undefined_variable_diagnostics());
         }
         diagnostics
     }
@@ -74,6 +81,33 @@ impl OpenDocument {
             message,
             ..Diagnostic::default()
         }
+    }
+
+    /// Every variable reference that doesn't resolve in its own file's
+    /// lexical scope — this language has no free/global variables from
+    /// outside a file, so any such reference is always an error. Only
+    /// called by `diagnostics()` once it's confirmed the document parses
+    /// cleanly, but still falls back to no diagnostics if `self.text`'s
+    /// cached tree happens to be missing.
+    fn undefined_variable_diagnostics(&self) -> Vec<Diagnostic> {
+        let Some(node) = self.syntax_node() else {
+            return Vec::new();
+        };
+        let entries = walk_expr(&node, &mut SemanticVisitor, &Scope::default()).unwrap();
+        entries
+            .into_iter()
+            .filter(|(_, is_declaration, kind)| !is_declaration && kind.is_none())
+            .map(|(span, _, _)| {
+                let span = usize::from(span.start())..usize::from(span.end());
+                Diagnostic {
+                    range: self.line_index.range(&self.text, span.clone()),
+                    severity: Some(DiagnosticSeverity::ERROR),
+                    source: Some("pblang".to_string()),
+                    message: format!("undefined variable `{}`", &self.text[span]),
+                    ..Diagnostic::default()
+                }
+            })
+            .collect()
     }
 }
 
@@ -103,6 +137,41 @@ mod tests {
         assert!(!diagnostics[0].message.is_empty());
         assert!(!diagnostics[1].message.is_empty());
         assert_ne!(diagnostics[0].range, diagnostics[1].range);
+    }
+
+    #[test]
+    fn undefined_top_level_variable_is_flagged() {
+        let doc = OpenDocument::new("x".to_string());
+        let diagnostics = doc.diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].message, "undefined variable `x`");
+    }
+
+    #[test]
+    fn let_bound_reference_is_not_flagged() {
+        let doc = OpenDocument::new("let x = 1; in x".to_string());
+        assert_eq!(doc.diagnostics(), Vec::new());
+    }
+
+    #[test]
+    fn func_arg_reference_is_not_flagged() {
+        let doc = OpenDocument::new("|x| x".to_string());
+        assert_eq!(doc.diagnostics(), Vec::new());
+    }
+
+    #[test]
+    fn bind_bound_reference_is_not_flagged() {
+        let doc = OpenDocument::new("bind x = 1; in x".to_string());
+        assert_eq!(doc.diagnostics(), Vec::new());
+    }
+
+    #[test]
+    fn object_key_and_matcher_rename_key_are_not_flagged() {
+        // `x` (object key) and `a` (matcher rename key) are declaration-site
+        // entries with no `VarKind`, not unresolved references — neither
+        // should produce a diagnostic.
+        let doc = OpenDocument::new("let f = |{a = b}| b; in { x = 1; }".to_string());
+        assert_eq!(doc.diagnostics(), Vec::new());
     }
 
     #[test]
