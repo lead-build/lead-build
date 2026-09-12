@@ -34,7 +34,7 @@ pathdiff = "0.2.3"
 pretty = "0.12.5"
 rowan = "0.17.0"
 strum = { version = "0.28.0", features = ["derive"] }
-tokio = { version = "1", features = ["rt", "macros", "io-std"] }
+tokio = { version = "1", features = ["rt", "macros", "io-std", "net"] }
 tower-lsp = "0.20.0"
 
 [dev-dependencies]
