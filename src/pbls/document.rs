@@ -13,7 +13,7 @@ use std::sync::{Arc, Mutex};
 use rowan::GreenNode;
 use tower_lsp::lsp_types::Url;
 
-use crate::pblang::{self, syntaxtree::SyntaxNode};
+use crate::pblang::{self, SyntaxNode};
 
 use super::convert::LineIndex;
 

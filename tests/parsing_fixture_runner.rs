@@ -1,6 +1,5 @@
-use lead_build::LangContext;
-use lead_build::pbbuild::path::VirtPath;
 use lead_build::pbexpr::ErrorType;
+use lead_build::{LangContext, pbbuild::VirtPath};
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};

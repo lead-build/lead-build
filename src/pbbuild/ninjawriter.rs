@@ -3,8 +3,7 @@ use std::{
     fmt::Display,
 };
 
-use crate::pbbuild::path::VirtPath;
-use crate::pbbuild::stats::NinjaFileStats;
+use super::{path::VirtPath, stats::NinjaFileStats};
 use log::debug;
 
 /*

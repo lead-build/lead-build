@@ -1,8 +1,9 @@
 use std::fmt::Debug;
 
+use super::super::{path::VirtPath, value::Value};
+
 use crate::{
     Expr,
-    pbbuild::{path::VirtPath, value::Value},
     pbexpr::{Error, ErrorType, ExprBuiltin, ExprSet, ExprType, Result},
     strkey::StrKey,
 };

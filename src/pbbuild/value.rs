@@ -4,10 +4,11 @@ use std::{
 };
 
 use crate::{
-    pbbuild::{PbBuild, path::VirtPath},
     pbexpr::{Error, ErrorType, Exportable, ExprOps, ParsableValue, Printer, Result},
     strkey::StrKey,
 };
+
+use super::{build::PbBuild, path::VirtPath};
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Value {

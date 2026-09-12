@@ -1,5 +1,5 @@
 use clap::Parser;
-use lead_build::pblang::{self, fmt::format_tree};
+use lead_build::pblang::{format_tree, parse};
 use std::{
     fs,
     io::{self, Read},
@@ -42,7 +42,7 @@ fn run_file(file: Option<&PathBuf>, args: &Args) -> Result<(), String> {
         (source, file.display().to_string())
     };
 
-    let parsed = pblang::parse(&source);
+    let parsed = parse(&source);
     if !parsed.errors.is_empty() || parsed.tree.is_err() {
         let mut lines: Vec<String> = parsed.errors.iter().map(|r| r.error.to_string()).collect();
         if let Err(fatal) = &parsed.tree {

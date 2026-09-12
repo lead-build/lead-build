@@ -35,8 +35,7 @@ use tower_lsp::lsp_types::{
     SemanticToken, SemanticTokenModifier, SemanticTokenType, SemanticTokensLegend,
 };
 
-use crate::pblang::syntaxtree::SyntaxNode;
-use crate::pblang::visit::walk_expr;
+use crate::pblang::{SyntaxNode, visit::walk_expr};
 
 use super::convert::LineIndex;
 use super::document::OpenDocument;

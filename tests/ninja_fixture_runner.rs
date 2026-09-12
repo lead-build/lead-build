@@ -1,5 +1,4 @@
-use lead_build::pbbuild::ninjawriter::NinjaFile;
-use lead_build::pbbuild::path::VirtPath;
+use lead_build::pbbuild::{NinjaFile, VirtPath};
 use lead_build::{LangContext, add_expr_to_ninjafile};
 use serde::Deserialize;
 use std::fs;

@@ -4,9 +4,14 @@ use std::{
     rc::Rc,
 };
 
+use super::super::{
+    build::{PbBuild, PbBuildRule},
+    ninjawriter::NinjaArg,
+    path::VirtPath,
+    value::Value,
+};
 use crate::{
     Expr,
-    pbbuild::{PbBuild, PbBuildRule, ninjawriter::NinjaArg, path::VirtPath, value::Value},
     pbexpr::{
         Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Referrable, Result,
     },

@@ -1,9 +1,11 @@
-pub mod convert;
-pub mod diagnostics;
-pub mod document;
-pub mod document_symbols;
-pub mod folding_ranges;
-pub mod formatting;
-pub mod semantic_tokens;
-pub mod semantic_visitor;
-pub mod server;
+mod convert;
+mod diagnostics;
+mod document;
+mod document_symbols;
+mod folding_ranges;
+mod formatting;
+mod semantic_tokens;
+mod semantic_visitor;
+mod server;
+
+pub use server::Backend;

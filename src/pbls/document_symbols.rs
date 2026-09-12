@@ -16,10 +16,12 @@ use std::convert::Infallible;
 use rowan::TextRange;
 use tower_lsp::lsp_types::{DocumentSymbol, Range as LspRange, SymbolKind};
 
-use crate::pblang::syntaxtree::SyntaxToken;
-use crate::pblang::visit::{
-    AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, UnvisitedExpr,
-    UnvisitedMatcher, visit_all, walk_expr,
+use crate::pblang::{
+    SyntaxToken,
+    visit::{
+        AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, UnvisitedExpr,
+        UnvisitedMatcher, visit_all, walk_expr,
+    },
 };
 
 use super::convert::LineIndex;

@@ -209,7 +209,6 @@ impl rowan::Language for Lang {
 
 pub type SyntaxNode = rowan::SyntaxNode<Lang>;
 pub type SyntaxToken = rowan::SyntaxToken<Lang>;
-pub type SyntaxElement = rowan::SyntaxElement<Lang>;
 
 /// A node or token, plus the `(start, end)` byte range of source text it
 /// covers. This is the uniform return type a bottom-up grammar (lalrpop)

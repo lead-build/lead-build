@@ -4,8 +4,7 @@ use super::expr::{
 };
 use crate::pbexpr::Referrable;
 use crate::pblang::{
-    self,
-    syntaxtree::{SyntaxKind, SyntaxNode, SyntaxToken},
+    self, SyntaxKind, SyntaxNode, SyntaxToken,
     visit::{
         AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, UnvisitedExpr,
         UnvisitedMatcher, visit_all, visit_all_matchers, walk_expr,

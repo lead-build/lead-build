@@ -4,7 +4,7 @@
 
 use tower_lsp::lsp_types::{Position, Range, TextEdit};
 
-use crate::pblang::fmt::format_tree;
+use crate::pblang::format_tree;
 
 use super::document::OpenDocument;
 

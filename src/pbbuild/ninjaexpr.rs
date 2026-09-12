@@ -1,8 +1,9 @@
 use crate::{
     Expr, Value,
-    pbbuild::{ninjawriter::NinjaFile, path::VirtPath},
     pbexpr::{Error, ErrorType, ExprStorage, ExprType, Result},
 };
+
+use super::{ninjawriter::NinjaFile, path::VirtPath};
 
 pub fn add_expr_to_ninjafile(
     expr: &Expr<Value, VirtPath>,

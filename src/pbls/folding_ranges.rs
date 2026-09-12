@@ -6,7 +6,7 @@
 
 use tower_lsp::lsp_types::FoldingRange;
 
-use crate::pblang::syntaxtree::SyntaxKind;
+use crate::pblang::SyntaxKind;
 
 use super::document::OpenDocument;
 

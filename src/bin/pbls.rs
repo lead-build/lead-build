@@ -1,5 +1,5 @@
 use clap::Parser;
-use lead_build::pbls::server::Backend;
+use lead_build::pbls::Backend;
 use tower_lsp::{LspService, Server};
 
 #[derive(Parser, Debug)]

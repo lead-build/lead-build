@@ -4,10 +4,11 @@ mod pb;
 
 use crate::{
     Value,
-    pbbuild::path::VirtPath,
     pbexpr::{ExprSet, Result},
     strkey::StrKey,
 };
+
+use super::path::VirtPath;
 
 pub fn get_builtins() -> Result<ExprSet<Value, VirtPath>, VirtPath> {
     let mut builtins = ExprSet::new();

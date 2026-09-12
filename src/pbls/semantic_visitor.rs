@@ -1,7 +1,9 @@
-use crate::pblang::syntaxtree::SyntaxToken;
-use crate::pblang::visit::{
-    AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, UnvisitedExpr,
-    UnvisitedMatcher, visit_all,
+use crate::pblang::{
+    SyntaxToken,
+    visit::{
+        AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, UnvisitedExpr,
+        UnvisitedMatcher, visit_all,
+    },
 };
 use rowan::TextRange;
 use std::convert::Infallible;
