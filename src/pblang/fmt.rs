@@ -170,6 +170,16 @@ fn format_elem(elem: Elem) -> Piece {
     }
 }
 
+/// Whether `elem` is an `OBJECT_EXPR` field written as bare `<key> ;`
+/// shorthand (no `=`, no value node) rather than `<key> = <expr> ;` — same
+/// test `extract_assignment` in `visit.rs` uses: a shorthand `ASSIGNMENT`
+/// has only token children (`IDENT`, `SEMICOLON`), so `.children()`
+/// (node-only) comes back empty.
+fn is_shorthand_assignment(elem: &Elem) -> bool {
+    matches!(elem, Elem::Node(n) if n.kind() == SyntaxKind::ASSIGNMENT
+        && n.children().next().is_none())
+}
+
 /// The default (pre-comment-override) separator to use before `kinds[i]`,
 /// for the "simple" node kinds that just concatenate their children inline
 /// with fixed spacing (as opposed to the handful of kinds — collections,
@@ -212,6 +222,11 @@ fn format_node(node: SyntaxNode) -> Piece {
 
     let (gaps, elems) = real_children(&node);
     let kinds: Vec<SyntaxKind> = elems.iter().map(Elem::kind).collect();
+    let shorthand: Vec<bool> = if kind == SyntaxKind::OBJECT_EXPR {
+        elems.iter().map(is_shorthand_assignment).collect()
+    } else {
+        Vec::new()
+    };
     let pieces: Vec<Piece> = elems.into_iter().map(format_elem).collect();
     let n = pieces.len();
 
@@ -307,26 +322,40 @@ fn format_node(node: SyntaxNode) -> Piece {
                 .group()
         }
 
-        // `{ }` inline when empty, one field per line (always — not
-        // width-dependent) otherwise.
+        // `{ }` inline when empty. Otherwise: flat on one line if the whole
+        // object fits, else broken — except a run of adjacent shorthand
+        // fields (`key;`, no `= value`) packs multiple per line (wrapping
+        // only as needed) rather than forcing one per line, since it reads
+        // like a plain parameter list rather than a sequence of statements.
+        // A `key = value;` field always keeps its own line next to any
+        // neighbor, which is also why an object with more than one such
+        // field (or one next to a shorthand field) can never go flat: that
+        // separator is an unconditional hardline.
         SyntaxKind::OBJECT_EXPR if n <= 2 => pieces[0]
             .doc
             .clone()
             .append(RcDoc::space())
             .append(pieces[n - 1].doc.clone()),
         SyntaxKind::OBJECT_EXPR => {
-            let mut inner = RcDoc::nil();
+            let mut inner = gap_doc(&gaps[1], RcDoc::line());
             for i in 1..n - 1 {
-                inner = inner
-                    .append(gap_doc(&gaps[i], RcDoc::hardline()))
-                    .append(pieces[i].doc.clone());
+                inner = inner.append(pieces[i].doc.clone());
+                if i + 1 < n - 1 {
+                    let sep = if shorthand[i] && shorthand[i + 1] {
+                        RcDoc::softline()
+                    } else {
+                        RcDoc::hardline()
+                    };
+                    inner = inner.append(gap_doc(&gaps[i + 1], sep));
+                }
             }
             pieces[0]
                 .doc
                 .clone()
                 .append(inner.nest(INDENT))
-                .append(closing_gap_doc(&gaps[n - 1], RcDoc::hardline()))
+                .append(closing_gap_doc(&gaps[n - 1], RcDoc::line()))
                 .append(pieces[n - 1].doc.clone())
+                .group()
         }
 
         // `let`/`bind` on their own line, each binding indented on its own
@@ -457,13 +486,56 @@ mod tests {
     }
 
     #[test]
-    fn objects_get_one_field_per_line() {
+    fn objects_with_multiple_full_fields_get_one_field_per_line() {
+        // Two `key = value;` fields are always separated by a hardline, so
+        // this object can never go flat regardless of width.
         assert_eq!(format("{a=1;b=2;}"), "{\n    a = 1;\n    b = 2;\n}");
     }
 
     #[test]
     fn empty_object_stays_inline() {
         assert_eq!(format("{}"), "{ }");
+    }
+
+    #[test]
+    fn a_single_full_field_object_collapses_to_one_line_when_it_fits() {
+        // No neighboring field means no mandatory hardline, so this can go
+        // flat like any other short construct.
+        assert_eq!(format("{x=1;}"), "{ x = 1; }");
+    }
+
+    #[test]
+    fn shorthand_only_objects_collapse_to_one_line_when_they_fit() {
+        assert_eq!(format("{a;b;c;}"), "{ a; b; c; }");
+        assert_eq!(format("{inc;src;defines;}"), "{ inc; src; defines; }");
+    }
+
+    #[test]
+    fn long_runs_of_shorthand_fields_wrap_multiple_per_line() {
+        let fields = (0..20)
+            .map(|i| format!("field_number_{i}"))
+            .collect::<Vec<_>>()
+            .join(";")
+            + ";";
+        let source = format!("{{{fields}}}");
+        let out = format(&source);
+        for line in out.lines() {
+            assert!(line.len() <= WIDTH, "line too long: {line:?}");
+        }
+        assert!(
+            out.lines().any(|line| line.matches(';').count() > 1),
+            "expected some lines to pack more than one field: {out}"
+        );
+        assert!(out.starts_with("{\n    field_number_0;"), "{out}");
+        assert!(out.ends_with("field_number_19;\n}"), "{out}");
+    }
+
+    #[test]
+    fn a_full_field_breaks_its_shorthand_neighbors_apart_but_they_still_pack() {
+        assert_eq!(
+            format("{a;b;c=1;d;e;}"),
+            "{\n    a; b;\n    c = 1;\n    d; e;\n}"
+        );
     }
 
     #[test]
@@ -584,6 +656,14 @@ mod tests {
     #[test]
     fn format_tree_is_idempotent() {
         let source = "let a=1;b={x=2;y=[1,2,3];};in a+b.x";
+        let once = format(source);
+        let twice = format(&once);
+        assert_eq!(once, twice);
+    }
+
+    #[test]
+    fn format_tree_is_idempotent_for_shorthand_objects() {
+        let source = "{a;b;c;}";
         let once = format(source);
         let twice = format(&once);
         assert_eq!(once, twice);
