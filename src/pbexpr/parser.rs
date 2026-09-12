@@ -6,8 +6,8 @@ use crate::pbexpr::Referrable;
 use crate::pblang::{
     self, SyntaxKind, SyntaxNode, SyntaxToken,
     visit::{
-        AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, UnvisitedExpr,
-        UnvisitedMatcher, visit_all, visit_all_matchers, walk_expr,
+        AssignKey, AssignValue, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart,
+        UnvisitedExpr, UnvisitedMatcher, visit_all, visit_all_matchers, walk_expr,
     },
 };
 use crate::strkey::StrKey;
@@ -269,12 +269,17 @@ where
         &mut self,
         range: TextRange,
         down: &(),
-        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        items: Vec<(TextRange, AssignKey, AssignValue)>,
         body: UnvisitedExpr,
     ) -> Result<Expr<T, F>, F> {
         let items = items
             .into_iter()
-            .map(|(_, key, value)| Ok((self.resolve_assign_key(key)?, value.visit(self, down)?)))
+            .map(|(_, key, value)| {
+                let AssignValue::Expr(value) = value else {
+                    unreachable!("BIND_EXPR's ASSIGNMENT always has a value")
+                };
+                Ok((self.resolve_assign_key(key)?, value.visit(self, down)?))
+            })
             .collect::<Result<ExprSet<T, F>, F>>()?;
         let body = body.visit(self, down)?;
         Ok(self.expr(ExprType::Bind(items, body), range))
@@ -409,11 +414,25 @@ where
         &mut self,
         range: TextRange,
         down: &(),
-        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        items: Vec<(TextRange, AssignKey, AssignValue)>,
     ) -> Result<Expr<T, F>, F> {
         let items = items
             .into_iter()
-            .map(|(_, key, value)| Ok((self.resolve_assign_key(key)?, value.visit(self, down)?)))
+            .map(|(_, key, value)| {
+                let value_expr = match value {
+                    AssignValue::Expr(expr) => expr.visit(self, down)?,
+                    AssignValue::Shorthand => {
+                        let AssignKey::Ident(ident) = &key else {
+                            unreachable!("shorthand ASSIGNMENT always has an Ident key")
+                        };
+                        self.expr(
+                            ExprType::Var(StrKey::from(ident.text())),
+                            ident.text_range(),
+                        )
+                    }
+                };
+                Ok((self.resolve_assign_key(key)?, value_expr))
+            })
             .collect::<Result<ExprSet<T, F>, F>>()?;
         Ok(self.expr(ExprType::Object(items), range))
     }
@@ -585,6 +604,27 @@ mod tests {
                     StrKey::from("boll"),
                     ExprType::Value(TestValue::Int(123)).builtin()
                 ),
+                (
+                    StrKey::from("hej"),
+                    ExprType::Value(TestValue::Int(323)).builtin()
+                )
+            ]))
+            .builtin(),
+            eval(code)
+        );
+    }
+
+    #[test]
+    fn test_parse_obj_shorthand() {
+        let code = r#"
+            {
+                boll;
+                hej = 323;
+            }
+        "#;
+        assert_eq!(
+            ExprType::Object(ExprSet::from([
+                (StrKey::from("boll"), ExprType::Var("boll".into()).builtin()),
                 (
                     StrKey::from("hej"),
                     ExprType::Value(TestValue::Int(323)).builtin()

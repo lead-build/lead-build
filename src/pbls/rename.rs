@@ -80,7 +80,7 @@ impl OpenDocument {
                 if is_declaration {
                     self.declaration_rename_edit(&node, range, new_name)
                 } else {
-                    Some(self.text_edit(range, new_name.to_string()))
+                    self.reference_rename_edit(&node, range, new_name)
                 }
             })
             .collect();
@@ -131,6 +131,68 @@ impl OpenDocument {
                 return Some(self.text_edit(collapsed, key.text().to_string()));
             }
         }
+        Some(self.text_edit(range, new_name.to_string()))
+    }
+
+    /// The edit for a reference site specifically — usually a plain
+    /// in-place replacement, except where the reference is the implicit
+    /// value of an object-literal shorthand `ASSIGNMENT` (`{ foo; }`), or
+    /// its full-form counterpart (`{ foo = bar; }`), which share a token
+    /// with a property name and need the same expand/collapse treatment as
+    /// `declaration_rename_edit`'s object-matcher-field case, just applied
+    /// to `ASSIGNMENT` instead of `OBJECT_MATCHER_FIELD`.
+    fn reference_rename_edit(
+        &self,
+        node: &SyntaxNode,
+        range: TextRange,
+        new_name: &str,
+    ) -> Option<TextEdit> {
+        let token = node
+            .descendants_with_tokens()
+            .filter_map(|el| el.into_token())
+            .find(|t| t.text_range() == range)?;
+        let parent = token.parent()?;
+
+        // Shorthand `foo;` — renaming the variable must expand to full form
+        // so the property keeps its original name. Shorthand ASSIGNMENT has
+        // no `EQ` child token at all (just IDENT + SEMICOLON). Renaming to
+        // the same name needs no edit at all — it's already in its
+        // simplest form.
+        if parent.kind() == SyntaxKind::ASSIGNMENT
+            && !parent
+                .children_with_tokens()
+                .any(|el| el.kind() == SyntaxKind::EQ)
+        {
+            let key_text = token.text();
+            return if new_name == key_text {
+                None
+            } else {
+                Some(self.text_edit(range, format!("{key_text} = {new_name}")))
+            };
+        }
+
+        // Full form `key = value;` where value is a bare variable
+        // reference — renaming it to match the property key collapses back
+        // to shorthand. `token.parent()` is `VAR_EXPR` only when the
+        // reference is the whole value (not nested inside a larger
+        // expression), so this never misfires on e.g. `key = value + 1;`.
+        if parent.kind() == SyntaxKind::VAR_EXPR
+            && let Some(assignment) = parent.parent()
+            && assignment.kind() == SyntaxKind::ASSIGNMENT
+        {
+            let key_token = assignment
+                .children_with_tokens()
+                .filter_map(|el| el.into_token())
+                .find(|t| t.kind() == SyntaxKind::IDENT);
+            if let Some(key_token) = key_token
+                && key_token.text_range() != range
+                && key_token.text() == new_name
+            {
+                let collapsed = TextRange::new(key_token.text_range().start(), range.end());
+                return Some(self.text_edit(collapsed, new_name.to_string()));
+            }
+        }
+
         Some(self.text_edit(range, new_name.to_string()))
     }
 
@@ -215,6 +277,50 @@ mod tests {
         // already in its simplest form, needs none.
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].range.start.character, 8);
+    }
+
+    #[test]
+    fn object_literal_shorthand_expands_when_its_variable_is_renamed() {
+        // "bind foo = 1; in { foo; }" — declaration at 5, shorthand
+        // reference at 19. Renaming "foo" to "bar" must keep the object's
+        // property named "foo" while updating which variable it reads.
+        let source = "bind foo = 1; in { foo; }";
+        let edits = rename_at(source, Position::new(0, 5), "bar").expect("renamable");
+        assert_eq!(edits.len(), 2);
+        let decl = edits.iter().find(|e| e.range.start.character == 5).unwrap();
+        assert_eq!(decl.new_text, "bar");
+        let reference = edits
+            .iter()
+            .find(|e| e.range.start.character == 19)
+            .unwrap();
+        assert_eq!(reference.new_text, "foo = bar");
+    }
+
+    #[test]
+    fn object_literal_shorthand_renamed_to_itself_is_a_no_op_reference_edit() {
+        let source = "bind foo = 1; in { foo; }";
+        let edits = rename_at(source, Position::new(0, 5), "foo").expect("renamable");
+        // Only the declaration gets an (identity) edit; the shorthand
+        // reference, already in its simplest form, needs none.
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].range.start.character, 5);
+    }
+
+    #[test]
+    fn explicit_object_assignment_collapses_when_value_is_renamed_to_match_key() {
+        // "bind bar = 1; in { foo = bar; }" — renaming "bar" to "foo"
+        // collapses the full form down to shorthand "foo;".
+        let source = "bind bar = 1; in { foo = bar; }";
+        let edits = rename_at(source, Position::new(0, 5), "foo").expect("renamable");
+        assert_eq!(edits.len(), 2);
+        let decl = edits.iter().find(|e| e.range.start.character == 5).unwrap();
+        assert_eq!(decl.new_text, "foo");
+        let reference = edits
+            .iter()
+            .find(|e| e.range.start.character == 19)
+            .unwrap();
+        assert_eq!(reference.new_text, "foo");
+        assert_eq!(reference.range.end.character, 28);
     }
 
     #[test]

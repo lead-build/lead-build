@@ -345,6 +345,8 @@ AssignStmt: GreenSpan = {
         green_node(src, SyntaxKind::ASSIGNMENT, l, r, vec![key, eq, value, semi]),
     <l:@L> <key:StringLit> <eq:T_Eq> <value:Expr> <semi:T_Semi> <r:@R> =>
         green_node(src, SyntaxKind::ASSIGNMENT, l, r, vec![key, eq, value, semi]),
+    <l:@L> <key:Ident> <semi:T_Semi> <r:@R> =>
+        green_node(src, SyntaxKind::ASSIGNMENT, l, r, vec![key, semi]),
     <l:@L> <e:!> <r:@R> => {
         errors.push(e);
         green_token(SyntaxKind::ERROR, l, r, &src[l..r])

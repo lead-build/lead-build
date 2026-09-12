@@ -119,6 +119,8 @@ pub enum SyntaxKind {
     /// `PbNodeKind::Bind` — `bind <ASSIGNMENT>* in <expr>`.
     BIND_EXPR,
     /// `Assignment` — `<key> = <expr> ;`, used by `BIND_EXPR` and `OBJECT_EXPR`.
+    /// In `OBJECT_EXPR` only, `<key> ;` is also allowed as shorthand for
+    /// `<key> = <key> ;` (no `EQ` token, no value node).
     ASSIGNMENT,
     /// `PbNodeKind::FuncDef` — `|<matcher>*| <expr>`.
     FUNC_DEF,

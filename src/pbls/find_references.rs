@@ -114,6 +114,14 @@ mod tests {
     }
 
     #[test]
+    fn object_literal_shorthand_counts_as_a_reference() {
+        // "bind x = 1; in { x; }" — declaration at 5, shorthand reference at 17.
+        let source = "bind x = 1; in { x; }";
+        let ranges = references_at(source, Position::new(0, 5), true).expect("resolves");
+        assert_eq!(starts(&ranges), vec![5, 17]);
+    }
+
+    #[test]
     fn property_name_has_no_references() {
         assert_eq!(references_at("{ x = 1; }", Position::new(0, 2), true), None);
     }

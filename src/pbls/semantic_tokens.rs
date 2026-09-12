@@ -200,6 +200,20 @@ mod tests {
     }
 
     #[test]
+    fn object_literal_shorthand_is_colored_as_a_variable_not_a_property() {
+        // `{ y; }` is sugar for `{ y = y; }` — the token is classified
+        // purely as a reference to the outer `y`, not as a property key.
+        let source = "bind y = null; in { y; }";
+        let tokens = tokens_for(source);
+        // "y" (binder, `bind y = ...`), "y" (shorthand reference in object).
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].token_type, TOKEN_TYPE_VARIABLE);
+        assert_eq!(tokens[0].token_modifiers_bitset, MODIFIER_DECLARATION);
+        assert_eq!(tokens[1].token_type, TOKEN_TYPE_VARIABLE);
+        assert_eq!(tokens[1].token_modifiers_bitset, 0);
+    }
+
+    #[test]
     fn matcher_object_rename_key_is_a_property_but_its_pattern_is_a_variable() {
         // `{a = b}`: "a" names a property of the matched-against object
         // (not a variable), while "b" is the pattern that actually gets

@@ -24,6 +24,16 @@ pub enum AssignKey {
     StringLit(SyntaxNode),
 }
 
+/// An `ASSIGNMENT`'s value: either an explicit `<expr>` after `=`, or
+/// absent entirely — the `OBJECT_EXPR`-only shorthand `<key> ;` (no `EQ`
+/// token, no value node), meaning "value is a reference to a variable
+/// named `<key>`." `BIND_EXPR`'s `ASSIGNMENT`s always have an explicit
+/// value; only `OBJECT_EXPR`'s grammar production allows the shorthand.
+pub enum AssignValue {
+    Expr(UnvisitedExpr),
+    Shorthand,
+}
+
 /// The right-hand side of an `ATTR_SEL`'s `.`: either a bare `IDENT` token
 /// (`.foo`) or an already visited dynamic expression (`.{foo}`).
 pub enum AttrSelector<E> {
@@ -131,12 +141,13 @@ pub trait LangVisitor {
         body: UnvisitedExpr,
     ) -> Result<Self::Expr, Self::Error>;
     /// Each item's own `range` is the whole `<key> = <expr> ;` statement (an
-    /// `ASSIGNMENT` node).
+    /// `ASSIGNMENT` node). `BIND_EXPR`'s grammar production never allows the
+    /// shorthand form, so `value` is always `AssignValue::Expr` here.
     fn visit_bind(
         &mut self,
         range: TextRange,
         down: &Self::Down,
-        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        items: Vec<(TextRange, AssignKey, AssignValue)>,
         body: UnvisitedExpr,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_func_def(
@@ -204,13 +215,13 @@ pub trait LangVisitor {
         cases: Vec<(UnvisitedExpr, UnvisitedExpr)>,
         default: Option<UnvisitedExpr>,
     ) -> Result<Self::Expr, Self::Error>;
-    /// Each item's own `range` is the whole `<key> = <expr> ;` statement (an
-    /// `ASSIGNMENT` node).
+    /// Each item's own `range` is the whole `<key> = <expr> ;` (or bare
+    /// `<key> ;` shorthand) statement (an `ASSIGNMENT` node).
     fn visit_object(
         &mut self,
         range: TextRange,
         down: &Self::Down,
-        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        items: Vec<(TextRange, AssignKey, AssignValue)>,
     ) -> Result<Self::Expr, Self::Error>;
     fn visit_list(
         &mut self,
@@ -313,14 +324,17 @@ fn operator_token(node: &SyntaxNode) -> SyntaxToken {
         .unwrap_or_else(|| panic!("{:?} has an operator token", node.kind()))
 }
 
-fn extract_assignment(assignment: &SyntaxNode) -> (TextRange, AssignKey, UnvisitedExpr) {
+fn extract_assignment(assignment: &SyntaxNode) -> (TextRange, AssignKey, AssignValue) {
     let range = assignment.text_range();
     if let Some(ident) = find_token(assignment, SyntaxKind::IDENT) {
-        let value_node = assignment
-            .children()
-            .next()
-            .expect("ASSIGNMENT always has a value");
-        return (range, AssignKey::Ident(ident), UnvisitedExpr(value_node));
+        // Node children exclude tokens, so the shorthand `<key> ;` form
+        // (only IDENT/SEMICOLON tokens, no value node) naturally yields
+        // `None` here.
+        let value = match assignment.children().next() {
+            Some(value_node) => AssignValue::Expr(UnvisitedExpr(value_node)),
+            None => AssignValue::Shorthand,
+        };
+        return (range, AssignKey::Ident(ident), value);
     }
     let mut children = assignment.children();
     let key_node = children.next().expect("ASSIGNMENT key is a STRING_LIT");
@@ -328,7 +342,7 @@ fn extract_assignment(assignment: &SyntaxNode) -> (TextRange, AssignKey, Unvisit
     (
         range,
         AssignKey::StringLit(key_node),
-        UnvisitedExpr(value_node),
+        AssignValue::Expr(UnvisitedExpr(value_node)),
     )
 }
 

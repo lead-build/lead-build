@@ -102,6 +102,21 @@ mod tests {
     }
 
     #[test]
+    fn object_literal_shorthand_resolves_to_the_referenced_variable() {
+        // `{ x; }` is sugar for `{ x = x; }` — goto-definition on the
+        // shorthand token jumps to the outer `x`'s declaration, unlike a
+        // plain property key.
+        let source = "bind x = 1; in { x; }";
+        let position = Position {
+            line: 0,
+            character: 17,
+        };
+        let range = definition_at(source, position).expect("resolves");
+        assert_eq!(range.start, Position::new(0, 5));
+        assert_eq!(range.end, Position::new(0, 6));
+    }
+
+    #[test]
     fn object_literal_key_has_no_definition() {
         let range = definition_at("{ x = 1; }", Position::new(0, 2));
         assert_eq!(range, None);

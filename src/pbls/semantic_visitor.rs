@@ -1,8 +1,8 @@
 use crate::pblang::{
     SyntaxToken,
     visit::{
-        AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, UnvisitedExpr,
-        UnvisitedMatcher, visit_all,
+        AssignKey, AssignValue, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart,
+        UnvisitedExpr, UnvisitedMatcher, visit_all,
     },
 };
 use rowan::TextRange;
@@ -178,12 +178,15 @@ impl<T: Resolved> LangVisitor for SemanticVisitor<T> {
         &mut self,
         _range: TextRange,
         down: &Scope,
-        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        items: Vec<(TextRange, AssignKey, AssignValue)>,
         body: UnvisitedExpr,
     ) -> Result<Vec<Entry<T>>, Infallible> {
         let mut out = Vec::new();
         let mut scope = down.clone();
         for (_, key, value) in items {
+            let AssignValue::Expr(value) = value else {
+                unreachable!("BIND_EXPR's ASSIGNMENT always has a value")
+            };
             // Unlike `let`, bind items don't see each other — visited
             // against the unmodified incoming scope, not the growing one.
             out.extend(value.visit(self, down)?);
@@ -325,14 +328,27 @@ impl<T: Resolved> LangVisitor for SemanticVisitor<T> {
         &mut self,
         _range: TextRange,
         down: &Scope,
-        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        items: Vec<(TextRange, AssignKey, AssignValue)>,
     ) -> Result<Vec<Entry<T>>, Infallible> {
         let mut out = Vec::new();
         for (_, key, value) in items {
-            if let AssignKey::Ident(token) = key {
-                out.push((token.text_range(), true, None));
+            match value {
+                AssignValue::Expr(value) => {
+                    if let AssignKey::Ident(token) = &key {
+                        out.push((token.text_range(), true, None));
+                    }
+                    out.extend(value.visit(self, down)?);
+                }
+                AssignValue::Shorthand => {
+                    // `{ foo; }` — classified purely as a variable
+                    // reference, not a property, so it navigates/renames
+                    // exactly like the `foo` in `x = foo;`.
+                    let AssignKey::Ident(token) = key else {
+                        unreachable!("shorthand ASSIGNMENT always has an Ident key")
+                    };
+                    out.extend(self.visit_var(token.text_range(), down, token)?);
+                }
             }
-            out.extend(value.visit(self, down)?);
         }
         Ok(out)
     }

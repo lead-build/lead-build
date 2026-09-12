@@ -19,8 +19,8 @@ use tower_lsp::lsp_types::{DocumentSymbol, Range as LspRange, SymbolKind};
 use crate::pblang::{
     SyntaxToken,
     visit::{
-        AssignKey, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart, UnvisitedExpr,
-        UnvisitedMatcher, visit_all, walk_expr,
+        AssignKey, AssignValue, AttrSelector, LangVisitor, MapKind, ObjectField, StringPart,
+        UnvisitedExpr, UnvisitedMatcher, visit_all, walk_expr,
     },
 };
 
@@ -133,11 +133,14 @@ impl LangVisitor for SymbolVisitor<'_> {
         &mut self,
         _range: TextRange,
         down: &(),
-        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        items: Vec<(TextRange, AssignKey, AssignValue)>,
         body: UnvisitedExpr,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
         let mut symbols = Vec::new();
         for (stmt_range, key, value) in items {
+            let AssignValue::Expr(value) = value else {
+                unreachable!("BIND_EXPR's ASSIGNMENT always has a value")
+            };
             let (name, name_range) = self.assign_key_text_and_range(&key);
             let nested = value.visit(self, down)?;
             symbols.push(self.binding_symbol(stmt_range, name, name_range, nested));
@@ -258,12 +261,15 @@ impl LangVisitor for SymbolVisitor<'_> {
         &mut self,
         _range: TextRange,
         down: &(),
-        items: Vec<(TextRange, AssignKey, UnvisitedExpr)>,
+        items: Vec<(TextRange, AssignKey, AssignValue)>,
     ) -> Result<Vec<DocumentSymbol>, Infallible> {
         let mut symbols = Vec::new();
         for (stmt_range, key, value) in items {
             let (name, name_range) = self.assign_key_text_and_range(&key);
-            let nested = value.visit(self, down)?;
+            let nested = match value {
+                AssignValue::Expr(value) => value.visit(self, down)?,
+                AssignValue::Shorthand => Vec::new(),
+            };
             symbols.push(self.binding_symbol(stmt_range, name, name_range, nested));
         }
         Ok(symbols)
