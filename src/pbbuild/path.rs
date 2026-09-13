@@ -6,7 +6,7 @@ use std::{
 
 use pathdiff::diff_paths;
 
-use crate::pbexpr::{Error, ErrorType, Referrable, Result};
+use crate::pbexpr::{Error, ErrorType, Referrable, Result, SourceContext};
 
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct VirtPath {
@@ -47,6 +47,12 @@ impl Referrable for VirtPath {
             0
         };
         write!(f, "{}:{}:{}", fs_path.display(), lines, column)
+    }
+}
+
+impl SourceContext for VirtPath {
+    fn source_text(&self) -> Option<String> {
+        fs::read_to_string(self.to_path_buf()).ok()
     }
 }
 

@@ -62,10 +62,7 @@ where
     F: Clone + Referrable,
 {
     let (span, kind, detail) = parse_error_parts(&err);
-    let loc = Loc {
-        file: file.clone(),
-        span,
-    };
+    let loc = Loc::new(file.clone(), span);
     if detail.is_empty() {
         format!("{loc}\n{kind}")
     } else {

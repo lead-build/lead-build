@@ -138,6 +138,65 @@ fn test_resolve_error_keeps_original_expr() {
 }
 
 #[test]
+fn test_var_resolution_remembers_definition_site() -> Result<(), FRef> {
+    let code = "let a = 5; in a";
+    let expr: Expr<TestValue, FRef> =
+        ExprType::Bind(ExprSet::new(), parse_str(code, &FRef).unwrap()).builtin();
+    expr.resolve()?;
+
+    let loc = expr
+        .get_loc()
+        .expect("resolved value should carry a location");
+    assert_eq!(&code[loc.span.clone()], "a");
+
+    let via = loc
+        .via
+        .expect("should remember where the variable was defined");
+    assert_eq!(&code[via.span.clone()], "5");
+    Ok(())
+}
+
+#[test]
+fn test_attr_sel_resolution_remembers_definition_site() -> Result<(), FRef> {
+    let code = "let obj = { x = 42; }; in obj.x";
+    let expr: Expr<TestValue, FRef> =
+        ExprType::Bind(ExprSet::new(), parse_str(code, &FRef).unwrap()).builtin();
+    expr.resolve()?;
+
+    let loc = expr
+        .get_loc()
+        .expect("resolved value should carry a location");
+    assert_eq!(&code[loc.span.clone()], "obj.x");
+
+    let via = loc
+        .via
+        .expect("should remember where the field's value was defined");
+    assert_eq!(&code[via.span.clone()], "42");
+    Ok(())
+}
+
+#[test]
+fn test_unary_neg_type_error_has_a_location() {
+    let expr: Expr<TestValue, FRef> =
+        parse_str("-true", &FRef).unwrap().bind(&ExprSet::new());
+    match expr.resolve() {
+        Err(err) => assert!(format!("{}", err).contains("Backtrace:")),
+        Ok(()) => panic!("expected an error"),
+    }
+}
+
+#[test]
+fn test_fold_over_empty_list_has_a_location() {
+    let expr: Expr<TestValue, FRef> = parse_str("(|a| |b| a+b for [])", &FRef)
+        .unwrap()
+        .bind(&ExprSet::new());
+    match expr.resolve() {
+        Err(err) => assert!(format!("{}", err).contains("Backtrace:")),
+        Ok(()) => panic!("expected an error"),
+    }
+}
+
+#[test]
 fn test_let_set_var() {
     assert_eq! {
         eval(r#"

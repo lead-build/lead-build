@@ -202,10 +202,7 @@ where
     }
 
     pub fn toexpr(self: ExprType<T, F>, start: usize, end: usize, f: &F) -> Expr<T, F> {
-        self.reref(Some(Loc {
-            file: f.clone(),
-            span: Span { start, end },
-        }))
+        self.reref(Some(Loc::new(f.clone(), Span { start, end })))
     }
 
     pub fn new_builtin(func: impl ExprBuiltin<T, F> + 'static) -> ExprType<T, F> {
@@ -457,7 +454,8 @@ where
                         _ => Err(Error::new(
                             ErrorType::Eval,
                             format!("Unsupported binary operation: {:?} between values", op),
-                        )),
+                        )
+                        .reref(&lhs.get_loc())),
                     },
                     (ExprType::Object(lhs_obj), op, ExprType::Object(rhs_obj)) => match op {
                         ExprBinOp::Update => {
@@ -490,7 +488,8 @@ where
                         _ => Err(Error::new(
                             ErrorType::Eval,
                             format!("Unsupported binary operation: {:?} between objects", op),
-                        )),
+                        )
+                        .reref(&lhs.get_loc())),
                     },
                     (ExprType::List(lhs_list), op, ExprType::List(rhs_list)) => match op {
                         ExprBinOp::ListConcat => Ok(ExprType::List(
@@ -506,11 +505,14 @@ where
                         _ => Err(Error::new(
                             ErrorType::Eval,
                             format!("Unsupported binary operation: {:?} between lists", op),
-                        )),
+                        )
+                        .reref(&lhs.get_loc())),
                     },
                     (ExprType::Object(lhs_obj), op, ExprType::Value(rhs_val)) => match op {
                         ExprBinOp::HasAttr => Ok(ExprType::Value(T::new_from_bool(
-                            lhs_obj.contains_key(&StrKey::from(&rhs_val.as_string()?)),
+                            lhs_obj.contains_key(&StrKey::from(
+                                &rhs_val.as_string().map_err(|e| e.reref(&rhs.get_loc()))?,
+                            )),
                         ))),
                         _ => Err(Error::new(
                             ErrorType::Eval,
@@ -518,7 +520,8 @@ where
                                 "Unsupported binary operation: {:?} between objects and string",
                                 op
                             ),
-                        )),
+                        )
+                        .reref(&lhs.get_loc())),
                     },
                     (ExprType::Tuple(lhs_list), op, ExprType::Tuple(rhs_list)) => match op {
                         ExprBinOp::Eq => list_eq(lhs_list, rhs_list),
@@ -527,7 +530,8 @@ where
                         _ => Err(Error::new(
                             ErrorType::Eval,
                             format!("Unsupported binary operation: {:?} between lists", op),
-                        )),
+                        )
+                        .reref(&lhs.get_loc())),
                     },
                     _ => {
                         /*
@@ -635,12 +639,17 @@ where
                     } => {
                         let mut vars: ExprSet<T, F> = varspace;
                         for (field_matcher, field_expr) in fields {
-                            for (name, value) in
-                                field_matcher.run(field_expr.bind(&vars))?.into_iter()
+                            for (name, value) in field_matcher
+                                .run(field_expr.bind(&vars))
+                                .map_err(|e| e.reref(&loc))?
+                                .into_iter()
                             {
                                 vars.insert(name, value).map_or_else(
                                     || Ok(()),
-                                    |_| Err(Error::new(ErrorType::DupKey, name.as_string())),
+                                    |_| {
+                                        Err(Error::new(ErrorType::DupKey, name.as_string())
+                                            .reref(&loc))
+                                    },
                                 )?;
                             }
                         }
@@ -689,13 +698,13 @@ where
                         loc: vloc,
                     } => match &varspace.get(name) {
                         Some(value) => {
-                            storref.loc = value.get_loc();
+                            let resolved_loc = value.get_loc();
                             Ok(value
                                 .res_type()
                                 .map_err(|e| e.reref(&loc))?
                                 .tok
                                 .clone()
-                                .loc(loc))
+                                .loc(Loc::chain(loc, resolved_loc)))
                         }
                         None => Err(Error::new(
                             ErrorType::Scope,
@@ -762,7 +771,10 @@ where
                         .iter()
                         .map(|part| part.value().map_err(|e| e.reref(&loc)))
                         .collect::<Result<Vec<T>, F>>()?;
-                    Ok(ExprType::Value(T::op_string_concat(part_values)?).loc(loc))
+                    Ok(
+                        ExprType::Value(T::op_string_concat(part_values).map_err(|e| e.reref(&loc))?)
+                            .loc(loc),
+                    )
                 }
                 ExprStorage {
                     tok: ExprType::AttrSel(val, attr),
@@ -777,10 +789,21 @@ where
                     // To resolve this, a better combined Rc<RefCell<...>> that can
                     // Merge two references is needed, to transfer a var resolution
                     // to the next object.
-                    let value = val.get_item(attr.value()?.as_string()?.as_str())?;
-                    value.resolve()?;
-                    storref.loc = value.inner_ref().loc.clone();
-                    Ok(value.inner_ref().tok.clone().loc(loc))
+                    let attr_name = attr
+                        .value()
+                        .map_err(|e| e.reref(&loc))?
+                        .as_string()
+                        .map_err(|e| e.reref(&loc))?;
+                    let value = val
+                        .get_item(attr_name.as_str())
+                        .map_err(|e| e.reref(&loc))?;
+                    value.resolve().map_err(|e| e.reref(&loc))?;
+                    let resolved_loc = value.get_loc();
+                    Ok(value
+                        .inner_ref()
+                        .tok
+                        .clone()
+                        .loc(Loc::chain(loc, resolved_loc)))
                 }
                 ExprStorage {
                     tok:
@@ -829,13 +852,13 @@ where
                     loc,
                 } => {
                     let mut output = init;
-                    match &*input.res_type()? {
+                    match &*input.res_type().map_err(|e| e.reref(&loc))? {
                         ExprStorage {
                             tok: ExprType::List(input_items),
                             loc: input_loc,
                         } => {
                             for item in input_items.iter() {
-                                item.resolve()?;
+                                item.resolve().map_err(|e| e.reref(&item.get_loc()))?;
                                 output = match output {
                                     Some(prev) => Some(
                                         ExprType::FuncCall {
@@ -857,7 +880,8 @@ where
                                 Err(Error::new(
                                     ErrorType::Eval,
                                     "Fold over empty list with no init".to_string(),
-                                ))
+                                )
+                                .reref(&loc))
                             }
                         }
                         _ => Err(Error::new(
@@ -910,8 +934,10 @@ where
                                 func: filter_expr.clone(),
                             }
                             .reref(item.get_loc())
-                            .value()?
-                            .as_bool()?;
+                            .value()
+                            .map_err(|e| e.reref(&item.get_loc()))?
+                            .as_bool()
+                            .map_err(|e| e.reref(&item.get_loc()))?;
                             if filter_result {
                                 filtered_items.push(item.clone());
                             }
@@ -942,7 +968,13 @@ where
                                         tok: ExprType::Tuple(els),
                                         ..
                                     } if els.len() == 2 => Ok((
-                                        StrKey::from(&els[0].value()?.as_string()?),
+                                        StrKey::from(
+                                            &els[0]
+                                                .value()
+                                                .map_err(|e| e.reref(&el.get_loc()))?
+                                                .as_string()
+                                                .map_err(|e| e.reref(&el.get_loc()))?,
+                                        ),
                                         els[1].clone(),
                                     )),
                                     _ => Err(Error::new(
@@ -966,7 +998,8 @@ where
                             ExprStorage {
                                 tok: ExprType::Value(value),
                                 ..
-                            } => Ok(ExprType::Value(value.op_neg()?).loc(loc)),
+                            } => Ok(ExprType::Value(value.op_neg().map_err(|e| e.reref(&loc))?)
+                                .loc(loc)),
                             _ => Err(Error::new(
                                 ErrorType::Eval,
                                 format!("negating non-value: {}", expr),
@@ -977,7 +1010,8 @@ where
                             ExprStorage {
                                 tok: ExprType::Value(value),
                                 ..
-                            } => Ok(ExprType::Value(value.op_not()?).loc(loc)),
+                            } => Ok(ExprType::Value(value.op_not().map_err(|e| e.reref(&loc))?)
+                                .loc(loc)),
                             _ => Err(Error::new(
                                 ErrorType::Eval,
                                 format!("negating non-value: {}", expr),

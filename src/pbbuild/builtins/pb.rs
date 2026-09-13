@@ -66,7 +66,7 @@ fn resolve_path_value_from_expr<F: Clone + Debug + Referrable>(
     field_name: &str,
     dep_builds: &mut Vec<Rc<PbBuild>>,
 ) -> Result<VirtPath, F> {
-    expr.resolve()?;
+    expr.resolve().map_err(|e| e.reref(&expr.get_loc()))?;
     match &expr.inner_ref().tok {
         ExprType::Value(Value::Path { path, depends }) => {
             for dep_build in depends.iter() {
@@ -76,8 +76,9 @@ fn resolve_path_value_from_expr<F: Clone + Debug + Referrable>(
         }
         _ => Err(Error::new(
             ErrorType::Type,
-            format!("incompatible type in build arg {}", field_name),
-        )),
+            format!("incompatible type in build arg '{}', got {}", field_name, expr),
+        )
+        .reref(&expr.get_loc())),
     }
 }
 
@@ -86,7 +87,9 @@ fn resolve_build_arg_to_paths<F: Clone + Debug + Referrable>(
     field_name: &str,
     dep_builds: &mut Vec<Rc<PbBuild>>,
 ) -> Result<Vec<VirtPath>, F> {
-    build_arg.resolve()?;
+    build_arg
+        .resolve()
+        .map_err(|e| e.reref(&build_arg.get_loc()))?;
     let elems: Vec<Expr<Value, F>> = match &build_arg.inner_ref().tok {
         ExprType::Value(value) => vec![ExprType::from(value.clone()).reref(build_arg.get_loc())],
         ExprType::List(exprs) => exprs.clone(),
@@ -94,7 +97,8 @@ fn resolve_build_arg_to_paths<F: Clone + Debug + Referrable>(
         _ => Err(Error::new(
             ErrorType::Type,
             format!("field {} is not a value, list, or object", field_name),
-        ))?,
+        )
+        .reref(&build_arg.get_loc()))?,
     };
 
     elems
@@ -108,7 +112,9 @@ fn resolve_build_arg_to_ninja_values<F: Clone + Debug + Referrable>(
     field_name: &str,
     dep_builds: &mut Vec<Rc<PbBuild>>,
 ) -> Result<Vec<NinjaArg>, F> {
-    build_arg.resolve()?;
+    build_arg
+        .resolve()
+        .map_err(|e| e.reref(&build_arg.get_loc()))?;
     let loc = build_arg.get_loc();
 
     let elems: Vec<Expr<Value, F>> = match &build_arg.inner_ref().tok {
@@ -117,13 +123,14 @@ fn resolve_build_arg_to_ninja_values<F: Clone + Debug + Referrable>(
         _ => Err(Error::new(
             ErrorType::Type,
             format!("field {} is not a list or value", field_name),
-        )),
+        )
+        .reref(&loc)),
     }?;
 
     elems
         .into_iter()
         .map(|elem| {
-            elem.resolve()?;
+            elem.resolve().map_err(|e| e.reref(&elem.get_loc()))?;
             match &elem.inner_ref().tok {
                 ExprType::Value(attr) => {
                     if let Value::Path { depends, .. } = attr {
@@ -135,8 +142,9 @@ fn resolve_build_arg_to_ninja_values<F: Clone + Debug + Referrable>(
                 }
                 _ => Err(Error::new(
                     ErrorType::Type,
-                    format!("incompatible type in build arg {}", field_name),
-                )),
+                    format!("incompatible type in build arg '{}', got {}", field_name, elem),
+                )
+                .reref(&elem.get_loc())),
             }
         })
         .collect()
@@ -316,7 +324,9 @@ where
                     input = resolve_build_arg_to_paths(&build_arg, "input", &mut dep_builds)?
                 }
                 "output" => {
-                    build_arg.resolve()?;
+                    build_arg
+                        .resolve()
+                        .map_err(|e| e.reref(&build_arg.get_loc()))?;
                     let (output_exprs, output_format_type) = match &build_arg.inner_ref().tok {
                         ExprType::Value(value) => (
                             vec![ExprType::from(value.clone()).reref(build_arg.get_loc())],
@@ -339,7 +349,7 @@ where
                     output = output_exprs
                         .into_iter()
                         .map(|expr| {
-                            expr.resolve()?;
+                            expr.resolve().map_err(|e| e.reref(&expr.get_loc()))?;
                             match &expr.inner_ref().tok {
                                 ExprType::Value(Value::Path { path, .. }) => Ok(path.clone()),
                                 _ => Err(Error::new(
@@ -348,7 +358,8 @@ where
                                         "incompatible type in build arg '{}' - {}",
                                         arg_name, expr
                                     ),
-                                )),
+                                )
+                                .reref(&expr.get_loc())),
                             }
                         })
                         .collect::<Result<Vec<_>, _>>()?;

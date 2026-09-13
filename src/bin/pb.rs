@@ -138,7 +138,7 @@ fn main() {
             exit(0);
         }
         Err(err) => {
-            eprintln!("{}", err);
+            eprintln!("{}", err.rich());
             exit(1);
         }
     }
