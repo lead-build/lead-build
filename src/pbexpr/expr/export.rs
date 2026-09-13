@@ -22,6 +22,16 @@ const MAX_DEPTH: usize = 64;
 /// Bounds output size against huge (but possibly shallow) data structures.
 const MAX_ITEMS: usize = 500;
 
+/// Depth budget for [`Printer::new_diag`]: about two levels of real nesting
+/// before eliding, so a diagnostic snippet stays short no matter how big or
+/// deep the actual value is. See [`Diag`].
+const DIAG_MAX_DEPTH: usize = 2;
+
+/// Item budget (per `export` call, not per collection) for
+/// [`Printer::new_diag`] — small enough that even a huge flat collection
+/// contributes only a line or two.
+const DIAG_MAX_ITEMS: usize = 3;
+
 /// A [`std::fmt::Write`] sink with a depth and size budget. See the module
 /// docs for why: this is what keeps [`Exportable::export`] always
 /// terminating and reasonably sized, even for a cyclic or huge `Expr`.
@@ -33,10 +43,21 @@ pub struct Printer<'a> {
 
 impl<'a> Printer<'a> {
     pub fn new(out: &'a mut dyn Write) -> Self {
+        Self::with_budget(out, MAX_DEPTH, MAX_ITEMS)
+    }
+
+    /// A tightly-budgeted printer for embedding a value inline in a
+    /// diagnostic message: see [`Diag`] for when to use it instead of plain
+    /// `Display`.
+    pub fn new_diag(out: &'a mut dyn Write) -> Self {
+        Self::with_budget(out, DIAG_MAX_DEPTH, DIAG_MAX_ITEMS)
+    }
+
+    fn with_budget(out: &'a mut dyn Write, depth: usize, items: usize) -> Self {
         Self {
             out,
-            depth_left: MAX_DEPTH,
-            items_left: MAX_ITEMS,
+            depth_left: depth,
+            items_left: items,
         }
     }
 
@@ -96,6 +117,31 @@ impl Write for Printer<'_> {
 /// error, matching how depth/size elision already works.
 pub trait Exportable {
     fn export(&self, out: &mut Printer<'_>) -> fmt::Result;
+
+    /// Wraps `self` for a short, diagnostic-sized `Display` — about two
+    /// levels of real nesting, a handful of items total, everything else
+    /// elided — meant to be embedded inline in an error message
+    /// (`format!("... got {}", value.diag())`). Use this instead of `{}`
+    /// (which goes through [`Printer::new`]'s much larger budget, meant for
+    /// inspecting a complete value such as `pb -E`'s output) whenever an
+    /// `Expr`/`ExprType`/value is interpolated into a diagnostic: a build
+    /// object can be arbitrarily large, and a diagnostic should stay
+    /// readable regardless.
+    fn diag(&self) -> Diag<'_, Self>
+    where
+        Self: Sized,
+    {
+        Diag(self)
+    }
+}
+
+/// See [`Exportable::diag`].
+pub struct Diag<'a, E: ?Sized>(&'a E);
+
+impl<E: Exportable + ?Sized> Display for Diag<'_, E> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.export(&mut Printer::new_diag(f))
+    }
 }
 
 impl<T, F> Exportable for Expr<T, F>
@@ -370,5 +416,54 @@ mod tests {
                 .to_string()
                 .contains("being evaluated")
         );
+    }
+
+    /// Builds a `depth`-deep nested object, each level holding `width`
+    /// sibling fields, so both the depth and item budgets are stressed at
+    /// once (a shape that a plain-`{}` real-world build object could
+    /// plausibly take, unlike the single-branch deep list used above).
+    fn wide_nested_object(depth: usize, width: usize) -> Expr<TestValue, FRef> {
+        let mut expr = ExprType::Value(TestValue::Int(0)).builtin();
+        for level in 0..depth {
+            let mut fields = ExprSet::new();
+            for i in 0..width {
+                fields.insert(
+                    StrKey::from(&format!("field_{level}_{i}")),
+                    expr.clone(),
+                );
+            }
+            expr = ExprType::Object(fields).builtin();
+        }
+        expr
+    }
+
+    #[test]
+    fn diag_stays_short_and_single_line_for_a_huge_object() {
+        let expr = wide_nested_object(10, 20);
+        let full = expr.to_string();
+        let diag = expr.diag().to_string();
+
+        assert!(!diag.contains('\n'), "diag output should be one line: {diag}");
+        assert!(
+            diag.len() < 200,
+            "diag output should be short even for a huge value: {diag}"
+        );
+        assert!(
+            full.len() > diag.len() * 5,
+            "the huge value should actually be much bigger than its diag: full={} diag={}",
+            full.len(),
+            diag.len()
+        );
+    }
+
+    #[test]
+    fn diag_shows_about_two_levels_of_real_structure() {
+        let expr = wide_nested_object(5, 2);
+        let diag = expr.diag().to_string();
+        // Depth 0 (the object itself) and depth 1 (its fields' values, one
+        // level of nested object) should be real; depth 2 should already
+        // be elided as a placeholder rather than expanded further.
+        assert!(diag.contains("field_4_"), "{diag}");
+        assert!(diag.contains("<object expression>"), "{diag}");
     }
 }

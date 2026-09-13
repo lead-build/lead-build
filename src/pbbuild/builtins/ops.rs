@@ -50,7 +50,7 @@ impl CompoundType {
             )),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("expected tuple, list, or object, got {}", arg),
+                format!("expected tuple, list, or object, got {}", arg.diag()),
             )
             .reref(&arg.get_loc())),
         }
@@ -177,9 +177,11 @@ where
         let binding = arg.inner_ref();
         let elems = match &binding.tok {
             ExprType::List(items) => Ok(items),
-            _ => Err(
-                Error::new(ErrorType::Type, format!("expected list {}", arg)).reref(&arg.get_loc()),
-            ),
+            _ => Err(Error::new(
+                ErrorType::Type,
+                format!("expected list, got {}", arg.diag()),
+            )
+            .reref(&arg.get_loc())),
         }?;
 
         let mut new_args: BTreeMap<StrKey, Vec<Expr<T, F>>> = BTreeMap::new();
@@ -190,7 +192,7 @@ where
                 ExprType::Object(items) => Ok(items),
                 _ => Err(Error::new(
                     ErrorType::Type,
-                    format!("expected objects, got {}", inner_expr),
+                    format!("expected objects, got {}", inner_expr.diag()),
                 )
                 .reref(&inner_expr.get_loc())),
             }?;

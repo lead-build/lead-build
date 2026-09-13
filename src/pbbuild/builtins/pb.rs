@@ -13,7 +13,8 @@ use super::super::{
 use crate::{
     Expr,
     pbexpr::{
-        Error, ErrorType, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher, Referrable, Result,
+        Error, ErrorType, Exportable, ExprBuiltin, ExprSet, ExprStorage, ExprType, Matcher,
+        Referrable, Result,
     },
     strkey::StrKey,
 };
@@ -76,7 +77,7 @@ fn resolve_path_value_from_expr<F: Clone + Debug + Referrable>(
         }
         _ => Err(Error::new(
             ErrorType::Type,
-            format!("incompatible type in build arg '{}', got {}", field_name, expr),
+            format!("incompatible type in build arg '{}', got {}", field_name, expr.diag()),
         )
         .reref(&expr.get_loc())),
     }
@@ -142,7 +143,7 @@ fn resolve_build_arg_to_ninja_values<F: Clone + Debug + Referrable>(
                 }
                 _ => Err(Error::new(
                     ErrorType::Type,
-                    format!("incompatible type in build arg '{}', got {}", field_name, elem),
+                    format!("incompatible type in build arg '{}', got {}", field_name, elem.diag()),
                 )
                 .reref(&elem.get_loc())),
             }
@@ -225,7 +226,7 @@ where
                 ErrorType::Type,
                 format!(
                     "pb.rule function needs to return an object, got {}",
-                    rule_func
+                    rule_func.diag()
                 ),
             )),
         }?;
@@ -287,7 +288,7 @@ where
         let opt_err = || {
             Error::new(
                 ErrorType::Type,
-                format!("unknown arg for pb.build, got {}", arg),
+                format!("unknown arg for pb.build, got {}", arg.diag()),
             )
         };
 
@@ -356,7 +357,8 @@ where
                                     ErrorType::Type,
                                     format!(
                                         "incompatible type in build arg '{}' - {}",
-                                        arg_name, expr
+                                        arg_name,
+                                        expr.diag()
                                     ),
                                 )
                                 .reref(&expr.get_loc())),
@@ -441,7 +443,7 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbLock {
     fn call(&self, arg: Expr<Value, VirtPath>) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let val = arg.value()?;
         let path = val.try_as_path().ok_or(
-            Error::new(ErrorType::Type, format!("expected path, got {}", arg))
+            Error::new(ErrorType::Type, format!("expected path, got {}", arg.diag()))
                 .reref(&arg.get_loc()),
         )?;
         Ok(ExprType::Value(Value::path(path.lock())).reref(arg.get_loc()))

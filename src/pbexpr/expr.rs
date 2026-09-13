@@ -3,7 +3,7 @@ pub mod matcher;
 
 use super::error::{Error, ErrorType, Loc, Referrable, Result, Span};
 use crate::strkey::StrKey;
-pub use export::{Exportable, Printer};
+pub use export::{Diag, Exportable, Printer};
 pub use matcher::Matcher;
 use std::{
     cell::{Ref, RefCell},
@@ -534,16 +534,17 @@ where
                         .reref(&lhs.get_loc())),
                     },
                     _ => {
-                        /*
-                         * TODO: This error message needs to be improved.
-                         * Printing lhs_r.tok or rhs_r.tok means they can be
-                         * structures with infinite recursion, and thus block.
-                         * As a workaround, we just print the operation, which
-                         * is not enough in the long run...
-                         */
+                        // `.diag()` bounds depth/size, so it's safe to
+                        // print the operands even though either could be a
+                        // huge or cyclic structure.
                         Err(Error::new(
                             ErrorType::Eval,
-                            format!("Unsupported binary operation: {:?}", op),
+                            format!(
+                                "Unsupported binary operation: {:?} between {} and {}",
+                                op,
+                                lhs_r.tok.diag(),
+                                rhs_r.tok.diag()
+                            ),
                         )
                         .reref(&lhs.get_loc()))
                     }
@@ -843,7 +844,7 @@ where
                     }
                     ExprStorage { tok: _, loc: floc } => Err(Error::new(
                         ErrorType::Scope,
-                        format!("called func, but it's a {}", fexpr),
+                        format!("called func, but it's a {}", fexpr.diag()),
                     )
                     .reref(floc)),
                 },
@@ -886,7 +887,7 @@ where
                         }
                         _ => Err(Error::new(
                             ErrorType::Eval,
-                            format!("Fold over non-list: {}", input),
+                            format!("Fold over non-list: {}", input.diag()),
                         )
                         .reref(&loc)),
                     }
@@ -920,7 +921,7 @@ where
                         }
                         _ => Err(Error::new(
                             ErrorType::Eval,
-                            format!("Foreach over non-iterable: {}", input),
+                            format!("Foreach over non-iterable: {}", input.diag()),
                         )
                         .reref(&loc)),
                     }?;
@@ -1002,7 +1003,7 @@ where
                                 .loc(loc)),
                             _ => Err(Error::new(
                                 ErrorType::Eval,
-                                format!("negating non-value: {}", expr),
+                                format!("negating non-value: {}", expr.diag()),
                             )
                             .reref(&loc)),
                         },
@@ -1014,7 +1015,7 @@ where
                                 .loc(loc)),
                             _ => Err(Error::new(
                                 ErrorType::Eval,
-                                format!("negating non-value: {}", expr),
+                                format!("negating non-value: {}", expr.diag()),
                             )
                             .reref(&loc)),
                         },
@@ -1063,7 +1064,7 @@ where
                         } else {
                             Err(Error::new(
                                 ErrorType::Eval,
-                                format!("No matching case for {}", ref_expr),
+                                format!("No matching case for {}", ref_expr.diag()),
                             )
                             .reref(&loc))
                         }
@@ -1138,7 +1139,7 @@ where
             ExprType::Value(val) => Ok(val.clone()),
             _ => Err(Error::new(
                 ErrorType::NoValue,
-                format!("Not a value: {}", self),
+                format!("Not a value: {}", self.diag()),
             )),
         }
     }
@@ -1150,7 +1151,7 @@ where
             ExprType::Value(val) => Ok(val.as_string()?),
             _ => Err(Error::new(
                 ErrorType::NoValue,
-                format!("Not a string: {}", self),
+                format!("Not a string: {}", self.diag()),
             )),
         }
     }

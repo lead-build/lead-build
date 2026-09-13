@@ -112,7 +112,7 @@ where
             }),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't subtract {} and {}", lhs, rhs),
+                format!("can't subtract {} and {}", lhs.diag(), rhs.diag()),
             )),
         }
     }
@@ -122,7 +122,7 @@ where
             (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs * rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't multiply {} and {}", lhs, rhs),
+                format!("can't multiply {} and {}", lhs.diag(), rhs.diag()),
             )),
         }
     }
@@ -136,7 +136,7 @@ where
             }),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't divide {} and {}", lhs, rhs),
+                format!("can't divide {} and {}", lhs.diag(), rhs.diag()),
             )),
         }
     }
@@ -195,7 +195,7 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs < rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs, rhs),
+                format!("can't compare {} and {}", lhs.diag(), rhs.diag()),
             )),
         }
     }
@@ -206,7 +206,7 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs <= rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs, rhs),
+                format!("can't compare {} and {}", lhs.diag(), rhs.diag()),
             )),
         }
     }
@@ -217,7 +217,7 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs > rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs, rhs),
+                format!("can't compare {} and {}", lhs.diag(), rhs.diag()),
             )),
         }
     }
@@ -228,7 +228,7 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs >= rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs, rhs),
+                format!("can't compare {} and {}", lhs.diag(), rhs.diag()),
             )),
         }
     }
@@ -246,7 +246,7 @@ where
             Value::Int(val) => Ok(Value::Int(-val)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not an integer: {}", self),
+                format!("not an integer: {}", self.diag()),
             )),
         }
     }
@@ -256,7 +256,7 @@ where
             Value::Bool(val) => Ok(Value::Bool(!val)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not a boolean: {}", self),
+                format!("not a boolean: {}", self.diag()),
             )),
         }
     }
@@ -266,7 +266,7 @@ where
             Value::Bool(val) => Ok(*val),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not a boolean: {}", self),
+                format!("not a boolean: {}", self.diag()),
             )),
         }
     }
@@ -276,7 +276,7 @@ where
             Value::String(val) => Ok(val.clone()),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not a string: {}", self),
+                format!("not a string: {}", self.diag()),
             )),
         }
     }
