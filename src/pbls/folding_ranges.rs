@@ -1,5 +1,5 @@
 //! `textDocument/foldingRange`: every multi-line "container" node (object,
-//! bind/let block, switch, match, list, matcher-object) becomes a fold candidate.
+//! bind/let block, switch, match, list, matcher-object, matcher-list) becomes a fold candidate.
 //! Purely mechanical — no classification beyond "is this the kind of node an
 //! editor would reasonably want to fold" and "does it actually span more
 //! than one line".
@@ -20,6 +20,7 @@ fn is_foldable_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::MATCH_EXPR
             | SyntaxKind::MAP_EXPR
             | SyntaxKind::MATCHER_OBJECT
+            | SyntaxKind::MATCHER_LIST
             | SyntaxKind::LIST_EXPR
             | SyntaxKind::TUPLE_EXPR
     )

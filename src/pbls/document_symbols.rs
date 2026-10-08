@@ -382,6 +382,16 @@ impl LangVisitor for SymbolVisitor<'_> {
         Ok((self.text_at(range), range))
     }
 
+    fn visit_matcher_list(
+        &mut self,
+        range: TextRange,
+        _down: &(),
+        _exhaustive: bool,
+        _items: Vec<UnvisitedMatcher>,
+    ) -> Result<(String, TextRange), Infallible> {
+        Ok((self.text_at(range), range))
+    }
+
     fn visit_matcher_object(
         &mut self,
         range: TextRange,

@@ -176,6 +176,9 @@ pub enum SyntaxKind {
     MATCHER_ALIAS,
     /// `MatcherKind::Tuple` — `( <matcher>,* )`.
     MATCHER_TUPLE,
+    /// `MatcherKind::List` — `[ <matcher>,* [...] ]`; a trailing `...`
+    /// accepts any number of further elements.
+    MATCHER_LIST,
     /// `MatcherKind::Object` — `{ <OBJECT_MATCHER_FIELD>,* [...] }`.
     MATCHER_OBJECT,
     /// `ObjectMatcher` — `<ident> [= <matcher>] [? <expr>]`.

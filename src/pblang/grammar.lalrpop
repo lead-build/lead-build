@@ -382,6 +382,22 @@ MatcherInner: GreenSpan = {
         children.push(rp);
         green_node(src, SyntaxKind::MATCHER_TUPLE, l, r, children)
     },
+    <l:@L> <lb:T_LBracket> <items:Comma<Matcher>> <rb:T_RBracket> <r:@R> => {
+        let mut children = vec![lb];
+        children.extend(items);
+        children.push(rb);
+        green_node(src, SyntaxKind::MATCHER_LIST, l, r, children)
+    },
+    <l:@L> <lb:T_LBracket> <items:(<Matcher> <T_Comma>)*> <dots:T_DotDotDot> <rb:T_RBracket> <r:@R> => {
+        let mut children = vec![lb];
+        for (item, comma) in items {
+            children.push(item);
+            children.push(comma);
+        }
+        children.push(dots);
+        children.push(rb);
+        green_node(src, SyntaxKind::MATCHER_LIST, l, r, children)
+    },
     <l:@L> <lb:T_LBrace> <fields:(<ObjectMatcher> <T_Comma>)*>
         <last:ObjectMatcher?> <rb:T_RBrace> <r:@R> => {
         let mut children = vec![lb];

@@ -480,6 +480,16 @@ impl<T: Resolved> LangVisitor for SemanticVisitor<T> {
         Ok((all_entries, all_names))
     }
 
+    fn visit_matcher_list(
+        &mut self,
+        range: TextRange,
+        down: &Scope,
+        _exhaustive: bool,
+        items: Vec<UnvisitedMatcher>,
+    ) -> Result<(Vec<Entry<T>>, Vec<(TextRange, String)>), Infallible> {
+        self.visit_matcher_tuple(range, down, items)
+    }
+
     fn visit_matcher_object(
         &mut self,
         _range: TextRange,

@@ -28,6 +28,7 @@ let
     match_ok = (match (2, { scale = 10; }) {
         (n,) => n;
         (n, { scale }) => n * scale;
+        [n, ...] => n;
         _ => 0;
     }) == 20;
 

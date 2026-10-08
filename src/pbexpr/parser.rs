@@ -560,6 +560,17 @@ where
         Ok(Matcher::Tuple(items))
     }
 
+    fn visit_matcher_list(
+        &mut self,
+        _range: TextRange,
+        down: &(),
+        exhaustive: bool,
+        items: Vec<UnvisitedMatcher>,
+    ) -> Result<Matcher<T, F>, F> {
+        let items = visit_all_matchers(items, self, down)?;
+        Ok(Matcher::List(items, exhaustive))
+    }
+
     fn visit_matcher_object(
         &mut self,
         _range: TextRange,

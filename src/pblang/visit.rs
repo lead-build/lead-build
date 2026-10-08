@@ -295,6 +295,15 @@ pub trait LangVisitor {
         down: &Self::Down,
         items: Vec<UnvisitedMatcher>,
     ) -> Result<Self::Matcher, Self::Error>;
+    /// `exhaustive` is `false` when the list ends in `...`, i.e. `items`
+    /// only has to match a prefix of the value.
+    fn visit_matcher_list(
+        &mut self,
+        range: TextRange,
+        down: &Self::Down,
+        exhaustive: bool,
+        items: Vec<UnvisitedMatcher>,
+    ) -> Result<Self::Matcher, Self::Error>;
     fn visit_matcher_object(
         &mut self,
         range: TextRange,
@@ -602,6 +611,12 @@ pub fn walk_matcher<V: LangVisitor>(
         SyntaxKind::MATCHER_TUPLE => {
             let items = children.into_iter().map(UnvisitedMatcher).collect();
             v.visit_matcher_tuple(range, down, items)
+        }
+
+        SyntaxKind::MATCHER_LIST => {
+            let exhaustive = !has_token(node, SyntaxKind::DOT_DOT_DOT);
+            let items = children.into_iter().map(UnvisitedMatcher).collect();
+            v.visit_matcher_list(range, down, exhaustive, items)
         }
 
         SyntaxKind::MATCHER_OBJECT => {

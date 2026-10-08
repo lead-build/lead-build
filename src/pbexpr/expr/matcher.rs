@@ -18,6 +18,9 @@ where
     DontCare,
     Ident(StrKey),
     Tuple(Vec<Matcher<T, F>>),
+    /// The `bool` is whether the list must have exactly this many elements
+    /// (`[a, b]`), as opposed to at least this many (`[a, b, ...]`).
+    List(Vec<Matcher<T, F>>, bool),
     Object(Vec<ObjectMatch<T, F>>, bool),
 }
 
@@ -48,6 +51,13 @@ where
                     .iter()
                     .map(|matcher| matcher.bind_defaults(varscope))
                     .collect(),
+            ),
+            Matcher::List(matchers, need_all) => Matcher::List(
+                matchers
+                    .iter()
+                    .map(|matcher| matcher.bind_defaults(varscope))
+                    .collect(),
+                *need_all,
             ),
             Matcher::Object(items, need_all) => Matcher::Object(
                 items
@@ -118,6 +128,32 @@ where
                     Ok(Ok(output))
                 }
                 _ => mismatch(ErrorType::Type, "Expected tuple".to_string()),
+            },
+            Matcher::List(matchers, need_all) => match &expr.res_type()?.tok {
+                ExprType::List(exprs) => {
+                    if *need_all && exprs.len() != matchers.len() {
+                        return mismatch(
+                            ErrorType::Type,
+                            format!("Expected list of length {}", matchers.len()),
+                        );
+                    }
+                    if exprs.len() < matchers.len() {
+                        return mismatch(
+                            ErrorType::Type,
+                            format!("Expected list of at least length {}", matchers.len()),
+                        );
+                    }
+                    let mut output = ExprSet::new();
+                    // zip stops at the shorter one: elements past the
+                    // matched prefix are left untouched (and unevaluated)
+                    for (itmatch, itexpr) in zip(matchers, exprs) {
+                        let mut subvars = sub_match!(itmatch, itexpr.clone());
+                        // TODO: Check if overlapping keysets
+                        output.append(&mut subvars);
+                    }
+                    Ok(Ok(output))
+                }
+                _ => mismatch(ErrorType::Type, "Expected list".to_string()),
             },
             Matcher::Object(items, need_all) => match &expr.res_type()?.tok {
                 ExprType::Object(exprs) => {

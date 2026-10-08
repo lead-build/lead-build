@@ -324,6 +324,17 @@ where
             out.list(items.iter(), ",", |p, item| export_matcher(p, item))?;
             out.write_str(")")
         }
+        Matcher::List(items, exhaustive) => {
+            out.write_str("[")?;
+            out.list(items.iter(), ",", |p, item| export_matcher(p, item))?;
+            if !exhaustive {
+                if !items.is_empty() {
+                    out.write_str(",")?;
+                }
+                out.write_str("...")?;
+            }
+            out.write_str("]")
+        }
         Matcher::Object(fields, exhaustive) => {
             out.write_str("{")?;
             out.list(fields.iter(), ",", |p, (key, matcher, default)| {

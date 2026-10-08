@@ -168,6 +168,9 @@ mod tests {
         let doc = OpenDocument::new("match (1, 2) { (a, b) => a + b; _ => 0; }".to_string());
         assert_eq!(doc.diagnostics(), Vec::new());
 
+        let doc = OpenDocument::new("match [1, 2] { [a, b, ...] => a + b; _ => 0; }".to_string());
+        assert_eq!(doc.diagnostics(), Vec::new());
+
         // `a` is bound by the first case only.
         let doc = OpenDocument::new("match (1, 2) { (a, _) => a; _ => a; }".to_string());
         let diagnostics = doc.diagnostics();

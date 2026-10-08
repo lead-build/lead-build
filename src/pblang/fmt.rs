@@ -193,6 +193,7 @@ fn simple_default(kind: SyntaxKind, kinds: &[SyntaxKind], i: usize) -> Doc {
         SyntaxKind::LIST_EXPR
         | SyntaxKind::TUPLE_EXPR
         | SyntaxKind::MATCHER_TUPLE
+        | SyntaxKind::MATCHER_LIST
         | SyntaxKind::MATCHER_OBJECT
         | SyntaxKind::GROUP_EXPR
         | SyntaxKind::DYNAMIC_ATTR
@@ -239,6 +240,7 @@ fn format_node(node: SyntaxNode) -> Piece {
         SyntaxKind::LIST_EXPR
         | SyntaxKind::TUPLE_EXPR
         | SyntaxKind::MATCHER_TUPLE
+        | SyntaxKind::MATCHER_LIST
         | SyntaxKind::MATCHER_OBJECT => {
             // `{ }`-style constructs want a space just inside the braces
             // when flat (matching the empty-`OBJECT_EXPR` convention);
@@ -607,6 +609,14 @@ mod tests {
             format("switch x{1=>10;2=>20;}"),
             "switch x {\n    1 => 10;\n    2 => 20;\n}"
         );
+    }
+
+    #[test]
+    fn list_matchers_stay_tight_against_their_brackets() {
+        assert_eq!(format("|[ a,b ,... ]|a"), "|[a, b, ...]| a");
+        assert_eq!(format("|[a,b]|a"), "|[a, b]| a");
+        assert_eq!(format("|[ ... ]|1"), "|[...]| 1");
+        assert_eq!(format("|[ ]|1"), "|[]| 1");
     }
 
     #[test]

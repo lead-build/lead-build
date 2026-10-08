@@ -1091,6 +1091,71 @@ fn test_switch_none() {
 }
 
 #[test]
+fn test_match_list_exact_and_prefix() {
+    let pick = |input: &str| {
+        eval(&format!(
+            r#"
+            match {input} {{
+                [] => 0;
+                [a] => a;
+                [a, b] => a + b;
+                [a, b, c, ...] => a + b + c + 100;
+            }}
+            "#
+        ))
+    };
+    assert_eq!(pick("[]"), eval("0"));
+    assert_eq!(pick("[5]"), eval("5"));
+    assert_eq!(pick("[5, 6]"), eval("11"));
+    assert_eq!(pick("[1, 2, 3]"), eval("106"));
+    assert_eq!(pick("[1, 2, 3, 4, 5]"), eval("106"));
+}
+
+#[test]
+fn test_match_list_rest_matches_zero_or_more() {
+    assert_eq!(eval("match [] { [...] => 1; }"), eval("1"));
+    assert_eq!(eval("match [7] { [a, ...] => a; }"), eval("7"));
+    // The rest is never evaluated
+    assert_eq!(
+        eval("match [7, undefined_var] { [a, ...] => a; }"),
+        eval("7")
+    );
+}
+
+#[test]
+fn test_match_list_is_not_a_tuple() {
+    assert_eq!(
+        eval("match (1, 2) { [a, b] => 1; (a, b) => 2; }"),
+        eval("2")
+    );
+    assert_eq!(
+        eval("match [1, 2] { (a, b) => 1; [a, b] => 2; }"),
+        eval("2")
+    );
+}
+
+#[test]
+fn test_list_matcher_in_let_and_func() {
+    assert_eq!(
+        eval(
+            "let [a, [b, ...]@inner, ...] = [1, [2, 3], 4]; in a + b + (|p f| p + f for 0 : inner)"
+        ),
+        eval("8")
+    );
+    assert_eq!(eval("(|[a, b]| a * b) [3, 4]"), eval("12"));
+}
+
+#[test]
+fn test_list_matcher_in_let_wrong_length_is_error() {
+    let expr: Expr<TestValue, FRef> = ExprType::Bind(
+        ExprSet::new(),
+        parse_str("let [a, b] = [1, 2, 3]; in a", &FRef).unwrap(),
+    )
+    .builtin();
+    assert!(expr.resolve().is_err());
+}
+
+#[test]
 fn test_match_tuple_length() {
     assert_eq!(
         eval(
