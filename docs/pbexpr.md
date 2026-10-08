@@ -19,17 +19,18 @@ unit tests.
 
 [`pbexpr::parser::parse_str`](../src/pbexpr/parser.rs) is the bridge from
 `pblang`: it calls `pblang::parse` to get a `rowan::SyntaxNode`, then walks
-it — matching on `SyntaxKind` — building an `Expr<T, F>` graph as it goes.
-This is also where the *meaning* of syntax is decided: e.g. which
-`SyntaxKind` token sits between a `BINARY_EXPR`'s two children determines
-which `ExprBinOp` it becomes.
+it with `pblang::visit::walk_expr`, building an `Expr<T, F>` graph as it
+goes. The walk itself (which child is what) belongs to `pblang`; the
+`LangVisitor` implementation here, `ExprGenerator`, only decides what each
+node *means*: e.g. which `SyntaxKind` token sits between a `BINARY_EXPR`'s
+two children determines which `ExprBinOp` it becomes.
 
 ## The expression graph: `expr.rs`
 
 `Expr<T, F>` is `Rc<RefCell<ExprStorage<T, F>>>` — a shared, mutable cell
 holding an `ExprType<T, F>` plus an optional source `Loc`. `ExprType` is the
-actual node enum: `Object`, `List`, `BinOp`, `Let`, `FuncCall`, `Value(T)`,
-and so on.
+actual node enum: `Object`, `List`, `BinOp`, `Let`, `FuncCall`, `Switch`,
+`Match`, `Value(T)`, and so on.
 
 The language is lazy: building the graph doesn't evaluate anything.
 Evaluation happens through:
@@ -48,14 +49,26 @@ Evaluation happens through:
 
 Binding (`bind()`) is how variables become concrete: it clones a subgraph
 with a `varspace` (an `ExprSet` = `BTreeMap<StrKey, Expr<T, F>>`) attached,
-so a later `resolve()` of a `Var` can look the name up.
+so a later `resolve()` of a `Var` can look the name up. The result is an
+`ExprType::Bind` node, which also has a source form, `bind name = expr; ...
+in expr`. That syntax isn't meant for build scripts (it is only noted as
+internal in the user reference); it exists so tests can write a bound
+expression directly, and so debug output of one is readable.
 
 ## Pattern matching: `expr/matcher.rs`
 
-`Matcher<T, F>` is the destructuring pattern used by `let`, `bind`, and
-function arguments — plain identifier, `_`, tuple, or object pattern (with
-optional per-field defaults and `@`-aliases). `Matcher::run` takes a
-resolved `Expr` and produces the `ExprSet` of bindings it introduces.
+`Matcher<T, F>` is the destructuring pattern used by `let`, function
+arguments, and `match` cases — plain identifier, `_`, tuple, list (optionally
+only a prefix, with a trailing `...`), or object pattern (with optional
+per-field defaults), each optionally with an `@`-alias.
+
+`Matcher::run` takes an `Expr` and produces the `ExprSet` of bindings it
+introduces; a value that doesn't fit is an error. `Matcher::try_run` is the
+refutable variant used by `match`: a value that doesn't have the matcher's
+shape gives `Ok(None)`, so the next case can be tried, while errors from
+evaluating the value itself still propagate. Both resolve the value only as
+far as needed to know its shape, so elements a matcher doesn't look at stay
+unevaluated.
 
 ## Diagnostics: `expr/export.rs`
 

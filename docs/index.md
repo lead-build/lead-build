@@ -2,12 +2,13 @@
 
 > This is documentation for developing lead-build itself. If you're looking
 > for how to *use* lead-build or lead-lib to write build scripts, that's the
-> user manual, at https://lead-build.readthedocs.io.
+> user manual, at https://lead.readthedocs.io.
 
 ## What this is
 
-lead-build compiles a declarative build language (`.pbb` files) into a Ninja
-build file. Source text goes through three layers to get there:
+lead-build is the implementation of the Lead language, the declarative build
+language of the Lead Build System. It compiles `.pbb` files into a Ninja build
+file. Source text goes through three layers to get there:
 
 ```
 source text (.pbb)
@@ -31,21 +32,31 @@ filesystem exist — it's generic over a value type and a "file/location" type,
 which `pbbuild` is the one to supply. See each module's own page for why that
 split exists and what it buys.
 
+Two more consumers sit beside that pipeline, both working directly on
+`pblang`'s syntax tree without evaluating anything: the formatter
+(`pblang::fmt`, the `pbfmt` binary) and the language server (`pbls`).
+
 ## Modules
 
 | Module | Page | Role |
 | --- | --- | --- |
-| `pblang` | [pblang.md](pblang.md) | Turns source text into a syntax tree (lexer + grammar + CST) |
+| `pblang` | [pblang.md](pblang.md) | Turns source text into a syntax tree (lexer + grammar + CST), plus the shared tree walk and the formatter |
 | `pbexpr` | [pbexpr.md](pbexpr.md) | The language runtime: lazy expressions, evaluation, matchers, diagnostics |
 | `pbbuild` | [pbbuild.md](pbbuild.md) | Everything specific to this build system: `Value`, paths, builtins, Ninja file generation |
+| `pbls` | — | The language server: LSP features (diagnostics, semantic tokens, goto definition, references, rename, symbols, folding, formatting) derived from the syntax tree |
 | `strkey` | — | `StrKey`: a small interned-string type used everywhere as a cheap, `Copy` map key |
 | `bin/pb` | — | The `pb` CLI binary: wires a `pbbuild::LangContext` up to a root file and writes `build.ninja` |
+| `bin/pbfmt` | — | The `pbfmt` CLI binary: formats or lints `.pbb` files using `pblang::fmt` |
+| `bin/pbls` | — | The `pbls` CLI binary: starts the language server over stdio or a TCP socket |
 
 ## Where does new code go?
 
 - New syntax (an operator, a new expression form)? `pblang` — lexer, grammar,
-  `SyntaxKind` — then teach `pbexpr`'s parser how to turn the new tree shape
-  into an expression.
+  `SyntaxKind` — then describe the new node's shape in `pblang::visit`
+  (`walk_expr`/`walk_matcher` and a `LangVisitor` method). The compiler then
+  points out every consumer that has to handle it: `pbexpr`'s parser, which
+  turns the new tree shape into an expression, and the visitors in `pbls`.
+  Also check whether the formatter (`pblang::fmt`) needs a layout rule for it.
 - A new language semantic (how an operator evaluates, a behavior that
   doesn't need the filesystem or Ninja)? `pbexpr`.
 - Anything environment-specific (a new builtin function, path handling,
