@@ -324,6 +324,28 @@ impl<T: Resolved> LangVisitor for SemanticVisitor<T> {
         Ok(out)
     }
 
+    fn visit_match(
+        &mut self,
+        _range: TextRange,
+        down: &Scope,
+        input: UnvisitedExpr,
+        cases: Vec<(UnvisitedMatcher, UnvisitedExpr)>,
+    ) -> Result<Vec<Entry<T>>, Infallible> {
+        let mut out = input.visit(self, down)?;
+        for (matcher, result) in cases {
+            // Each case's names are visible in that case's result only.
+            let mut scope = down.clone();
+            let (entries, names) = matcher.visit(self, down)?;
+            out.extend(entries);
+            for (range, name) in names {
+                out.push((range, true, Some(T::resolved(VarKind::LetBound, range))));
+                scope = scope.bind_one(&name, VarKind::LetBound, range);
+            }
+            out.extend(result.visit(self, &scope)?);
+        }
+        Ok(out)
+    }
+
     fn visit_object(
         &mut self,
         _range: TextRange,

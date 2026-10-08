@@ -289,6 +289,18 @@ where
                 }
                 out.write_str("}")
             }
+            ExprType::Match(input, cases) => {
+                out.write_str("match ")?;
+                input.export(out)?;
+                out.write_str(" {")?;
+                out.list(cases.iter(), "", |p, (matcher, value)| {
+                    export_matcher(p, matcher)?;
+                    p.write_str("=>")?;
+                    value.export(p)?;
+                    p.write_str(";")
+                })?;
+                out.write_str("}")
+            }
             ExprType::Null => out.write_str("null"),
             ExprType::UnderEval => out.write_str("<being evaluated>"),
         }

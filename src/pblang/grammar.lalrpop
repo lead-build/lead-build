@@ -18,6 +18,7 @@ extern {
         "if"        => Tok::If,
         "for"       => Tok::For,
         "switch"    => Tok::Switch,
+        "match"     => Tok::Match,
         "null"      => Tok::Null,
         "true"      => Tok::True,
         "false"     => Tok::False,
@@ -76,6 +77,7 @@ T_In: GreenSpan = <l:@L> "in" <r:@R> => green_token(SyntaxKind::IN_KW, l, r, "in
 T_If: GreenSpan = <l:@L> "if" <r:@R> => green_token(SyntaxKind::IF_KW, l, r, "if");
 T_For: GreenSpan = <l:@L> "for" <r:@R> => green_token(SyntaxKind::FOR_KW, l, r, "for");
 T_Switch: GreenSpan = <l:@L> "switch" <r:@R> => green_token(SyntaxKind::SWITCH_KW, l, r, "switch");
+T_Match: GreenSpan = <l:@L> "match" <r:@R> => green_token(SyntaxKind::MATCH_KW, l, r, "match");
 T_Null: GreenSpan = <l:@L> "null" <r:@R> => green_token(SyntaxKind::NULL_KW, l, r, "null");
 T_True: GreenSpan = <l:@L> "true" <r:@R> => green_token(SyntaxKind::TRUE_KW, l, r, "true");
 T_False: GreenSpan = <l:@L> "false" <r:@R> => green_token(SyntaxKind::FALSE_KW, l, r, "false");
@@ -286,11 +288,20 @@ ExprSwitch: GreenSpan = {
         children.push(rb);
         green_node(src, SyntaxKind::SWITCH_EXPR, l, r, children)
     },
+    <l:@L> <kw:T_Match> <source:ExprTerm> <lb:T_LBrace> <cases:MatchCase*> <rb:T_RBrace> <r:@R> => {
+        let mut children = vec![kw, source, lb];
+        children.extend(cases);
+        children.push(rb);
+        green_node(src, SyntaxKind::MATCH_EXPR, l, r, children)
+    },
     <ExprTerm>,
 };
 SwitchCase: GreenSpan =
     <l:@L> <matcher:Expr> <fa:T_FatArrow> <value:Expr> <semi:T_Semi> <r:@R> =>
         green_node(src, SyntaxKind::SWITCH_CASE, l, r, vec![matcher, fa, value, semi]);
+MatchCase: GreenSpan =
+    <l:@L> <matcher:Matcher> <fa:T_FatArrow> <value:Expr> <semi:T_Semi> <r:@R> =>
+        green_node(src, SyntaxKind::MATCH_CASE, l, r, vec![matcher, fa, value, semi]);
 
 ExprTerm: GreenSpan = {
     <ExprObject>,

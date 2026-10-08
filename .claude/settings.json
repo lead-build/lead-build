@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cargo clippy *)",
+      "Bash(grep -n \"ExprType::Concat\\(parts\\)\\\\|ExprType::Fold { func, init, input }\\\\|Fold over empty list\\\\|ExprType::Map\\(typ, func, input, filter\\)\\\\|ExprType::UnOp\\(op, expr\\)\\\\|op_string_concat\\\\|Foreach over non-iterable\\\\|Fold over non-list\" /home/pengi/src/lead/lead-build/src/pbexpr/expr.rs)",
+      "Bash(cargo run *)"
+    ]
+  }
+}

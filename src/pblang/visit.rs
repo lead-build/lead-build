@@ -215,6 +215,17 @@ pub trait LangVisitor {
         cases: Vec<(UnvisitedExpr, UnvisitedExpr)>,
         default: Option<UnvisitedExpr>,
     ) -> Result<Self::Expr, Self::Error>;
+    /// Unlike `visit_switch`, each case's pattern side really is a matcher
+    /// (`match` destructures structurally, and binds names for that case's
+    /// result only). There's no separate default: a trailing `_ => ..` is
+    /// just an ordinary case whose matcher is a wildcard.
+    fn visit_match(
+        &mut self,
+        range: TextRange,
+        down: &Self::Down,
+        input: UnvisitedExpr,
+        cases: Vec<(UnvisitedMatcher, UnvisitedExpr)>,
+    ) -> Result<Self::Expr, Self::Error>;
     /// Each item's own `range` is the whole `<key> = <expr> ;` (or bare
     /// `<key> ;` shorthand) statement (an `ASSIGNMENT` node).
     fn visit_object(
@@ -501,6 +512,21 @@ pub fn walk_expr<V: LangVisitor>(
                 }
             }
             v.visit_switch(range, down, UnvisitedExpr(input_node), cases, default)
+        }
+
+        SyntaxKind::MATCH_EXPR => {
+            let mut iter = children.iter();
+            let input_node = iter.next().expect("MATCH_EXPR has an input").clone();
+            let cases = iter
+                .map(|case| {
+                    let cc: Vec<SyntaxNode> = case.children().collect();
+                    (
+                        UnvisitedMatcher(cc[0].clone()),
+                        UnvisitedExpr(cc[1].clone()),
+                    )
+                })
+                .collect();
+            v.visit_match(range, down, UnvisitedExpr(input_node), cases)
         }
 
         SyntaxKind::OBJECT_EXPR => {

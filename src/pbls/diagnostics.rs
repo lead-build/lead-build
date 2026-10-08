@@ -164,6 +164,18 @@ mod tests {
     }
 
     #[test]
+    fn match_case_binding_is_scoped_to_its_own_case() {
+        let doc = OpenDocument::new("match (1, 2) { (a, b) => a + b; _ => 0; }".to_string());
+        assert_eq!(doc.diagnostics(), Vec::new());
+
+        // `a` is bound by the first case only.
+        let doc = OpenDocument::new("match (1, 2) { (a, _) => a; _ => a; }".to_string());
+        let diagnostics = doc.diagnostics();
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].message, "undefined variable `a`");
+    }
+
+    #[test]
     fn bind_bound_reference_is_not_flagged() {
         let doc = OpenDocument::new("bind x = 1; in x".to_string());
         assert_eq!(doc.diagnostics(), Vec::new());

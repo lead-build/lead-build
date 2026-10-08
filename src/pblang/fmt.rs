@@ -388,11 +388,13 @@ fn format_node(node: SyntaxNode) -> Piece {
         // `;`) are flattened directly into this node's children rather
         // than wrapped in their own SWITCH_CASE — they just fall through
         // to the generic per-gap default below like any inline sequence.
-        SyntaxKind::SWITCH_EXPR => {
+        // `match` shares the layout, with MATCH_CASE children and never a
+        // flattened default.
+        SyntaxKind::SWITCH_EXPR | SyntaxKind::MATCH_EXPR => {
             let lbrace_idx = kinds
                 .iter()
                 .position(|k| *k == SyntaxKind::L_BRACE)
-                .expect("SWITCH_EXPR always has a `{`");
+                .expect("SWITCH_EXPR/MATCH_EXPR always has a `{`");
             let mut head = RcDoc::nil();
             for i in 1..=lbrace_idx {
                 head = head
@@ -404,12 +406,14 @@ fn format_node(node: SyntaxNode) -> Piece {
                 // Every case (and the first one right after `{`) starts a
                 // fresh line; anything else here is inside the default
                 // clause's own flattened `_ => expr ;` tokens.
-                let default =
-                    if matches!(kinds[i - 1], SyntaxKind::L_BRACE | SyntaxKind::SWITCH_CASE) {
-                        RcDoc::hardline()
-                    } else {
-                        simple_default(kind, &kinds, i)
-                    };
+                let default = if matches!(
+                    kinds[i - 1],
+                    SyntaxKind::L_BRACE | SyntaxKind::SWITCH_CASE | SyntaxKind::MATCH_CASE
+                ) {
+                    RcDoc::hardline()
+                } else {
+                    simple_default(kind, &kinds, i)
+                };
                 body = body
                     .append(gap_doc(&gaps[i], default))
                     .append(pieces[i].doc.clone());
@@ -602,6 +606,14 @@ mod tests {
         assert_eq!(
             format("switch x{1=>10;2=>20;}"),
             "switch x {\n    1 => 10;\n    2 => 20;\n}"
+        );
+    }
+
+    #[test]
+    fn match_puts_every_case_on_its_own_line() {
+        assert_eq!(
+            format("match x{(a,b)=>a;{c,...}=>c;_=>0;}"),
+            "match x {\n    (a, b) => a;\n    { c, ... } => c;\n    _ => 0;\n}"
         );
     }
 

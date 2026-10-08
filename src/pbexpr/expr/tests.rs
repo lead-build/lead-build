@@ -1091,6 +1091,108 @@ fn test_switch_none() {
 }
 
 #[test]
+fn test_match_tuple_length() {
+    assert_eq!(
+        eval(
+            r#"
+            match (1, 2) {
+                (a,) => a;
+                (a, b) => a + b;
+                (a, b, c) => a + b + c;
+            }
+            "#
+        ),
+        eval("3")
+    );
+}
+
+#[test]
+fn test_match_object_fields() {
+    assert_eq!(
+        eval(
+            r#"
+            match { kind = 2; size = 40; } {
+                { name } => name;
+                { kind, size } => kind + size;
+                _ => 0;
+            }
+            "#
+        ),
+        eval("42")
+    );
+}
+
+#[test]
+fn test_match_nested_and_wildcard() {
+    assert_eq!(
+        eval(
+            r#"
+            match (1, { x = 5; y = 6; }) {
+                (_, (a, b)) => a;
+                (_, { x, ... }@whole) => x + whole.y;
+            }
+            "#
+        ),
+        eval("11")
+    );
+}
+
+#[test]
+fn test_match_binding_shadows_outer_scope() {
+    assert_eq!(
+        eval(
+            r#"
+            let a = 1; b = 10; in
+            match (2, 3) {
+                (a, c) => a + b + c;
+            }
+            "#
+        ),
+        eval("15")
+    );
+}
+
+#[test]
+fn test_match_first_matching_case_wins() {
+    assert_eq!(
+        eval(
+            r#"
+            match 7 {
+                x => x + 1;
+                _ => 0;
+            }
+            "#
+        ),
+        eval("8")
+    );
+}
+
+#[test]
+fn test_match_none_is_error() {
+    let expr: Expr<TestValue, FRef> = ExprType::Bind(
+        ExprSet::new(),
+        parse_str("match 7 { (a, b) => a; { x } => x; }", &FRef).unwrap(),
+    )
+    .builtin();
+    assert!(expr.eval().is_err());
+}
+
+#[test]
+fn test_match_unused_cases_are_lazy() {
+    assert_eq!(
+        eval(
+            r#"
+            match (1, undefined_but_unused) {
+                (a, _) => a;
+                _ => also_undefined;
+            }
+            "#
+        ),
+        eval("1")
+    );
+}
+
+#[test]
 fn test_switch_tuple() {
     assert_eq!(
         eval(

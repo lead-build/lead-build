@@ -16,6 +16,8 @@ pub enum Tok {
     For,
     #[token("switch")]
     Switch,
+    #[token("match")]
+    Match,
     #[token("null")]
     Null,
     #[token("true")]

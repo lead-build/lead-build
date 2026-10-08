@@ -407,6 +407,21 @@ where
         Ok(self.expr(ExprType::Switch(input, cases, default), range))
     }
 
+    fn visit_match(
+        &mut self,
+        range: TextRange,
+        down: &(),
+        input: UnvisitedExpr,
+        cases: Vec<(UnvisitedMatcher, UnvisitedExpr)>,
+    ) -> Result<Expr<T, F>, F> {
+        let input = input.visit(self, down)?;
+        let cases = cases
+            .into_iter()
+            .map(|(matcher, result)| Ok((matcher.visit(self, down)?, result.visit(self, down)?)))
+            .collect::<Result<Vec<_>, F>>()?;
+        Ok(self.expr(ExprType::Match(input, cases), range))
+    }
+
     fn visit_object(
         &mut self,
         range: TextRange,

@@ -67,38 +67,57 @@ where
         }
     }
 
-    pub fn run(&self, expr: Expr<T, F>) -> Result<ExprSet<T, F>, F>
-    where
-        T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
-        F: Clone + Debug + Referrable,
-    {
+    pub fn run(&self, expr: Expr<T, F>) -> Result<ExprSet<T, F>, F> {
+        self.run_checked(expr)?
+    }
+
+    /// Like [`Matcher::run`], but a value that simply doesn't have the
+    /// matcher's shape is `Ok(None)` rather than an error — what `match`
+    /// needs to fall through to its next case. Errors from evaluating the
+    /// value itself still propagate.
+    pub fn try_run(&self, expr: Expr<T, F>) -> Result<Option<ExprSet<T, F>>, F> {
+        Ok(self.run_checked(expr)?.ok())
+    }
+
+    /// The outer `Result` is a failure to evaluate `expr` far enough to
+    /// know its shape; the inner one is `expr` not fitting this matcher.
+    fn run_checked(&self, expr: Expr<T, F>) -> Result<Result<ExprSet<T, F>, F>, F> {
+        macro_rules! sub_match {
+            ($matcher:expr, $expr:expr) => {
+                match $matcher.run_checked($expr)? {
+                    Ok(vars) => vars,
+                    Err(mismatch) => return Ok(Err(mismatch)),
+                }
+            };
+        }
+        let mismatch = |typ, msg: String| Ok(Err(Error::new(typ, msg).reref(&expr.get_loc())));
+
         match self {
             Matcher::Alias(matcher, name) => {
-                let mut output = matcher.run(expr.clone())?;
+                let mut output = sub_match!(matcher, expr.clone());
                 // TODO: Check if overlapping keysets
                 output.insert(*name, expr);
-                Ok(output)
+                Ok(Ok(output))
             }
-            Matcher::DontCare => Ok(ExprSet::new()),
-            Matcher::Ident(name) => Ok(ExprSet::from([(*name, expr)])),
+            Matcher::DontCare => Ok(Ok(ExprSet::new())),
+            Matcher::Ident(name) => Ok(Ok(ExprSet::from([(*name, expr)]))),
             Matcher::Tuple(matchers) => match &expr.res_type()?.tok {
                 ExprType::Tuple(exprs) => {
                     if exprs.len() != matchers.len() {
-                        Err(Error::new(
+                        return mismatch(
                             ErrorType::Type,
                             format!("Expected tuple of length {}", matchers.len()),
-                        )
-                        .reref(&expr.get_loc()))?;
+                        );
                     }
                     let mut output = ExprSet::new();
                     for (itmatch, itexpr) in zip(matchers, exprs) {
-                        let mut subvars = itmatch.run(itexpr.clone())?;
+                        let mut subvars = sub_match!(itmatch, itexpr.clone());
                         // TODO: Check if overlapping keysets
                         output.append(&mut subvars);
                     }
-                    Ok(output)
+                    Ok(Ok(output))
                 }
-                _ => Err(Error::new(ErrorType::Type, "Expected tuple").reref(&expr.get_loc())),
+                _ => mismatch(ErrorType::Type, "Expected tuple".to_string()),
             },
             Matcher::Object(items, need_all) => match &expr.res_type()?.tok {
                 ExprType::Object(exprs) => {
@@ -106,31 +125,29 @@ where
                     let mut output = ExprSet::new();
 
                     for (itname, itmatch, itdefault) in items.iter() {
-                        let in_expr = input
-                            .remove(itname)
-                            .or_else(|| itdefault.clone())
-                            .ok_or_else(|| {
-                                Error::new(
-                                    ErrorType::NoValue,
-                                    format!("Expected field '{}' not found", itname),
-                                )
-                                .reref(&expr.get_loc()) // TODO: Add location of matcher
-                            })?;
-                        let mut subvars = itmatch.run(in_expr.clone())?;
+                        let Some(in_expr) = input.remove(itname).or_else(|| itdefault.clone())
+                        else {
+                            // TODO: Add location of matcher
+                            return mismatch(
+                                ErrorType::NoValue,
+                                format!("Expected field '{}' not found", itname),
+                            );
+                        };
+                        let mut subvars = sub_match!(itmatch, in_expr);
                         // TODO: Check if overlapping keysets
                         output.append(&mut subvars);
                     }
 
                     if *need_all && !input.is_empty() {
-                        Err(
-                            Error::new(ErrorType::NoValue, "Extra fields passed to function")
-                                .reref(&expr.get_loc()),
-                        )?
+                        return mismatch(
+                            ErrorType::NoValue,
+                            "Extra fields passed to function".to_string(),
+                        );
                     }
 
-                    Ok(output)
+                    Ok(Ok(output))
                 }
-                _ => Err(Error::new(ErrorType::Type, "Expected tuple").reref(&expr.get_loc())),
+                _ => mismatch(ErrorType::Type, "Expected tuple".to_string()),
             },
         }
     }

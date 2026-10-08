@@ -157,6 +157,8 @@ where
         Vec<(Expr<T, F>, Expr<T, F>)>,
         Option<Expr<T, F>>,
     ),
+    #[strum(message = "match expression")]
+    Match(Expr<T, F>, Vec<(Matcher<T, F>, Expr<T, F>)>),
     #[strum(message = "null expression")]
     Null,
     #[default]
@@ -576,6 +578,7 @@ where
             ExprType::FuncCall { .. } => true,
             ExprType::Bind(..) => true,
             ExprType::Switch(..) => true,
+            ExprType::Match(..) => true,
             ExprType::Null => false,
             ExprType::UnderEval => true, // To catch an error later...
         } {
@@ -753,6 +756,17 @@ where
                             .map(|(m, e)| (m.bind(&varspace), e.bind(&varspace)))
                             .collect(),
                         inner_default.as_ref().map(|e| e.bind(&varspace)),
+                    )
+                    .loc(loc)),
+                    ExprStorage {
+                        tok: ExprType::Match(inner_expr, inner_cases),
+                        ..
+                    } => Ok(ExprType::Match(
+                        inner_expr.bind(&varspace),
+                        inner_cases
+                            .iter()
+                            .map(|(m, e)| (m.bind_defaults(&varspace), e.bind(&varspace)))
+                            .collect(),
                     )
                     .loc(loc)),
                     ExprStorage {
@@ -1068,6 +1082,38 @@ where
                             )
                             .reref(&loc))
                         }
+                    }
+                }
+                ExprStorage {
+                    tok: ExprType::Match(ref_expr, cases),
+                    loc,
+                } => {
+                    let mut outcome = None;
+                    for (matcher, case_expr) in cases.iter() {
+                        if let Some(vars) = matcher
+                            .try_run(ref_expr.clone())
+                            .map_err(|e| e.reref(&loc))?
+                        {
+                            outcome = Some((vars, case_expr));
+                            break;
+                        }
+                    }
+
+                    if let Some((mut vars, case_expr)) = outcome {
+                        // Same as a FuncCall: the names bound by the matcher
+                        // take priority over the scope the case was bound in
+                        let (mut bound, body) = match &case_expr.inner_ref().tok {
+                            ExprType::Bind(bound, body) => (bound.clone(), body.clone()),
+                            _ => (ExprSet::new(), case_expr.clone()),
+                        };
+                        bound.append(&mut vars);
+                        Ok(body.bind(&bound).inner_ref().clone())
+                    } else {
+                        Err(Error::new(
+                            ErrorType::Eval,
+                            format!("No matching case for {}", ref_expr.diag()),
+                        )
+                        .reref(&loc))
                     }
                 }
                 ExprStorage {

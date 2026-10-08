@@ -257,6 +257,20 @@ impl LangVisitor for SymbolVisitor<'_> {
         Ok(out)
     }
 
+    fn visit_match(
+        &mut self,
+        _range: TextRange,
+        down: &(),
+        input: UnvisitedExpr,
+        cases: Vec<(UnvisitedMatcher, UnvisitedExpr)>,
+    ) -> Result<Vec<DocumentSymbol>, Infallible> {
+        let mut out = input.visit(self, down)?;
+        for (_, result) in cases {
+            out.extend(result.visit(self, down)?);
+        }
+        Ok(out)
+    }
+
     fn visit_object(
         &mut self,
         _range: TextRange,

@@ -25,6 +25,12 @@ let
         _ => 30;
     }) == 20;
 
+    match_ok = (match (2, { scale = 10; }) {
+        (n,) => n;
+        (n, { scale }) => n * scale;
+        _ => 0;
+    }) == 20;
+
     include_ok =
         (lib.value == 99)
         && ((lib.inc 41) == 42)
@@ -36,4 +42,5 @@ in
     && list_ok
     && map_ok
     && switch_ok
+    && match_ok
     && include_ok

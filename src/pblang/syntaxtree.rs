@@ -50,6 +50,7 @@ pub enum SyntaxKind {
     IF_KW,
     FOR_KW,
     SWITCH_KW,
+    MATCH_KW,
     NULL_KW,
     TRUE_KW,
     FALSE_KW,
@@ -145,6 +146,11 @@ pub enum SyntaxKind {
     SWITCH_EXPR,
     /// `SwitchCase` — `<matcher> => <expr> ;`.
     SWITCH_CASE,
+    /// `PbNodeKind::Match` — `match <expr> { <MATCH_CASE>* }`.
+    MATCH_EXPR,
+    /// `MatchCase` — `<matcher> => <expr> ;`. Unlike `SWITCH_CASE`, the
+    /// left-hand side really is a matcher node, not an expression.
+    MATCH_CASE,
     /// `PbNodeKind::Object` — `{ <ASSIGNMENT>* }`.
     OBJECT_EXPR,
     /// `PbNodeKind::List` — `[ <expr>,* ]`.
