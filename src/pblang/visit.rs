@@ -402,7 +402,7 @@ pub fn walk_expr<V: LangVisitor>(
     let children: Vec<SyntaxNode> = node.children().collect();
 
     match node.kind() {
-        SyntaxKind::GROUP_EXPR => walk_expr(&children[0], v, down),
+        SyntaxKind::ROOT | SyntaxKind::GROUP_EXPR => walk_expr(&children[0], v, down),
 
         SyntaxKind::LET_EXPR => {
             let body_node = children.last().expect("LET_EXPR has a body").clone();

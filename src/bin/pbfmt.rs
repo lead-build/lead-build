@@ -59,7 +59,7 @@ fn run_file(file: Option<&PathBuf>, args: &Args) -> Result<(), String> {
     let tree = parsed.tree.expect("checked above");
 
     if args.lint {
-        println!("{}", tree.text());
+        print!("{}", tree.text());
     } else {
         let formatted = format_tree(&tree).text().to_string();
         if args.in_place {

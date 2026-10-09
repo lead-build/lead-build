@@ -85,10 +85,10 @@ impl Elem {
 
 /// Non-trivia children of `node`, plus the raw trivia text found between
 /// them: `gaps[i]` is the text between `elems[i - 1]` and `elems[i]`
-/// (`gaps[0]` is before the first element). There's no meaningful trailing
-/// gap after the last element to also capture: every node's own span ends
-/// exactly at its last real child's end (see `syntaxtree::green_node`), so
-/// nothing is ever lost by not tracking one.
+/// (`gaps[0]` is before the first element), and the last entry is the text
+/// after the last element. Those two outer gaps are only ever non-empty for
+/// `ROOT`: every other node's own span starts and ends exactly at its
+/// first/last real child (see `syntaxtree::green_node`).
 fn real_children(node: &SyntaxNode) -> (Vec<String>, Vec<Elem>) {
     let mut gaps = vec![String::new()];
     let mut elems = Vec::new();
@@ -232,6 +232,21 @@ fn format_node(node: SyntaxNode) -> Piece {
     let n = pieces.len();
 
     let doc = match kind {
+        // The whole file: the expression itself, with any comments from
+        // before its first token / after its last one kept on their own
+        // lines above / below it.
+        SyntaxKind::ROOT => {
+            let mut doc = RcDoc::nil();
+            for comment in comments_in(&gaps[0]) {
+                doc = doc.append(RcDoc::text(comment)).append(RcDoc::hardline());
+            }
+            doc = doc.append(pieces[0].doc.clone());
+            for comment in comments_in(&gaps[n]) {
+                doc = doc.append(RcDoc::hardline()).append(RcDoc::text(comment));
+            }
+            doc
+        }
+
         // Width-aware: one line if it fits, one item per line (indented)
         // if it doesn't. This is the one place actually using `pretty`'s
         // group/line mechanism instead of a fixed rule — the whole reason
@@ -468,13 +483,13 @@ mod tests {
 
     #[test]
     fn trailing_newline_is_always_exactly_one() {
-        let tree = parse("1").tree.unwrap();
+        let tree = format_tree(&parse("1").tree.unwrap());
         assert_eq!(tree.text().to_string(), "1");
 
-        let tree = parse("1\n\n\n").tree.unwrap();
+        let tree = format_tree(&parse("1\n\n\n").tree.unwrap());
         assert_eq!(tree.text().to_string(), "1");
 
-        let tree = parse("1\n").tree.unwrap();
+        let tree = format_tree(&parse("1\n").tree.unwrap());
         assert_eq!(tree.text().to_string(), "1");
     }
 
@@ -664,6 +679,14 @@ mod tests {
         assert_eq!(
             format("let\n# hello\na=1;\nin a"),
             "let\n    # hello\n    a = 1;\nin\na"
+        );
+    }
+
+    #[test]
+    fn comments_around_the_whole_expression_are_preserved() {
+        assert_eq!(
+            format("# header\n#\n# more\n\n|x| x # tail\n# end\n"),
+            "# header\n#\n# more\n|x| x\n# tail\n# end"
         );
     }
 

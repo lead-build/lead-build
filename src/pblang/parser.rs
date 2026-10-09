@@ -1,6 +1,6 @@
 use super::{
     lexer::{self, LexError, Lexer},
-    syntaxtree::SyntaxNode,
+    syntaxtree::{SyntaxKind, SyntaxNode, green_node},
 };
 use lalrpop_util::lalrpop_mod;
 
@@ -33,12 +33,13 @@ pub fn parse(code: &str) -> Parsed {
     let mut errors = Vec::new();
     let tree = grammar::ExprParser::new()
         .parse(code, &mut errors, tokens)
-        .map(|root| {
-            SyntaxNode::new_root(
-                root.green
-                    .into_node()
-                    .expect("the top-level Expr rule always produces a node"),
-            )
+        .map(|expr| {
+            // The expression's own span starts at its first token and ends
+            // at its last, so wrap it in a `ROOT` covering the whole source:
+            // that keeps the comments/whitespace around it in the tree, and
+            // with them every node's offset relative to the file's start.
+            let root = green_node(code, SyntaxKind::ROOT, 0, code.len(), vec![expr]);
+            SyntaxNode::new_root(root.green.into_node().expect("green_node builds a node"))
         });
     Parsed { tree, errors }
 }
@@ -79,18 +80,27 @@ mod tests {
                 path.display(),
                 parsed.errors
             );
-            let output = tree.text().to_string();
-
-            // The tree is byte-exact within the parsed expression's own
-            // span, comments included (TRIVIA holds the real source bytes
-            // for gaps between tokens). Trivia outside that span — e.g. a
-            // trailing comment after the file's last token — isn't
-            // captured, so this still strips whitespace before comparing
-            // rather than requiring byte-for-byte equality.
-            let clean_source: String = source.chars().filter(|c| !c.is_whitespace()).collect();
-            let clean_output: String = output.chars().filter(|c| !c.is_whitespace()).collect();
-
-            assert_eq!(clean_output, clean_source, "fixture {}", path.display());
+            // The tree is byte-exact, comments included: TRIVIA holds the
+            // real source bytes for gaps between tokens, and `ROOT` those
+            // before the first token and after the last.
+            assert_eq!(
+                tree.text().to_string(),
+                source,
+                "fixture {}",
+                path.display()
+            );
         }
+    }
+
+    #[test]
+    fn leading_and_trailing_trivia_keep_offsets_relative_to_the_source() {
+        let source = "# header\n\nfoo # trailing\n";
+        let tree = parse(source).tree.unwrap();
+        assert_eq!(tree.text().to_string(), source);
+        let expr = tree.children().next().unwrap();
+        assert_eq!(
+            usize::from(expr.text_range().start()),
+            source.find("foo").unwrap()
+        );
     }
 }

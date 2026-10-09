@@ -14,9 +14,11 @@
 //! of the source and stashing them as an untyped `TRIVIA` token — so the
 //! tree ends up byte-exact for anything within the span of the outermost
 //! parsed node, without the lexer needing to understand trivia as a real
-//! token kind. What that *doesn't* cover is trivia outside that outermost
-//! node's own span (e.g. a comment before the file's first token) — there's
-//! no node to attribute it to.
+//! token kind. Trivia outside the outermost expression's own span (e.g. a
+//! comment before the file's first token) is covered the same way by
+//! [`super::parse`], which wraps that expression in a `ROOT` node spanning
+//! the whole source — so every offset in the tree is an offset into the
+//! source file.
 
 use rowan::{GreenNode, GreenToken, NodeOrToken};
 
@@ -111,6 +113,9 @@ pub enum SyntaxKind {
     ERROR,
 
     // --- nodes (composites, from `PbNodeKind` and friends) ---
+    /// The whole source file: the single top-level expression, plus any
+    /// `TRIVIA` before and after it. Always the tree's root, never nested.
+    ROOT,
     /// `PbNodeKind::Group` — `( <expr> )`.
     GROUP_EXPR,
     /// `PbNodeKind::Let` — `let <LET_BINDING>* in <expr>`.
@@ -255,9 +260,10 @@ pub fn green_token(kind: SyntaxKind, start: usize, end: usize, text: &str) -> Gr
 /// reconstructs `source[start..end]` exactly, even though the lexer itself
 /// still only sees real tokens and skips whitespace/comments between them.
 ///
-/// (What this doesn't cover: leading/trailing trivia *outside* the
-/// outermost parsed node — e.g. a comment before the very first token of a
-/// file — since there's no node whose span it could be attributed to.)
+/// (Leading/trailing trivia *outside* the outermost parsed expression —
+/// e.g. a comment before the very first token of a file — is picked up the
+/// same way, by [`super::parse`] wrapping that expression in a `ROOT` node
+/// covering the whole source.)
 pub fn green_node(
     source: &str,
     kind: SyntaxKind,

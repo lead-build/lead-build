@@ -264,6 +264,14 @@ mod tests {
     }
 
     #[test]
+    fn leading_comment_lines_do_not_shift_token_positions() {
+        let tokens = tokens_for("# cwd is a comment here\n|cwd| cwd");
+        assert_eq!(tokens.len(), 2);
+        assert_eq!((tokens[0].delta_line, tokens[0].delta_start), (1, 1));
+        assert_eq!((tokens[1].delta_line, tokens[1].delta_start), (0, 5));
+    }
+
+    #[test]
     fn func_arg_is_colored_as_a_parameter_at_both_sites() {
         let tokens = tokens_for("|x| x");
         assert_eq!(tokens.len(), 2);
