@@ -35,8 +35,9 @@
 //!   only risks a wonky nearby line break, not corrupted output.)
 //! - Comments are preserved (recovered from the original trivia and
 //!   re-emitted on their own line, forcing a break at that point — a
-//!   comment can never be part of a single-line rendering), but *only*
-//!   comments — blank-line layout and exact spacing are not preserved.
+//!   comment can never be part of a single-line rendering). Blank lines are
+//!   preserved the same way, with runs longer than [`MAX_BLANK_LINES`]
+//!   collapsed down to it; exact spacing otherwise is not preserved.
 
 use super::syntaxtree::{SyntaxKind, SyntaxNode, SyntaxToken};
 use pretty::RcDoc;
@@ -110,34 +111,80 @@ fn real_children(node: &SyntaxNode) -> (Vec<String>, Vec<Elem>) {
     (gaps, elems)
 }
 
-/// Pulls `#`-comments out of a raw trivia blob, trimmed, in order. This is
-/// the only thing recovered from the original trivia text — everything
-/// else about it (exact whitespace, blank lines) is discarded.
-fn comments_in(gap: &str) -> Vec<String> {
-    gap.lines()
-        .map(str::trim)
-        .filter(|line| line.starts_with('#'))
-        .map(str::to_string)
-        .collect()
+/// The most consecutive blank lines kept from the original source; longer
+/// runs are collapsed down to this many.
+const MAX_BLANK_LINES: usize = 2;
+
+/// What's recovered from a raw trivia blob: its `#`-comments (trimmed) and
+/// its blank lines, in order. Everything else about it (exact spacing,
+/// whether a comment shared a line with the token before it) is discarded.
+#[derive(Clone, PartialEq)]
+enum Trivia {
+    Comment(String),
+    BlankLine,
+}
+
+/// Splits `gap` into [`Trivia`], with runs of blank lines capped at
+/// [`MAX_BLANK_LINES`]. Only the lines strictly between the gap's first and
+/// last `\n` can be blank lines: the part before the first `\n` is the end
+/// of the previous token's line, and the part after the last one is the
+/// start of the next token's.
+fn trivia_in(gap: &str) -> Vec<Trivia> {
+    let lines: Vec<&str> = gap.split('\n').collect();
+    let last = lines.len() - 1;
+    let mut items = Vec::new();
+    let mut blanks = 0;
+    for (i, line) in lines.iter().enumerate() {
+        let line = line.trim();
+        if line.starts_with('#') {
+            items.push(Trivia::Comment(line.to_string()));
+            blanks = 0;
+        } else if line.is_empty() && i != 0 && i != last {
+            blanks += 1;
+            if blanks <= MAX_BLANK_LINES {
+                items.push(Trivia::BlankLine);
+            }
+        }
+    }
+    items
+}
+
+/// Renders `items` as a sequence of fresh lines: each comment on its own
+/// line, and each blank line as one extra line break. `pretty` writes a
+/// `hardline`'s indentation eagerly, using the indent of whatever comes
+/// right after it — so a blank line's break is followed by an empty doc
+/// un-nested back to column 0, or the blank line would get trailing spaces.
+/// (That empty doc is a no-op `column`, since a plain empty `text`/`nil`
+/// gets optimized away by `append`.)
+fn trivia_doc(items: &[Trivia]) -> Doc {
+    let mut doc = RcDoc::nil();
+    for item in items {
+        doc = doc.append(match item {
+            Trivia::Comment(text) => RcDoc::hardline().append(RcDoc::text(text.clone())),
+            Trivia::BlankLine => RcDoc::nesting(|indent| {
+                RcDoc::hardline()
+                    .append(RcDoc::column(|_| RcDoc::nil()))
+                    .nest(-(indent as isize))
+            }),
+        });
+    }
+    doc
 }
 
 /// The `Doc` to place between two adjacent pieces, given what `default`
-/// would otherwise be. If `gap`'s original trivia held any comments, they
-/// always win: each gets emitted on its own line via `hardline`, followed
-/// by one more `hardline` before whatever comes next — regardless of what
+/// would otherwise be. If `gap`'s original trivia held any comments or
+/// blank lines, they always win: each comment gets emitted on its own line
+/// via `hardline` (each blank line as an extra `hardline`), followed by one
+/// more `hardline` before whatever comes next — regardless of what
 /// `default` was — because a comment runs to the end of its line, so
 /// *anything* placed right after one without a real line break would
 /// silently become part of the comment once re-parsed.
 fn gap_doc(gap: &str, default: Doc) -> Doc {
-    let comments = comments_in(gap);
-    if comments.is_empty() {
+    let items = trivia_in(gap);
+    if items.is_empty() {
         return default;
     }
-    let mut doc = RcDoc::nil();
-    for comment in comments {
-        doc = doc.append(RcDoc::hardline()).append(RcDoc::text(comment));
-    }
-    doc.append(RcDoc::hardline())
+    trivia_doc(&items).append(RcDoc::hardline())
 }
 
 /// Like [`gap_doc`], but for the gap right before a block's closing
@@ -149,15 +196,11 @@ fn gap_doc(gap: &str, default: Doc) -> Doc {
 /// trailing separator here is deliberately *outside* the content's `nest`
 /// so the closing token lands back at the outer indent).
 fn closing_gap_doc(gap: &str, trailing: Doc) -> Doc {
-    let comments = comments_in(gap);
-    if comments.is_empty() {
+    let items = trivia_in(gap);
+    if items.is_empty() {
         return trailing;
     }
-    let mut doc = RcDoc::nil();
-    for comment in comments {
-        doc = doc.append(RcDoc::hardline()).append(RcDoc::text(comment));
-    }
-    doc.nest(INDENT).append(trailing)
+    trivia_doc(&items).nest(INDENT).append(trailing)
 }
 
 fn format_elem(elem: Elem) -> Piece {
@@ -236,15 +279,33 @@ fn format_node(node: SyntaxNode) -> Piece {
         // before its first token / after its last one kept on their own
         // lines above / below it.
         SyntaxKind::ROOT => {
+            // Blank lines at the very start/end of the file are dropped;
+            // ones between the header/footer comments and the expression
+            // are kept like anywhere else.
+            let mut head = trivia_in(&gaps[0]);
+            let first_comment = head
+                .iter()
+                .position(|item| *item != Trivia::BlankLine)
+                .unwrap_or(head.len());
+            head.drain(..first_comment);
+            let mut tail = trivia_in(&gaps[n]);
+            while tail.last() == Some(&Trivia::BlankLine) {
+                tail.pop();
+            }
             let mut doc = RcDoc::nil();
-            for comment in comments_in(&gaps[0]) {
-                doc = doc.append(RcDoc::text(comment)).append(RcDoc::hardline());
+            if !head.is_empty() {
+                // `trivia_doc` starts each item with a line break; the
+                // file's first line has none to start with, so render the
+                // rest from there and break once more before the body.
+                let first = match &head[0] {
+                    Trivia::Comment(text) => RcDoc::text(text.clone()),
+                    Trivia::BlankLine => unreachable!("trimmed above"),
+                };
+                doc = first
+                    .append(trivia_doc(&head[1..]))
+                    .append(RcDoc::hardline());
             }
-            doc = doc.append(pieces[0].doc.clone());
-            for comment in comments_in(&gaps[n]) {
-                doc = doc.append(RcDoc::hardline()).append(RcDoc::text(comment));
-            }
-            doc
+            doc.append(pieces[0].doc.clone()).append(trivia_doc(&tail))
         }
 
         // Width-aware: one line if it fits, one item per line (indented)
@@ -686,8 +747,40 @@ mod tests {
     fn comments_around_the_whole_expression_are_preserved() {
         assert_eq!(
             format("# header\n#\n# more\n\n|x| x # tail\n# end\n"),
-            "# header\n#\n# more\n|x| x\n# tail\n# end"
+            "# header\n#\n# more\n\n|x| x\n# tail\n# end"
         );
+    }
+
+    #[test]
+    fn single_and_double_blank_lines_are_preserved() {
+        assert_eq!(
+            format("let\na=1;\n\nb=2;\n\n\nc=3;\nin a"),
+            "let\n    a = 1;\n\n    b = 2;\n\n\n    c = 3;\nin\na"
+        );
+        assert_eq!(
+            format("{a=1;\n\n# c\n\nb=2;}"),
+            "{\n    a = 1;\n\n    # c\n\n    b = 2;\n}"
+        );
+    }
+
+    #[test]
+    fn longer_runs_of_blank_lines_collapse_to_two() {
+        assert_eq!(
+            format("{a=1;\n\n\n\n\n\nb=2;}"),
+            "{\n    a = 1;\n\n\n    b = 2;\n}"
+        );
+    }
+
+    #[test]
+    fn blank_lines_at_the_start_and_end_of_the_file_are_dropped() {
+        assert_eq!(format("\n\n# c\n\n\n1\n\n# d\n\n\n"), "# c\n\n\n1\n\n# d");
+    }
+
+    #[test]
+    fn format_tree_is_idempotent_with_blank_lines() {
+        let source = "# c\n\nlet\na=1;\n\n\n\nb={x=2;\n\ny=3;};\nin a+b.x\n";
+        let once = format(source);
+        assert_eq!(once, format(&once));
     }
 
     #[test]
