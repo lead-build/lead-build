@@ -6,6 +6,7 @@ use std::{
 
 use super::super::{
     build::{PbBuild, PbBuildRule},
+    glob::Glob,
     ninjawriter::NinjaArg,
     path::VirtPath,
     value::Value,
@@ -556,12 +557,68 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbRebase {
     }
 }
 
+#[derive(Debug)]
+pub struct BuiltinPbMatch;
+
+impl<F> ExprBuiltin<Value, F> for BuiltinPbMatch
+where
+    F: Clone + Debug + Referrable,
+{
+    fn get_name(&self) -> StrKey {
+        "matches".into()
+    }
+
+    fn call(&self, arg: Expr<Value, F>) -> Result<Expr<Value, F>, F> {
+        let loc = arg.get_loc();
+        let pattern = match arg.value().map_err(|e| e.reref(&loc))? {
+            Value::String(pattern) => Glob::new(&pattern).map_err(|e| {
+                Error::new(ErrorType::Custom, format!("pb.matches: invalid pattern: {}", e))
+                    .reref(&loc)
+            }),
+            _ => Err(Error::new(
+                ErrorType::Type,
+                format!("pb.matches expects a string pattern, got {}", arg.diag()),
+            )
+            .reref(&loc)),
+        }?;
+        Ok(ExprType::new_builtin(BuiltinPbMatchPattern(pattern)).reref(loc))
+    }
+}
+
+#[derive(Debug)]
+pub struct BuiltinPbMatchPattern(Glob);
+
+impl<F> ExprBuiltin<Value, F> for BuiltinPbMatchPattern
+where
+    F: Clone + Debug + Referrable,
+{
+    fn get_name(&self) -> StrKey {
+        "matches".into()
+    }
+
+    fn call(&self, arg: Expr<Value, F>) -> Result<Expr<Value, F>, F> {
+        let BuiltinPbMatchPattern(pattern) = &self;
+        let loc = arg.get_loc();
+        let subject = match arg.value().map_err(|e| e.reref(&loc))? {
+            Value::String(subject) => Ok(subject),
+            Value::Path { path, .. } => Ok(path.to_unlocked_string()),
+            _ => Err(Error::new(
+                ErrorType::Type,
+                format!("pb.matches expects a path or string, got {}", arg.diag()),
+            )
+            .reref(&loc)),
+        }?;
+        Ok(ExprType::Value(Value::Bool(pattern.is_match(&subject))).reref(loc))
+    }
+}
+
 pub fn get_pb_builtins() -> Result<Expr<Value, VirtPath>, VirtPath> {
     let pbset = ExprSet::from([
         ("lock".into(), Expr::new_builtin(BuiltinPbLock)),
         ("rule".into(), Expr::new_builtin(BuiltinPbRule)),
         ("translate".into(), Expr::new_builtin(BuiltinPbTranslate)),
         ("rebase".into(), Expr::new_builtin(BuiltinPbRebase)),
+        ("matches".into(), Expr::new_builtin(BuiltinPbMatch)),
     ]);
     Ok(ExprType::Object(pbset).builtin())
 }

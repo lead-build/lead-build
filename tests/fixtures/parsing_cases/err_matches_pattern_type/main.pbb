@@ -1,0 +1,2 @@
+|{ pb, ... }|
+pb.matches 1 "main.c"

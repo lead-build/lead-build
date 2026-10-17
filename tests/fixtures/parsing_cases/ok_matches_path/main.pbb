@@ -1,0 +1,9 @@
+|{ cwd, pb, ... }|
+let
+    is_c = pb.matches "*.c";
+    in_src = pb.matches "**/src/**";
+in
+is_c "${cwd}/src/main.c"
+    && !(is_c "${cwd}/src/main.h")
+    && in_src "${cwd}/src/sub/main.c"
+    && !(in_src "${cwd}/lib/main.c")

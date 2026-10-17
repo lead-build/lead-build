@@ -1,0 +1,5 @@
+|{ cwd, pb, ... }|
+let
+    sub = pb.lock "${cwd}/sub";
+in
+(pb.matches "a/*.c" "${sub}/a/main.c") && !(pb.matches "sub/**" "${sub}/a/main.c")

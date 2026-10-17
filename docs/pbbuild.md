@@ -35,7 +35,7 @@ here too (`add_builtin`), on top of the defaults from `builtins::get_builtins`.
 scripts as `Expr` values (each implementing `pbexpr::ExprBuiltin`):
 
 - **`builtins/pb.rs`** — the build-graph primitives: `rule`, `build`,
-  `lock`, `translate`, `rebase`. `rule`/`build` are what actually construct
+  `lock`, `translate`, `rebase`, `matches`. `rule`/`build` are what actually construct
   `PbBuildRule`/`PbBuild` (defined in `pbbuild.rs` itself) and attach them
   as the `depends` of a `Value::Path`.
 - **`builtins/ops.rs`** — general-purpose helpers (`zip`, ...) that don't

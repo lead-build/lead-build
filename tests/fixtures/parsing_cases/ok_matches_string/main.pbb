@@ -1,0 +1,2 @@
+|{ pb, ... }|
+(pb.matches "src/*.[ch]" "src/main.h") && !(pb.matches "src/*.[ch]" "src/sub/main.h")

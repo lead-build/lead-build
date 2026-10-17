@@ -156,6 +156,12 @@ impl VirtPath {
         cur_path
     }
 
+    /// The unlocked part of the path, with `/` as separator. Independent of
+    /// where the build is located in the file system.
+    pub fn to_unlocked_string(&self) -> String {
+        self.parts.join("/")
+    }
+
     pub fn to_path_buf_rebase<F: Clone>(&self, base: &VirtPath) -> Result<PathBuf, F> {
         let self_path = self.to_path_buf();
         let base_path = base.to_path_buf();

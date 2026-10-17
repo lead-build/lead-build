@@ -1,6 +1,7 @@
 mod build;
 mod builtins;
 mod context;
+mod glob;
 mod ninjaexpr;
 mod ninjawriter;
 mod path;
