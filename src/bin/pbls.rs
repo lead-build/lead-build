@@ -1,30 +1,8 @@
-use clap::{ArgGroup, CommandFactory, Parser, error::ErrorKind};
-use lead_build::pbls::Backend;
+use clap::{CommandFactory, Parser, error::ErrorKind};
+use lead_build::{cli::pbls::Args, pbls::Backend};
 use std::process::ExitCode;
 use tokio::net::TcpListener;
 use tower_lsp::{LspService, Server};
-
-#[derive(Parser, Debug)]
-#[command(name = "pbls", version, about, long_about = None)]
-#[command(group(ArgGroup::new("transport").args(["stdio", "socket"])))]
-struct Args {
-    /// Communicate over stdio.
-    #[arg(long, group = "transport", help_heading = "Transport")]
-    stdio: bool,
-
-    /// Communicate over a TCP socket bound to this port on localhost.
-    #[arg(
-        long,
-        group = "transport",
-        value_name = "PORT",
-        help_heading = "Transport"
-    )]
-    socket: Option<u16>,
-
-    /// Host to bind the TCP socket to. Only valid together with --socket.
-    #[arg(long, value_name = "HOST", help_heading = "Transport")]
-    bind_host: Option<String>,
-}
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> ExitCode {

@@ -32,6 +32,9 @@ assets = [
     ["target/release/pbfmt", "usr/bin/", "755"],
     ["target/release/pbls", "usr/bin/", "755"],
     ["README.md", "usr/share/doc/lead-build/", "644"],
+    ["target/man/pb.1.gz", "usr/share/man/man1/", "644"],
+    ["target/man/pbfmt.1.gz", "usr/share/man/man1/", "644"],
+    ["target/man/pbls.1.gz", "usr/share/man/man1/", "644"],
 ]
 
 [package.metadata.generate-rpm]
@@ -41,6 +44,9 @@ assets = [
     { source = "target/release/pbls", dest = "/usr/bin/pbls", mode = "755" },
     { source = "LICENSE", dest = "/usr/share/licenses/lead-build/LICENSE", mode = "644", doc = true },
     { source = "README.md", dest = "/usr/share/doc/lead-build/README.md", mode = "644", doc = true },
+    { source = "target/man/pb.1.gz", dest = "/usr/share/man/man1/pb.1.gz", mode = "644", doc = true },
+    { source = "target/man/pbfmt.1.gz", dest = "/usr/share/man/man1/pbfmt.1.gz", mode = "644", doc = true },
+    { source = "target/man/pbls.1.gz", dest = "/usr/share/man/man1/pbls.1.gz", mode = "644", doc = true },
 ]
 
 [build-dependencies]
@@ -62,5 +68,6 @@ tokio = { version = "1", features = ["rt", "macros", "io-std", "net"] }
 tower-lsp = "0.20.0"
 
 [dev-dependencies]
+clap_mangen = "0.3.3"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"

@@ -1,3 +1,4 @@
+pub mod cli;
 pub mod pbbuild;
 pub mod pbexpr;
 pub mod pblang;

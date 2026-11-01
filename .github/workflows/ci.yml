@@ -62,12 +62,16 @@ jobs:
     steps:
       - name: Install build tools
         if: matrix.container
-        run: dnf install -y gcc git
+        run: dnf install -y gcc git gzip
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.name }}
+      - name: Generate man pages
+        run: |
+          cargo run --release --example mangen -- target/man
+          gzip -9nf target/man/*.1
       - name: Build deb
         if: matrix.kind == 'deb'
         run: |

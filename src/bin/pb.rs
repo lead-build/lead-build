@@ -1,6 +1,7 @@
-use clap::{ArgAction, Parser};
+use clap::Parser;
 use lead_build::{
     Expr, LangContext, Result, Value, add_expr_to_ninjafile,
+    cli::pb::Args,
     pbbuild::{NinjaFile, VirtPath},
     pbexpr::{Error, ErrorType, ExprSet, ExprType},
     strkey::StrKey,
@@ -12,50 +13,6 @@ use std::{
     path::PathBuf,
     process::exit,
 };
-
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    /// Root description file
-    #[arg(short, long)]
-    input: Option<PathBuf>,
-
-    /// Root description file
-    #[arg(short, long)]
-    output: Option<PathBuf>,
-
-    /// Change directory before invoking command
-    #[arg(short = 'C', value_name = "DIR")]
-    cd: Option<PathBuf>,
-
-    /// Add paths to the top level args object, which is accessible as file
-    /// arguments to the main pbb file.
-    #[arg(
-        short = 'P',
-        long = "path",
-        value_name = "NAME=PATH",
-        value_parser = parse_virt_path_mapping,
-        action = ArgAction::Append
-    )]
-    paths: Vec<(String, VirtPath)>,
-
-    /// Print evaluated output instead of generating build.ninja file
-    #[arg(short = 'E', long)]
-    eval: bool,
-
-    /// Set verbosity level. Pass many times for more log output (up to three)
-    #[arg(short, long, action = ArgAction::Count)]
-    verbose: u8,
-}
-
-fn parse_virt_path_mapping(s: &str) -> std::result::Result<(String, VirtPath), String> {
-    let (name, path) = s.split_once('=').ok_or("expected NAME=PATH".to_string())?;
-
-    Ok((
-        name.to_owned(),
-        VirtPath::from_dir(&PathBuf::from(path), name),
-    ))
-}
 
 fn gen_args_object(args: Vec<(String, VirtPath)>) -> Expr<Value, VirtPath> {
     let mut args_map = ExprSet::new();

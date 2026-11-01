@@ -1,32 +1,14 @@
 use clap::Parser;
-use lead_build::pblang::{format_tree, parse};
+use lead_build::{
+    cli::pbfmt::Args,
+    pblang::{format_tree, parse},
+};
 use std::{
     fs,
     io::{self, Read},
     path::PathBuf,
     process::exit,
 };
-
-#[derive(Parser, Debug)]
-#[command(version, about, long_about = None)]
-struct Args {
-    /// The .pbb file(s) to format (required unless --stdin is given).
-    /// Multiple files are only allowed together with --in-place.
-    #[arg(required_unless_present = "stdin", num_args = 1..)]
-    file: Vec<PathBuf>,
-
-    /// Read the source from stdin instead of a file
-    #[arg(short, long, conflicts_with = "file")]
-    stdin: bool,
-
-    /// Only check that the file parses, without reformatting it
-    #[arg(short, long)]
-    lint: bool,
-
-    /// Format the file in place instead of printing to stdout
-    #[arg(short, long, alias = "inplace", conflicts_with_all = ["stdin", "lint"])]
-    in_place: bool,
-}
 
 fn run_file(file: Option<&PathBuf>, args: &Args) -> Result<(), String> {
     let (source, name) = if args.stdin {
