@@ -21,6 +21,17 @@ the conventions and language support to build real projects.
 cargo install lead-build
 ```
 
+With Nix, run it straight from the flake, or install it into a profile:
+
+```sh
+nix run github:lead-build/lead-build -- --help
+nix profile install github:lead-build/lead-build
+```
+
+To use it in another flake, add it as an input and take
+`lead-build.packages.${system}.default`, or apply
+`lead-build.overlays.default` to get `pkgs.lead-build`.
+
 # Documentation
 
 If you want to read about how to use lead-build and lead-lib in your project,

@@ -38,3 +38,6 @@ build
 # Common IDE files
 /.vscode
 
+
+# Nix build output
+/result
