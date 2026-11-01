@@ -70,46 +70,81 @@ impl VirtPath {
             Some(_) => Ok(out),
             None => Err(Error::new(
                 ErrorType::Custom,
-                format!("Parent of {} locked", out),
+                format!("\"..\" would leave the locked directory {}", out),
             )),
         }
     }
 
-    pub fn step<F: Clone>(self, elem: impl ToString) -> Result<VirtPath, F> {
-        let mut out: VirtPath = self;
-        let elem = elem.to_string();
-        match elem.as_str() {
-            ".." => Ok(out.parent()?),
-            "." => Ok(out),
+    /// Add one element, given as text, below the path. `..` steps up within
+    /// the unlocked part, `.` and empty elements are dropped. This is the only
+    /// way text may become a new element, so the lock can't be escaped.
+    fn push_elem<F: Clone>(self, elem: &str) -> Result<VirtPath, F> {
+        let mut out = self;
+        match elem {
+            ".." => out.parent(),
+            "." | "" => Ok(out),
             _ => {
-                out.parts.push(elem);
+                out.parts.push(elem.to_string());
                 Ok(out)
             }
         }
     }
 
-    pub fn apply<F: Clone>(&self, ext: &str) -> Result<VirtPath, F> {
-        let mut out = self.clone();
-        for part in ext.split("/") {
-            if !part.is_empty() {
-                let last = out.parts.last_mut().ok_or_else(|| {
-                    Error::new(
-                        ErrorType::Custom,
-                        format!(
-                            "can't add suffix to path without unlocked elements: {}",
-                            self
-                        ),
-                    )
-                })?;
-                last.push_str(part);
-            }
-            out.parts.push("".into());
+    /// Check that editing the last element left a real name, not something
+    /// that would be resolved as a directory reference.
+    fn check_last<F: Clone>(self, edit: &str) -> Result<VirtPath, F> {
+        match self.parts.last().map(String::as_str) {
+            Some("") | Some(".") | Some("..") => Err(Error::new(
+                ErrorType::Custom,
+                format!("{} makes an invalid path element: {}", edit, self),
+            )),
+            _ => Ok(self),
         }
-        let _ = out.parts.pop();
-        Ok(out)
+    }
+
+    fn check_suffix<F: Clone>(&self, suffix: &str) -> Result<(), F> {
+        if suffix.contains('/') {
+            Err(Error::new(
+                ErrorType::Custom,
+                format!(
+                    "suffix \"{}\" of {} contains \"/\"; use / or \"${{path}}/...\" to add elements",
+                    suffix, self
+                ),
+            ))
+        } else {
+            Ok(())
+        }
+    }
+
+    /// Add elements below the path. `elem` may contain `/`, but can't be
+    /// absolute.
+    pub fn step<F: Clone>(self, elem: impl ToString) -> Result<VirtPath, F> {
+        let elem = elem.to_string();
+        if elem.starts_with('/') {
+            return Err(Error::new(
+                ErrorType::Custom,
+                format!("can't add absolute path \"{}\" to {}", elem, self),
+            ));
+        }
+        elem.split('/').try_fold(self, |out, part| out.push_elem(part))
+    }
+
+    /// Apply the text that follows a path in a string, as in `"${path}.c"`
+    /// or `"${path}/sub/file.c"`. Text before the first `/` is a suffix of
+    /// the last element, each piece after a `/` is a new element.
+    pub fn apply<F: Clone>(&self, ext: &str) -> Result<VirtPath, F> {
+        let mut pieces = ext.split('/');
+        let suffix = pieces.next().unwrap_or_default();
+        let out = if suffix.is_empty() {
+            self.clone()
+        } else {
+            self.add_suffix(suffix)?
+        };
+        pieces.try_fold(out, |out, part| out.push_elem(part))
     }
 
     pub fn add_suffix<F: Clone>(&self, suffix: &str) -> Result<VirtPath, F> {
+        self.check_suffix(suffix)?;
         let mut out = self.clone();
         let last = out.parts.last_mut().ok_or_else(|| {
             Error::new(
@@ -121,10 +156,11 @@ impl VirtPath {
             )
         })?;
         last.push_str(suffix);
-        Ok(out)
+        out.check_last(&format!("suffix \"{}\"", suffix))
     }
 
     pub fn remove_suffix<F: Clone>(&self, suffix: &str) -> Result<VirtPath, F> {
+        self.check_suffix(suffix)?;
         let mut out = self.clone();
         let last = out.parts.pop().ok_or_else(|| {
             Error::new(
@@ -142,7 +178,7 @@ impl VirtPath {
             )
         })?;
         out.parts.push(last_prefix.to_string());
-        Ok(out)
+        out.check_last(&format!("removing suffix \"{}\"", suffix))
     }
 
     pub fn to_path_buf(&self) -> PathBuf {
@@ -401,6 +437,80 @@ mod tests {
                 .unwrap(),
             VirtPath::new("root").apply::<i32>("/test/src.s").unwrap()
         )
+    }
+
+    fn locked_cwd() -> VirtPath {
+        VirtPath::new("root").step::<TestF>("dir").unwrap().lock()
+    }
+
+    #[test]
+    fn test_apply_parent_of_locked() {
+        assert!(locked_cwd().apply::<TestF>("/../x").is_err());
+        assert!(locked_cwd().apply::<TestF>("/a/../../x").is_err());
+    }
+
+    #[test]
+    fn test_apply_parent_below_lock() {
+        assert_eq!(
+            locked_cwd().apply::<TestF>("/a/../b").unwrap().to_string(),
+            "[root]/dir/$/b"
+        );
+    }
+
+    #[test]
+    fn test_apply_dot() {
+        assert_eq!(
+            locked_cwd().apply::<TestF>("/./x").unwrap().to_string(),
+            "[root]/dir/$/x"
+        );
+    }
+
+    #[test]
+    fn test_apply_empty_elements() {
+        assert_eq!(
+            locked_cwd().apply::<TestF>("//x/").unwrap().to_string(),
+            "[root]/dir/$/x"
+        );
+    }
+
+    #[test]
+    fn test_step_with_slash() {
+        assert!(locked_cwd().step::<TestF>("../x").is_err());
+        assert_eq!(
+            locked_cwd().step::<TestF>("a/../b").unwrap().to_string(),
+            "[root]/dir/$/b"
+        );
+    }
+
+    #[test]
+    fn test_step_absolute() {
+        assert!(locked_cwd().step::<TestF>("/etc").is_err());
+    }
+
+    #[test]
+    fn test_suffix_with_slash() {
+        let file = locked_cwd().step::<TestF>("file").unwrap();
+        assert!(file.add_suffix::<TestF>("/../../x").is_err());
+        assert!(file.add_suffix::<TestF>("/x").is_err());
+        let file = locked_cwd().step::<TestF>("a/b.c").unwrap();
+        assert!(file.remove_suffix::<TestF>("a/b.c").is_err());
+        assert!(file.remove_suffix::<TestF>("/b.c").is_err());
+    }
+
+    #[test]
+    fn test_remove_suffix_empty_name() {
+        let file = locked_cwd().step::<TestF>("a.c").unwrap();
+        assert!(file.remove_suffix::<TestF>("a.c").is_err());
+        let file = locked_cwd().step::<TestF>(".c").unwrap();
+        assert!(file.remove_suffix::<TestF>(".c").is_err());
+    }
+
+    #[test]
+    fn test_suffix_makes_parent() {
+        let empty = locked_cwd().step::<TestF>("").unwrap();
+        assert!(empty.apply::<TestF>("..").is_err());
+        let file = locked_cwd().step::<TestF>("..b").unwrap();
+        assert!(file.remove_suffix::<TestF>("b").is_err());
     }
 
     #[test]

@@ -1,0 +1,1 @@
+|{ cwd, include, ... }| include (cwd / "../other.pbb")
