@@ -20,6 +20,29 @@ name = "pbfmt"
 [[bin]]
 name = "pbls"
 
+[package.metadata.deb]
+section = "devel"
+extended-description = """\
+The Lead Build System is a declarative build system. This package contains \
+pb, which generates Ninja build files from a build description, pbfmt, a \
+formatter for build descriptions, and pbls, a language server."""
+license-file = ["LICENSE", "0"]
+assets = [
+    ["target/release/pb", "usr/bin/", "755"],
+    ["target/release/pbfmt", "usr/bin/", "755"],
+    ["target/release/pbls", "usr/bin/", "755"],
+    ["README.md", "usr/share/doc/lead-build/", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+    { source = "target/release/pb", dest = "/usr/bin/pb", mode = "755" },
+    { source = "target/release/pbfmt", dest = "/usr/bin/pbfmt", mode = "755" },
+    { source = "target/release/pbls", dest = "/usr/bin/pbls", mode = "755" },
+    { source = "LICENSE", dest = "/usr/share/licenses/lead-build/LICENSE", mode = "644", doc = true },
+    { source = "README.md", dest = "/usr/share/doc/lead-build/README.md", mode = "644", doc = true },
+]
+
 [build-dependencies]
 lalrpop = { version = "0.23.1" }
 
