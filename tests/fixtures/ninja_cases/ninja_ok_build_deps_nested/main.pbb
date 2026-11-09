@@ -1,0 +1,24 @@
+|{ cwd, pb, ... }|
+let
+    cp_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "cp", input, output ];
+        }
+    );
+    dep1 = cp_rule {
+        input = cwd / "dep1.in";
+        output = cwd / "dep1.out";
+    };
+    dep2 = cp_rule {
+        input = cwd / "dep2.in";
+        output = cwd / "dep2.out";
+    };
+in
+cp_rule {
+    input = cwd / "main.in";
+    output = cwd / "main.out";
+    deps = {
+        first = [ dep1 ];
+        second = { inner = dep2; };
+    };
+}

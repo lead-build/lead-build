@@ -1,0 +1,42 @@
+|{ cwd, pb, ... }|
+let
+    touch_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "touch", output ];
+        }
+    );
+    cat_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "cat", input, ">", output ];
+        }
+    );
+    cp_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "cp", input, output ];
+        }
+    );
+    build_output = touch_rule {
+        input = cwd / "src.in";
+        output = {
+            objs = [
+                cwd / "a.o",
+                cwd / "b.o",
+            ];
+            map = cwd / "app.map";
+        };
+    };
+in
+[
+    cat_rule {
+        input = build_output.objs;
+        output = cwd / "app";
+    },
+    cp_rule {
+        input = build_output.map;
+        output = cwd / "copied.map";
+    },
+    cat_rule {
+        input = build_output;
+        output = cwd / "all";
+    },
+]

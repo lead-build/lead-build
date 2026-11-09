@@ -1,0 +1,4 @@
+ninja_contains = [
+    "build {{CASE_DIR}}/a.out {{CASE_DIR}}/b.out {{CASE_DIR}}/c.out {{CASE_DIR}}/d.out: touch {{CASE_DIR}}/src.in",
+    "build {{CASE_DIR}}/all: cat {{CASE_DIR}}/a.out {{CASE_DIR}}/b.out {{CASE_DIR}}/c.out {{CASE_DIR}}/d.out",
+]

@@ -1,0 +1,2 @@
+kind = "err_type"
+error_contains = "incompatible type in build arg 'output'"

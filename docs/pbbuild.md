@@ -37,7 +37,11 @@ scripts as `Expr` values (each implementing `pbexpr::ExprBuiltin`):
 - **`builtins/pb.rs`** — the build-graph primitives: `rule`, `build`,
   `lock`, `translate`, `rebase`, `matches`. `rule`/`build` are what actually construct
   `PbBuildRule`/`PbBuild` (defined in `pbbuild.rs` itself) and attach them
-  as the `depends` of a `Value::Path`.
+  as the `depends` of a `Value::Path`. The `input`, `output` and `deps`
+  arguments of a build are read as a `PathTree` (`pathtree.rs`): any nesting
+  of lists and objects with a path at every leaf. The tree is flattened, depth
+  first, to the ninja paths, and the build returns its `output` tree in the
+  same shape, with every leaf depending on the build.
 - **`builtins/ops.rs`** — general-purpose helpers (`zip`, ...) that don't
   need the build graph.
 - **`builtins/dbg.rs`** — `trace`/`break`, for debugging build scripts

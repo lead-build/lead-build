@@ -5,6 +5,7 @@ mod glob;
 mod ninjaexpr;
 mod ninjawriter;
 mod path;
+mod pathtree;
 mod stats;
 mod value;
 

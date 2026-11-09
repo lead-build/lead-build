@@ -9,6 +9,7 @@ use super::super::{
     glob::Glob,
     ninjawriter::NinjaArg,
     path::VirtPath,
+    pathtree::PathTree,
     value::Value,
 };
 use crate::{
@@ -55,58 +56,6 @@ fn value_to_ninja_arg(attr: &Value) -> NinjaArg {
         ),
         _ => panic!("Rule attr is of invalid type: {}", attr),
     }
-}
-
-enum BuildOutputFormat {
-    Value,
-    List,
-    Object(Vec<StrKey>),
-}
-
-fn resolve_path_value_from_expr<F: Clone + Debug + Referrable>(
-    expr: &Expr<Value, F>,
-    field_name: &str,
-    dep_builds: &mut Vec<Rc<PbBuild>>,
-) -> Result<VirtPath, F> {
-    expr.resolve().map_err(|e| e.reref(&expr.get_loc()))?;
-    match &expr.inner_ref().tok {
-        ExprType::Value(Value::Path { path, depends }) => {
-            for dep_build in depends.iter() {
-                dep_builds.push(dep_build.clone());
-            }
-            Ok(path.clone())
-        }
-        _ => Err(Error::new(
-            ErrorType::Type,
-            format!("incompatible type in build arg '{}', got {}", field_name, expr.diag()),
-        )
-        .reref(&expr.get_loc())),
-    }
-}
-
-fn resolve_build_arg_to_paths<F: Clone + Debug + Referrable>(
-    build_arg: &Expr<Value, F>,
-    field_name: &str,
-    dep_builds: &mut Vec<Rc<PbBuild>>,
-) -> Result<Vec<VirtPath>, F> {
-    build_arg
-        .resolve()
-        .map_err(|e| e.reref(&build_arg.get_loc()))?;
-    let elems: Vec<Expr<Value, F>> = match &build_arg.inner_ref().tok {
-        ExprType::Value(value) => vec![ExprType::from(value.clone()).reref(build_arg.get_loc())],
-        ExprType::List(exprs) => exprs.clone(),
-        ExprType::Object(fields) => fields.values().cloned().collect(),
-        _ => Err(Error::new(
-            ErrorType::Type,
-            format!("field {} is not a value, list, or object", field_name),
-        )
-        .reref(&build_arg.get_loc()))?,
-    };
-
-    elems
-        .iter()
-        .map(|expr| resolve_path_value_from_expr(expr, field_name, dep_builds))
-        .collect()
 }
 
 fn resolve_build_arg_to_ninja_values<F: Clone + Debug + Referrable>(
@@ -305,8 +254,7 @@ where
         let mut args: BTreeMap<StrKey, Vec<NinjaArg>> = BTreeMap::new();
         /* Special treatment for input/output */
         let mut input: Vec<VirtPath> = vec![];
-        let mut output: Vec<VirtPath> = vec![];
-        let mut output_format: Option<BuildOutputFormat> = None;
+        let mut output: Option<PathTree> = None;
         /* Optional implicit deps for ninja build target */
         let mut deps: Vec<VirtPath> = vec![];
         /* Track all dependent rules, that needs to be added to ninja file  */
@@ -315,7 +263,9 @@ where
         if !rule.rule_args().contains(&StrKey::from("deps"))
             && let Some(build_arg) = arg_obj.remove(&StrKey::from("deps"))
         {
-            deps = resolve_build_arg_to_paths(&build_arg, "deps", &mut dep_builds)?;
+            let tree = PathTree::from_expr(&build_arg, "deps")?;
+            deps = tree.paths();
+            dep_builds.extend(tree.depends());
         }
 
         for arg_name in rule.rule_args().iter() {
@@ -323,49 +273,12 @@ where
             let build_arg = expr_get_arg!(arg_obj, arg_name);
             match arg_name.as_string().as_str() {
                 "input" => {
-                    input = resolve_build_arg_to_paths(&build_arg, "input", &mut dep_builds)?
+                    let tree = PathTree::from_expr(&build_arg, "input")?;
+                    input = tree.paths();
+                    dep_builds.extend(tree.depends());
                 }
                 "output" => {
-                    build_arg
-                        .resolve()
-                        .map_err(|e| e.reref(&build_arg.get_loc()))?;
-                    let (output_exprs, output_format_type) = match &build_arg.inner_ref().tok {
-                        ExprType::Value(value) => (
-                            vec![ExprType::from(value.clone()).reref(build_arg.get_loc())],
-                            BuildOutputFormat::Value,
-                        ),
-                        ExprType::List(exprs) => (exprs.clone(), BuildOutputFormat::List),
-                        ExprType::Object(fields) => (
-                            fields.values().cloned().collect(),
-                            BuildOutputFormat::Object(fields.keys().cloned().collect()),
-                        ),
-                        _ => {
-                            return Err(Error::new(
-                                ErrorType::Type,
-                                "output must be a value, list, or object",
-                            )
-                            .reref(&build_arg.get_loc()));
-                        }
-                    };
-                    output_format = Some(output_format_type);
-                    output = output_exprs
-                        .into_iter()
-                        .map(|expr| {
-                            expr.resolve().map_err(|e| e.reref(&expr.get_loc()))?;
-                            match &expr.inner_ref().tok {
-                                ExprType::Value(Value::Path { path, .. }) => Ok(path.clone()),
-                                _ => Err(Error::new(
-                                    ErrorType::Type,
-                                    format!(
-                                        "incompatible type in build arg '{}' - {}",
-                                        arg_name,
-                                        expr.diag()
-                                    ),
-                                )
-                                .reref(&expr.get_loc())),
-                            }
-                        })
-                        .collect::<Result<Vec<_>, _>>()?;
+                    output = Some(PathTree::from_expr(&build_arg, "output")?);
                 }
                 name => {
                     let value =
@@ -375,61 +288,28 @@ where
             }
         }
 
+        let output = output.ok_or_else(|| {
+            Error::new(ErrorType::Type, "missing required output field").reref(&arg.get_loc())
+        })?;
+        let output_paths = output.unique_paths();
+        if output_paths.is_empty() {
+            return Err(Error::new(
+                ErrorType::Type,
+                "build arg 'output' must contain at least one path",
+            )
+            .reref(&loc));
+        }
+
         let build = Rc::new(PbBuild::new(
             rule.clone(),
             input,
-            output,
+            output_paths,
             deps,
             args,
             dep_builds,
         ));
 
-        let output_format = output_format.ok_or_else(|| {
-            Error::new(ErrorType::Type, "missing required output field").reref(&arg.get_loc())
-        })?;
-
-        match output_format {
-            BuildOutputFormat::Value => {
-                assert_eq!(build.ninja_outputs().len(), 1);
-                Ok(ExprType::Value(Value::Path {
-                    path: build.ninja_outputs()[0].clone(),
-                    depends: vec![build],
-                })
-                .reref(loc))
-            }
-            BuildOutputFormat::List => {
-                let out_list = build
-                    .ninja_outputs()
-                    .iter()
-                    .map(|path| {
-                        ExprType::Value(Value::Path {
-                            path: path.clone(),
-                            depends: vec![build.clone()],
-                        })
-                        .reref(loc.clone())
-                    })
-                    .collect();
-                Ok(ExprType::List(out_list).reref(loc))
-            }
-            BuildOutputFormat::Object(field_names) => {
-                assert_eq!(field_names.len(), build.ninja_outputs().len());
-                let fields = field_names
-                    .into_iter()
-                    .zip(build.ninja_outputs().iter())
-                    .map(|(name, path)| {
-                        (
-                            name,
-                            ExprType::Value(Value::Path {
-                                path: path.clone(),
-                                depends: vec![build.clone()],
-                            })
-                            .reref(loc.clone()),
-                        )
-                    })
-                    .collect::<ExprSet<Value, F>>();
-                Ok(ExprType::Object(fields).reref(loc))
-            }
-        }
+        Ok(output.to_expr(&build, &loc))
     }
 }
 

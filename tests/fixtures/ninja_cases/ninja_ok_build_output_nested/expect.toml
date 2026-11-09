@@ -1,0 +1,6 @@
+ninja_contains = [
+    "build {{CASE_DIR}}/a.o {{CASE_DIR}}/b.o {{CASE_DIR}}/app.map: touch {{CASE_DIR}}/src.in",
+    "build {{CASE_DIR}}/app: cat {{CASE_DIR}}/a.o {{CASE_DIR}}/b.o",
+    "build {{CASE_DIR}}/copied.map: cp {{CASE_DIR}}/app.map",
+    "build {{CASE_DIR}}/all: cat {{CASE_DIR}}/a.o {{CASE_DIR}}/b.o {{CASE_DIR}}/app.map",
+]

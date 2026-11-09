@@ -8,9 +8,11 @@ use crate::{
     strkey::StrKey,
 };
 
+use strum::EnumIs;
+
 use super::{build::PbBuild, path::VirtPath};
 
-#[derive(Clone, PartialEq, Debug)]
+#[derive(Clone, PartialEq, Debug, EnumIs)]
 pub enum Value {
     Int(i64),
     String(String),

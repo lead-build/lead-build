@@ -1,0 +1,30 @@
+|{ cwd, pb, ... }|
+let
+    touch_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "touch", output ];
+        }
+    );
+    cat_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "cat", input, ">", output ];
+        }
+    );
+    build_output = touch_rule {
+        input = cwd / "src.in";
+        output = [
+            { x = cwd / "a.out"; },
+            {
+                y = [
+                    cwd / "b.out",
+                    { z = [ cwd / "c.out" ]; },
+                ];
+            },
+            cwd / "d.out",
+        ];
+    };
+in
+cat_rule {
+    input = build_output;
+    output = cwd / "all";
+}
