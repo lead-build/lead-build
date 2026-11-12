@@ -1,4 +1,4 @@
-use lead_build::pbexpr::{ErrorType, ExprSet, ExprType, RenderOptions};
+use lead_build::pbexpr::{ErrorList, ErrorType, ExprSet, ExprType, RenderOptions};
 use lead_build::strkey::StrKey;
 use lead_build::{LangContext, Value, pbbuild::VirtPath};
 use serde::Deserialize;
@@ -28,6 +28,9 @@ struct CaseExpect {
     kind: ExpectKind,
     expect_value: Option<String>,
     error_contains: Option<String>,
+    /// Text the rendering of all the errors of the run must contain, for
+    /// what is about the whole list rather than the first error
+    errors_contain: Option<String>,
     /// The whole rendered error must equal `expect_error.txt` in the case
     /// directory. Run with `UPDATE_EXPECT=1` to write that file.
     #[serde(default)]
@@ -124,24 +127,29 @@ fn run_case_with_timeout(
                     .builtin(),
             );
             let ctx = LangContext::new();
-            let result = (|| {
+            // As the command line does it: the errors of all parts of the
+            // result are collected
+            let result = (|| -> Result<_, ErrorList<VirtPath>> {
                 let expr = ctx.include(main_vpath, Some(ExprType::Object(args).builtin()))?;
-                expr.eval()?;
-                expr.value()
+                let errors = expr.eval_all();
+                if !errors.is_empty() {
+                    return Err(errors);
+                }
+                Ok(expr.value()?)
             })();
             // The receiver is gone if the case timed out; nothing to report then
-            let _ = tx.send(
-                result
-                    .map(|value| format!("{value}"))
-                    .map_err(|err| CaseError {
-                        typ: err.typ,
-                        plain: format!("{err}"),
-                        rich: err.render(&RenderOptions {
-                            color: false,
-                            full_trace: false,
-                        }),
+            let _ = tx.send(result.map(|value| format!("{value}")).map_err(|errors| {
+                // `kind` and `error_contains` are about the first error
+                let first = errors.first().expect("an error list from a failure is not empty");
+                CaseError {
+                    typ: first.typ,
+                    plain: format!("{first}"),
+                    rich: errors.render(&RenderOptions {
+                        color: false,
+                        full_trace: false,
                     }),
-            );
+                }
+            }));
         })
         .expect("failed to spawn case thread");
     match rx.recv_timeout(CASE_TIMEOUT) {
@@ -221,6 +229,15 @@ fn run_parsing_fixture_cases() {
                     err.typ,
                     rendered
                 );
+                if let Some(needle) = expect.errors_contain.as_ref() {
+                    assert!(
+                        err.rich.contains(needle),
+                        "case '{}' expected the errors to contain '{}', got '{}'",
+                        case_name,
+                        needle,
+                        err.rich
+                    );
+                }
                 if expect.golden {
                     check_golden(&case_name, &case_dir, &fixture_root, &err.rich);
                 }

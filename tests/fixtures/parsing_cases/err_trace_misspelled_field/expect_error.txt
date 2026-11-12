@@ -17,3 +17,5 @@ Needed by:
   $DIR/_lib/lib.pbb:36:41 (object of field `src`)
       objs = [ |file| "${file}.o" for self.src ];
   result `.objs`
+
+The same error was found in 3 more places.

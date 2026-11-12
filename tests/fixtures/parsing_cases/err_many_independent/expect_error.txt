@@ -1,0 +1,27 @@
+Type error: cannot apply `-` to an integer and a string
+ --> $DIR/err_many_independent/main.pbb:7:9
+  |
+4 |     n = 1;
+  |         - the left side is an integer
+...
+7 |     a = n - "x";
+  |         ^^^^---
+  |             |
+  |             the right side is a string
+
+Needed by:
+  result `.a`
+
+Type error: cannot apply `++` to a list and an integer
+ --> $DIR/err_many_independent/main.pbb:8:9
+  |
+8 |     b = [ 1 ] ++ 2;
+  |         -----^^^^-
+  |         |        |
+  |         |        the right side is an integer
+  |         the left side is a list
+
+Needed by:
+  result `.b`
+
+2 errors.

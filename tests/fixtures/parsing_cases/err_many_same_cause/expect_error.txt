@@ -1,0 +1,15 @@
+Type error: cannot apply `-` to an integer and a string
+ --> $DIR/err_many_same_cause/main.pbb:5:11
+  |
+5 |     bad = 1 - "x";
+  |           -^^^---
+  |           |   |
+  |           |   the right side is a string
+  |           the left side is an integer
+
+Needed by:
+  $DIR/err_many_same_cause/main.pbb:6:21 (part of a string)
+      compile = |src| "${src} ${bad}";
+  result `[0]`
+
+The same error was found in 2 more places.

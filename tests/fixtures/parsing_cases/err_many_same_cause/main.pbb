@@ -1,0 +1,12 @@
+|{ ... }|
+let
+    # One mistake that every item of the result needs: it is reported once,
+    # with the number of other places it broke.
+    bad = 1 - "x";
+    compile = |src| "${src} ${bad}";
+in
+[
+    compile "a.c",
+    compile "b.c",
+    compile "c.c",
+]

@@ -1,9 +1,9 @@
 use clap::Parser;
 use lead_build::{
-    Expr, LangContext, Result, Value, add_expr_to_ninjafile,
+    Expr, LangContext, Value, add_expr_to_ninjafile_all,
     cli::pb::Args,
     pbbuild::{NinjaFile, VirtPath},
-    pbexpr::{Error, ErrorType, ExprSet, ExprType, RenderOptions},
+    pbexpr::{Error, ErrorList, ErrorType, ExprSet, ExprType, RenderOptions},
     strkey::StrKey,
 };
 use std::{
@@ -25,7 +25,11 @@ fn gen_args_object(args: Vec<(String, VirtPath)>) -> Expr<Value, VirtPath> {
     ExprType::Object(args_map).builtin()
 }
 
-fn run(args: Args) -> Result<(), VirtPath> {
+/// Evaluate the description and write the ninja file, or print the result.
+/// Errors from evaluating the parts of the result are collected, so that a
+/// run reports every independent mistake; an error before evaluation (a file
+/// not found, a syntax error) is reported alone.
+fn run(args: Args) -> std::result::Result<(), ErrorList<VirtPath>> {
     let ctx: LangContext = LangContext::new();
 
     if let Some(dir) = args.cd {
@@ -44,13 +48,19 @@ fn run(args: Args) -> Result<(), VirtPath> {
     let expr: Expr<Value, VirtPath> = ctx.include(main_file, Some(args_obj))?;
 
     if args.eval {
-        expr.eval()?;
+        let errors = expr.eval_all();
+        if !errors.is_empty() {
+            return Err(errors);
+        }
         println!("{}", expr);
         Ok(())
     } else {
         let mut ninja_file = NinjaFile::new();
 
-        add_expr_to_ninjafile(&expr, &mut ninja_file)?;
+        let errors = add_expr_to_ninjafile_all(&expr, &mut ninja_file);
+        if !errors.is_empty() {
+            return Err(errors);
+        }
 
         let errors = ninja_file.validate();
         if !errors.is_empty() {
@@ -61,7 +71,8 @@ fn run(args: Args) -> Result<(), VirtPath> {
                     output.display(),
                     errors.join("\n  ")
                 ),
-            ));
+            )
+            .into());
         }
 
         let output_file =
@@ -98,8 +109,8 @@ fn main() {
         Ok(_) => {
             exit(0);
         }
-        Err(err) => {
-            eprint!("{}", err.render(&render_options));
+        Err(errors) => {
+            eprint!("{}", errors.render(&render_options));
             exit(1);
         }
     }

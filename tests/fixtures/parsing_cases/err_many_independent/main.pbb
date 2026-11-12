@@ -1,0 +1,9 @@
+|{ ... }|
+let
+    # Two unrelated mistakes in two parts of the result: both are reported.
+    n = 1;
+in
+{
+    a = n - "x";
+    b = [ 1 ] ++ 2;
+}

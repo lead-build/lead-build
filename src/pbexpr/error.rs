@@ -427,6 +427,131 @@ where
 
 impl<F> Error<F>
 where
+    F: Clone + PartialEq,
+{
+    /// Whether `other` reports the same mistake: the same kind and message
+    /// at the same site. The trace, the calls and the position in the result
+    /// are left out, as they differ between the parts of a result that one
+    /// mistake breaks.
+    pub fn same_cause(&self, other: &Error<F>) -> bool {
+        fn site<F>(err: &Error<F>) -> Option<(&F, &Span)> {
+            let loc = match &err.details.primary {
+                Some(primary) => Some(&primary.loc),
+                None => err.details.trace.first().map(|frame| &frame.loc),
+            };
+            loc.map(|loc| (&loc.file, &loc.span))
+        }
+        self.typ == other.typ && self.msg == other.msg && site(self) == site(other)
+    }
+}
+
+/// The most distinct errors an [`ErrorList`] keeps. Once it has this many,
+/// evaluation stops looking for more, which bounds the time spent when
+/// everything is broken.
+pub const MAX_ERRORS: usize = 20;
+
+/// The errors of a run: one for each part of the result that failed, with
+/// the errors of the same cause (see [`Error::same_cause`]) merged into the
+/// first and counted.
+#[derive(Debug)]
+pub struct ErrorList<F> {
+    /// Each with the number of further parts it was found in
+    errors: Vec<(Error<F>, usize)>,
+}
+
+impl<F> Default for ErrorList<F> {
+    fn default() -> Self {
+        ErrorList { errors: Vec::new() }
+    }
+}
+
+impl<F> From<Error<F>> for ErrorList<F> {
+    fn from(err: Error<F>) -> Self {
+        ErrorList {
+            errors: vec![(err, 0)],
+        }
+    }
+}
+
+impl<F> ErrorList<F>
+where
+    F: Clone + PartialEq,
+{
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Add an error, or count it for an earlier one of the same cause. An
+    /// error of a new cause is dropped once the list is full.
+    pub fn push(&mut self, err: Error<F>) {
+        if let Some((_, repeats)) = self
+            .errors
+            .iter_mut()
+            .find(|(known, _)| known.same_cause(&err))
+        {
+            *repeats += 1;
+        } else if !self.is_full() {
+            self.errors.push((err, 0));
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty()
+    }
+
+    /// The number of distinct errors
+    pub fn len(&self) -> usize {
+        self.errors.len()
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.errors.len() >= MAX_ERRORS
+    }
+
+    pub fn first(&self) -> Option<&Error<F>> {
+        self.errors.first().map(|(err, _)| err)
+    }
+
+    /// The distinct errors, each with the number of further parts of the
+    /// result it was found in
+    pub fn iter(&self) -> impl Iterator<Item = (&Error<F>, usize)> {
+        self.errors.iter().map(|(err, repeats)| (err, *repeats))
+    }
+}
+
+impl<F> ErrorList<F>
+where
+    F: SourceContext + Clone + PartialEq,
+{
+    /// The errors as shown to a user, one after the other, each as
+    /// [`Error::render`] shows it. A single error is shown exactly as on its
+    /// own.
+    pub fn render(&self, options: &RenderOptions) -> String {
+        let mut out = String::new();
+        for (idx, (err, repeats)) in self.iter().enumerate() {
+            if idx > 0 {
+                out.push('\n');
+            }
+            out.push_str(&err.render(options));
+            match repeats {
+                0 => {}
+                1 => out.push_str("\nThe same error was found in 1 more place.\n"),
+                n => out.push_str(&format!("\nThe same error was found in {n} more places.\n")),
+            }
+        }
+        if self.is_full() {
+            out.push_str(&format!(
+                "\nStopped after {MAX_ERRORS} errors, there may be more.\n"
+            ));
+        } else if self.len() > 1 {
+            out.push_str(&format!("\n{} errors.\n", self.len()));
+        }
+        out
+    }
+}
+
+impl<F> Error<F>
+where
     F: SourceContext + Clone,
 {
     /// The error as shown to a user: the failing expression and the values

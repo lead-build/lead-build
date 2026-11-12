@@ -1,6 +1,6 @@
 use crate::{
     Expr, Value,
-    pbexpr::{Error, ErrorType, ExprStorage, ExprType, Result},
+    pbexpr::{Error, ErrorList, ErrorType, ExprStorage, ExprType, Result},
 };
 
 use super::{ninjawriter::NinjaFile, path::VirtPath};
@@ -10,6 +10,74 @@ pub fn add_expr_to_ninjafile(
     ninja_file: &mut NinjaFile,
 ) -> Result<(), VirtPath> {
     add_expr_to_ninjafile_inner(expr, ninja_file, None)
+}
+
+/// Like [`add_expr_to_ninjafile`], but with the errors of all the parts of
+/// the result that fail, instead of stopping at the first one. With any
+/// error, the ninja file is incomplete and must not be written.
+pub fn add_expr_to_ninjafile_all(
+    expr: &Expr<Value, VirtPath>,
+    ninja_file: &mut NinjaFile,
+) -> ErrorList<VirtPath> {
+    let mut errors = ErrorList::new();
+    add_expr_to_ninjafile_collect(expr, ninja_file, None, &mut Vec::new(), &mut errors);
+    errors
+}
+
+/// The part at `path` in the result (outermost part first) for
+/// [`add_expr_to_ninjafile_all`]: lists and objects are walked here, each
+/// item or field on its own; anything else is added as one.
+fn add_expr_to_ninjafile_collect(
+    expr: &Expr<Value, VirtPath>,
+    ninja_file: &mut NinjaFile,
+    alias: Option<&str>,
+    path: &mut Vec<String>,
+    errors: &mut ErrorList<VirtPath>,
+) {
+    // `in_result` adds the innermost part first
+    let at_path = |err: Error<VirtPath>, path: &[String]| {
+        path.iter().rev().fold(err, |err, part| err.in_result(part))
+    };
+    if let Err(err) = expr.resolve() {
+        errors.push(at_path(err, path));
+        return;
+    }
+    // The parts, each with its place in the result and the alias it gets
+    type Part = (String, Option<String>, Expr<Value, VirtPath>);
+    let parts: Option<Vec<Part>> =
+        match &expr.inner_ref().tok {
+            ExprType::List(items) => Some(
+                items
+                    .iter()
+                    .enumerate()
+                    .map(|(index, item)| (format!("[{index}]"), alias.map(str::to_string), item.clone()))
+                    .collect(),
+            ),
+            ExprType::Object(fields) => Some(
+                fields
+                    .iter()
+                    .map(|(name, value)| (format!(".{name}"), Some(name.as_string()), value.clone()))
+                    .collect(),
+            ),
+            _ => None,
+        };
+    match parts {
+        Some(parts) => {
+            for (part, alias, value) in parts {
+                if errors.is_full() {
+                    return;
+                }
+                path.push(part);
+                add_expr_to_ninjafile_collect(&value, ninja_file, alias.as_deref(), path, errors);
+                path.pop();
+            }
+        }
+        None => {
+            if let Err(err) = add_expr_to_ninjafile_inner(expr, ninja_file, alias) {
+                errors.push(at_path(err, path));
+            }
+        }
+    }
 }
 
 fn add_expr_to_ninjafile_inner(

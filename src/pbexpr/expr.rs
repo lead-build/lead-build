@@ -1,7 +1,7 @@
 mod export;
 pub mod matcher;
 
-use super::error::{Error, ErrorType, Loc, Referrable, Result, Span};
+use super::error::{Error, ErrorList, ErrorType, Loc, Referrable, Result, Span};
 use super::suggest::{closest, name_list};
 use crate::strkey::StrKey;
 pub use export::{Diag, Exportable, Printer};
@@ -1876,22 +1876,8 @@ where
         // the `self` of its module, which leads straight back to this cell.
         self.resolve()?;
 
-        // Each part with its place in the result, for an error in it
-        let fields: Vec<(String, Expr<T, F>)> = match &self.inner_ref().tok {
-            ExprType::Object(fields) => fields
-                .iter()
-                .map(|(name, field)| (format!(".{name}"), field.clone()))
-                .collect(),
-            ExprType::List(items) | ExprType::Tuple(items) => items
-                .iter()
-                .enumerate()
-                .map(|(index, item)| (format!("[{index}]"), item.clone()))
-                .collect(),
-            _ => vec![],
-        };
-
         let mut first_err: Option<Error<F>> = None;
-        for (part, ex) in fields.into_iter() {
+        for (part, ex) in self.parts() {
             if let Err(err) = ex.eval()
                 && first_err.is_none()
             {
@@ -1902,6 +1888,56 @@ where
         match first_err {
             Some(err) => Err(err),
             None => Ok(()),
+        }
+    }
+
+    /// Like [`Expr::eval`], but with the errors of all the parts of the
+    /// result that fail instead of the first one. The same parts are
+    /// evaluated, until the list is full ([`ErrorList::is_full`]).
+    pub fn eval_all(&self) -> ErrorList<F>
+    where
+        F: PartialEq,
+    {
+        let mut errors = ErrorList::new();
+        self.eval_into(&mut Vec::new(), &mut errors);
+        errors
+    }
+
+    /// [`Expr::eval_all`] of the part at `path` in the result, outermost
+    /// part first.
+    fn eval_into(&self, path: &mut Vec<String>, errors: &mut ErrorList<F>)
+    where
+        F: PartialEq,
+    {
+        if let Err(err) = self.resolve() {
+            // `in_result` adds the innermost part first
+            errors.push(path.iter().rev().fold(err, |err, part| err.in_result(part)));
+            return;
+        }
+        for (part, ex) in self.parts() {
+            if errors.is_full() {
+                return;
+            }
+            path.push(part);
+            ex.eval_into(path, errors);
+            path.pop();
+        }
+    }
+
+    /// The parts of a resolved list, tuple or object, each with its place in
+    /// the result, for an error in it.
+    fn parts(&self) -> Vec<(String, Expr<T, F>)> {
+        match &self.inner_ref().tok {
+            ExprType::Object(fields) => fields
+                .iter()
+                .map(|(name, field)| (format!(".{name}"), field.clone()))
+                .collect(),
+            ExprType::List(items) | ExprType::Tuple(items) => items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| (format!("[{index}]"), item.clone()))
+                .collect(),
+            _ => vec![],
         }
     }
 
