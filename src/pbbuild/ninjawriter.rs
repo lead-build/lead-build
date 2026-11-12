@@ -187,8 +187,11 @@ impl Display for NinjaFile {
             NamedNinjaRule { rule, name }.fmt(f)?;
         }
 
+        // The key is computed once for each build: formatting a build is
+        // costly, and a comparison-based sort would do it twice for every
+        // comparison
         let mut builds = self.builds.iter().collect::<Vec<_>>();
-        builds.sort_by(|start, end| format!("{:?}", start).cmp(&format!("{:?}", end)));
+        builds.sort_by_cached_key(|build| format!("{:?}", build));
 
         for build in builds {
             build.fmt(f)?;
@@ -213,7 +216,7 @@ impl Display for NinjaFile {
 
         if !self.default_targets.is_empty() {
             let mut defaults = self.default_targets.iter().collect::<Vec<_>>();
-            defaults.sort_by(|start, end| format!("{:?}", start).cmp(&format!("{:?}", end)));
+            defaults.sort_by_cached_key(|default| format!("{:?}", default));
 
             write!(f, "default")?;
             for outp in defaults {
