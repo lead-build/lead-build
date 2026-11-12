@@ -1,0 +1,13 @@
+|{ cwd, include, args = { fixtures, ... }, ... }|
+let
+    lib = include "${fixtures}/_lib/lib.pbb";
+    built = lib.build [
+        lib.config "${cwd}/out",
+        lib.mod {
+            src = [ "${cwd}/main.c" ];
+            defines = { VERSION = "1"; };
+            flags = [ "-O2" ];
+        },
+    ];
+in
+(built.define_args == [ "-DVERSION=1" ]) && (built.flags == [ "-O2" ]) && (built.out == cwd / "out" / "app")

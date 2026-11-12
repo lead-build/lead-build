@@ -2,6 +2,7 @@ mod export;
 pub mod matcher;
 
 use super::error::{Error, ErrorType, Loc, Referrable, Result, Span};
+use super::suggest::{closest, name_list};
 use crate::strkey::StrKey;
 pub use export::{Diag, Exportable, Printer};
 pub use matcher::Matcher;
@@ -36,6 +37,9 @@ pub trait ExprOps<F>: Sized {
     fn as_string(&self) -> Result<String, F>;
     fn new_from_bool(value: bool) -> Self;
     fn new_from_string(value: impl ToString) -> Self;
+    /// What kind of value this is, in the words of an error message, with
+    /// its article: "a string", "an integer".
+    fn type_name(&self) -> &'static str;
 }
 
 pub trait ExprBuiltin<T, F>: Debug
@@ -63,6 +67,9 @@ pub type ExprSet<T, F> = BTreeMap<StrKey, Expr<T, F>>;
 /// The most rewrite steps one expression may take to resolve before it is
 /// reported as an infinite recursion, see [`Expr::resolve`].
 const MAX_RESOLVE_STEPS: usize = 250_000;
+
+/// The most fields an object may have for an error to list them all.
+const MAX_LISTED_FIELDS: usize = 8;
 
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum ExprBinOp {
@@ -294,6 +301,18 @@ where
     pub fn get_loc(&self) -> Option<Loc<F>> {
         self.inner_ref().loc.clone()
     }
+
+    /// Where the value of this expression was written, which is where a
+    /// label about the value belongs: a variable or a field leads on to
+    /// what it refers to.
+    pub fn origin(&self) -> Option<Loc<F>> {
+        self.get_loc().map(|loc| loc.origin().clone())
+    }
+
+    /// What kind of value this is, see [`ExprType::describe`].
+    pub fn describe(&self) -> &'static str {
+        self.0.as_ref().borrow().tok.describe()
+    }
 }
 
 impl<T, F> ExprType<T, F>
@@ -301,6 +320,20 @@ where
     T: Clone + PartialEq + Display + ExprOps<F>,
     F: Clone,
 {
+    /// What kind of value this is, in the words of an error message, with
+    /// its article: "a list", "a string", "null".
+    pub fn describe(&self) -> &'static str {
+        match self {
+            ExprType::Object(..) => "an object",
+            ExprType::List(..) => "a list",
+            ExprType::Tuple(..) => "a tuple",
+            ExprType::Value(value) => value.type_name(),
+            ExprType::FuncDef(..) | ExprType::FuncDefBuiltin(..) => "a function",
+            ExprType::Null => "null",
+            _ => "an unevaluated expression",
+        }
+    }
+
     pub fn reref(self: ExprType<T, F>, loc: Option<Loc<F>>) -> Expr<T, F> {
         Expr(Rc::new(RefCell::new(ExprStorage { tok: self, loc })))
     }
@@ -502,26 +535,83 @@ where
         self.0.as_ref().borrow()
     }
 
+    /// Point an error from a binary operation at the operation, and at
+    /// where the value of each side was written: one of those is most
+    /// often where the mistake is.
+    fn binop_context(
+        err: Error<F>,
+        site: &Option<Loc<F>>,
+        lhs: &Expr<T, F>,
+        rhs: &Expr<T, F>,
+    ) -> Error<F> {
+        // A side can be the result of this very expression, from an earlier
+        // step of a fold or a recursion. A label for it would sit on the
+        // whole operation and read as if it described both sides.
+        let side = |side: &Expr<T, F>| {
+            side.origin()
+                .filter(|origin| site.as_ref().is_none_or(|site| site.span != origin.span))
+        };
+        err.primary(site, "")
+            .label(&side(lhs), format!("the left side is {}", lhs.describe()))
+            .label(&side(rhs), format!("the right side is {}", rhs.describe()))
+    }
+
+    /// The error for an operator that does not apply to these two values.
+    fn binop_error(
+        op: ExprBinOp,
+        site: &Option<Loc<F>>,
+        lhs: &Expr<T, F>,
+        rhs: &Expr<T, F>,
+    ) -> Error<F> {
+        Self::binop_context(
+            Error::new(
+                ErrorType::Type,
+                format!(
+                    "cannot apply `{}` to {} and {}",
+                    op,
+                    lhs.describe(),
+                    rhs.describe()
+                ),
+            ),
+            site,
+            lhs,
+            rhs,
+        )
+    }
+
+    /// `site` is the location of the whole operation.
     fn resolve_binop(
         lhs: &Expr<T, F>,
         op: ExprBinOp,
         rhs: &Expr<T, F>,
+        site: &Option<Loc<F>>,
     ) -> Result<ExprType<T, F>, F> {
+        // An error from the values themselves, pointed at the operation
+        let at_op = |err: Error<F>| Self::binop_context(err, site, lhs, rhs);
+        // The same for an operator that decides on its left side alone; the
+        // right side may not even be evaluated
+        let at_left = |err: Error<F>| {
+            err.primary(site, "").label(
+                &lhs.origin(),
+                format!("the left side is {}", lhs.describe()),
+            )
+        };
+        let unsupported = || Self::binop_error(op, site, lhs, rhs);
         match op {
             ExprBinOp::LogAnd | ExprBinOp::LogOr | ExprBinOp::LogImpl => {
                 // Operators that can be lazy
                 let lhs_val = lhs.value().map_err(|e| e.reref(&lhs.get_loc()))?;
                 let rhs_val = || rhs.value().map_err(|e| e.reref(&rhs.get_loc()));
                 match op {
-                    ExprBinOp::LogAnd => Ok(match lhs_val.as_bool()? {
+                    ExprBinOp::LogAnd => Ok(match lhs_val.as_bool().map_err(at_left)? {
                         true => ExprType::Value(rhs_val()?),
                         false => ExprType::Value(lhs_val),
                     }),
-                    ExprBinOp::LogOr => Ok(match lhs_val.as_bool()? {
+                    ExprBinOp::LogOr => Ok(match lhs_val.as_bool().map_err(at_left)? {
                         true => ExprType::Value(lhs_val),
                         false => ExprType::Value(rhs_val()?),
                     }),
-                    ExprBinOp::LogImpl => Ok(match lhs_val.as_bool()? {
+                    ExprBinOp::LogImpl => Ok(match lhs_val.as_bool().map_err(at_left)? {
                         true => ExprType::Value(rhs_val()?),
                         false => ExprType::Value(T::new_from_bool(true)),
                     }),
@@ -569,23 +659,22 @@ where
                     (ExprType::Null, ExprBinOp::Neq, _) | (_, ExprBinOp::Neq, ExprType::Null) => {
                         Ok(ExprType::Value(T::new_from_bool(true)))
                     }
-                    (ExprType::Value(lhs_val), op, ExprType::Value(rhs_val)) => match op {
-                        ExprBinOp::Add => Ok(ExprType::Value(T::op_add(lhs_val, rhs_val)?)),
-                        ExprBinOp::Sub => Ok(ExprType::Value(T::op_sub(lhs_val, rhs_val)?)),
-                        ExprBinOp::Mult => Ok(ExprType::Value(T::op_mult(lhs_val, rhs_val)?)),
-                        ExprBinOp::Div => Ok(ExprType::Value(T::op_div(lhs_val, rhs_val)?)),
-                        ExprBinOp::Lt => Ok(ExprType::Value(T::op_lt(lhs_val, rhs_val)?)),
-                        ExprBinOp::Le => Ok(ExprType::Value(T::op_le(lhs_val, rhs_val)?)),
-                        ExprBinOp::Gt => Ok(ExprType::Value(T::op_gt(lhs_val, rhs_val)?)),
-                        ExprBinOp::Ge => Ok(ExprType::Value(T::op_ge(lhs_val, rhs_val)?)),
-                        ExprBinOp::Eq => Ok(ExprType::Value(T::op_eq(lhs_val, rhs_val)?)),
-                        ExprBinOp::Neq => Ok(ExprType::Value(T::op_neq(lhs_val, rhs_val)?)),
-                        _ => Err(Error::new(
-                            ErrorType::Eval,
-                            format!("Unsupported binary operation: {:?} between values", op),
-                        )
-                        .reref(&lhs.get_loc())),
-                    },
+                    (ExprType::Value(lhs_val), op, ExprType::Value(rhs_val)) => {
+                        let value = match op {
+                            ExprBinOp::Add => T::op_add(lhs_val, rhs_val),
+                            ExprBinOp::Sub => T::op_sub(lhs_val, rhs_val),
+                            ExprBinOp::Mult => T::op_mult(lhs_val, rhs_val),
+                            ExprBinOp::Div => T::op_div(lhs_val, rhs_val),
+                            ExprBinOp::Lt => T::op_lt(lhs_val, rhs_val),
+                            ExprBinOp::Le => T::op_le(lhs_val, rhs_val),
+                            ExprBinOp::Gt => T::op_gt(lhs_val, rhs_val),
+                            ExprBinOp::Ge => T::op_ge(lhs_val, rhs_val),
+                            ExprBinOp::Eq => T::op_eq(lhs_val, rhs_val),
+                            ExprBinOp::Neq => T::op_neq(lhs_val, rhs_val),
+                            _ => return Err(unsupported()),
+                        };
+                        Ok(ExprType::Value(value.map_err(at_op)?))
+                    }
                     (ExprType::Object(lhs_obj), op, ExprType::Object(rhs_obj)) => match op {
                         ExprBinOp::Update => {
                             let mut merged = lhs_obj.clone();
@@ -614,11 +703,7 @@ where
                                 ))
                             }
                         }
-                        _ => Err(Error::new(
-                            ErrorType::Eval,
-                            format!("Unsupported binary operation: {:?} between objects", op),
-                        )
-                        .reref(&lhs.get_loc())),
+                        _ => Err(unsupported()),
                     },
                     (ExprType::List(lhs_list), op, ExprType::List(rhs_list)) => match op {
                         ExprBinOp::ListConcat => Ok(ExprType::List(
@@ -631,52 +716,21 @@ where
                         ExprBinOp::Eq => list_eq(lhs_list, rhs_list),
                         ExprBinOp::Neq => list_eq(lhs_list, rhs_list)
                             .map(|eq| ExprType::UnOp(ExprUnOp::Not, eq.builtin())),
-                        _ => Err(Error::new(
-                            ErrorType::Eval,
-                            format!("Unsupported binary operation: {:?} between lists", op),
-                        )
-                        .reref(&lhs.get_loc())),
+                        _ => Err(unsupported()),
                     },
-                    (ExprType::Object(lhs_obj), op, ExprType::Value(rhs_val)) => match op {
-                        ExprBinOp::HasAttr => Ok(ExprType::Value(T::new_from_bool(
-                            lhs_obj.contains_key(&StrKey::from(
-                                &rhs_val.as_string().map_err(|e| e.reref(&rhs.get_loc()))?,
-                            )),
-                        ))),
-                        _ => Err(Error::new(
-                            ErrorType::Eval,
-                            format!(
-                                "Unsupported binary operation: {:?} between objects and string",
-                                op
-                            ),
-                        )
-                        .reref(&lhs.get_loc())),
-                    },
+                    (ExprType::Object(lhs_obj), ExprBinOp::HasAttr, ExprType::Value(rhs_val)) => {
+                        let name = rhs_val.as_string().map_err(at_op)?;
+                        Ok(ExprType::Value(T::new_from_bool(
+                            lhs_obj.contains_key(&StrKey::from(&name)),
+                        )))
+                    }
                     (ExprType::Tuple(lhs_list), op, ExprType::Tuple(rhs_list)) => match op {
                         ExprBinOp::Eq => list_eq(lhs_list, rhs_list),
                         ExprBinOp::Neq => list_eq(lhs_list, rhs_list)
                             .map(|eq| ExprType::UnOp(ExprUnOp::Not, eq.builtin())),
-                        _ => Err(Error::new(
-                            ErrorType::Eval,
-                            format!("Unsupported binary operation: {:?} between lists", op),
-                        )
-                        .reref(&lhs.get_loc())),
+                        _ => Err(unsupported()),
                     },
-                    _ => {
-                        // `.diag()` bounds depth/size, so it's safe to
-                        // print the operands even though either could be a
-                        // huge or cyclic structure.
-                        Err(Error::new(
-                            ErrorType::Eval,
-                            format!(
-                                "Unsupported binary operation: {:?} between {} and {}",
-                                op,
-                                lhs_r.tok.diag(),
-                                rhs_r.tok.diag()
-                            ),
-                        )
-                        .reref(&lhs.get_loc()))
-                    }
+                    _ => Err(unsupported()),
                 }
             }
         }
@@ -902,11 +956,20 @@ where
                                 .clone()
                                 .loc(Loc::chain(loc, resolved_loc)))
                         }
-                        None => Err(Error::new(
-                            ErrorType::Scope,
-                            format!("Unknown variable {}", name),
-                        )
-                        .reref(vloc)),
+                        None => {
+                            let err = Error::new(
+                                ErrorType::Scope,
+                                format!("unknown variable `{}`", name),
+                            )
+                            .reref(vloc);
+                            let known = varspace.keys().map(|key| key.as_string());
+                            Err(match closest(&name.as_string(), known) {
+                                Some(similar) => err.help(format!(
+                                    "a variable with a similar name exists: `{similar}`"
+                                )),
+                                None => err,
+                            })
+                        }
                     },
                     ExprStorage {
                         tok: ExprType::UnOp(op, expr),
@@ -1053,11 +1116,12 @@ where
                             .clone()
                             .loc(Loc::chain(loc, resolved_loc)))
                     }
-                    ExprStorage { tok: _, loc: floc } => Err(Error::new(
-                        ErrorType::Scope,
-                        format!("called func, but it's a {}", fexpr.diag()),
+                    ExprStorage { tok, .. } => Err(Error::new(
+                        ErrorType::Type,
+                        format!("cannot call {}, it is not a function", tok.describe()),
                     )
-                    .reref(floc)),
+                    .primary(&loc, "")
+                    .label(&fexpr.origin(), format!("this is {}", tok.describe()))),
                 },
                 ExprStorage {
                     tok: ExprType::Fold { func, init, input },
@@ -1091,16 +1155,21 @@ where
                             } else {
                                 Err(Error::new(
                                     ErrorType::Eval,
-                                    "Fold over empty list with no init".to_string(),
+                                    "cannot fold an empty list without a start value",
                                 )
-                                .reref(&loc))
+                                .primary(&loc, "")
+                                .label(&input.origin(), "the list is empty"))
                             }
                         }
-                        _ => Err(Error::new(
-                            ErrorType::Eval,
-                            format!("Fold over non-list: {}", input.diag()),
+                        other => Err(Error::new(
+                            ErrorType::Type,
+                            format!(
+                                "cannot fold over {}, it is not a list",
+                                other.tok.describe()
+                            ),
                         )
-                        .reref(&loc)),
+                        .primary(&loc, "")
+                        .label(&input.origin(), format!("this is {}", other.tok.describe()))),
                     }
                 }
                 ExprStorage {
@@ -1130,11 +1199,15 @@ where
                                 .collect::<Vec<_>>();
                             Ok(args)
                         }
-                        _ => Err(Error::new(
-                            ErrorType::Eval,
-                            format!("Foreach over non-iterable: {}", input.diag()),
+                        other => Err(Error::new(
+                            ErrorType::Type,
+                            format!(
+                                "cannot iterate over {}, it is not a list or an object",
+                                other.tok.describe()
+                            ),
                         )
-                        .reref(&loc)),
+                        .primary(&loc, "")
+                        .label(&input.origin(), format!("this is {}", other.tok.describe()))),
                     }?;
 
                     let mut filtered_items: Vec<Expr<T, F>>;
@@ -1189,9 +1262,13 @@ where
                                         ),
                                         els[1].clone(),
                                     )),
-                                    _ => Err(Error::new(
+                                    other => Err(Error::new(
                                         ErrorType::Type,
-                                        "Expecting tuple of 2 elements",
+                                        format!(
+                                            "an object is built from tuples of a name and a \
+                                             value, got {}",
+                                            other.tok.describe()
+                                        ),
                                     )
                                     .reref(&el.get_loc())),
                                 })
@@ -1205,37 +1282,28 @@ where
                     loc,
                 } => {
                     expr.resolve().map_err(|e| e.reref(&loc))?;
-                    match op {
-                        ExprUnOp::Neg => match &*expr.inner_ref() {
-                            ExprStorage {
-                                tok: ExprType::Value(value),
-                                ..
-                            } => Ok(ExprType::Value(value.op_neg().map_err(|e| e.reref(&loc))?)
-                                .loc(loc)),
-                            _ => Err(Error::new(
-                                ErrorType::Eval,
-                                format!("negating non-value: {}", expr.diag()),
-                            )
-                            .reref(&loc)),
+                    // An error from the operation, pointed at it and at
+                    // where the value was written
+                    let at_op = |err: Error<F>| {
+                        err.primary(&loc, "")
+                            .label(&expr.origin(), format!("this is {}", expr.describe()))
+                    };
+                    let result = match &expr.inner_ref().tok {
+                        ExprType::Value(value) => match op {
+                            ExprUnOp::Neg => value.op_neg(),
+                            ExprUnOp::Not => value.op_not(),
                         },
-                        ExprUnOp::Not => match &*expr.inner_ref() {
-                            ExprStorage {
-                                tok: ExprType::Value(value),
-                                ..
-                            } => Ok(ExprType::Value(value.op_not().map_err(|e| e.reref(&loc))?)
-                                .loc(loc)),
-                            _ => Err(Error::new(
-                                ErrorType::Eval,
-                                format!("negating non-value: {}", expr.diag()),
-                            )
-                            .reref(&loc)),
-                        },
-                    }
+                        other => Err(Error::new(
+                            ErrorType::Type,
+                            format!("cannot apply `{}` to {}", op, other.describe()),
+                        )),
+                    };
+                    Ok(ExprType::Value(result.map_err(at_op)?).loc(loc))
                 }
                 ExprStorage {
                     tok: ExprType::BinOp(op, lhs, rhs),
                     loc,
-                } => Ok(Self::resolve_binop(&lhs, op, &rhs)?.loc(loc)),
+                } => Ok(Self::resolve_binop(&lhs, op, &rhs, &loc)?.loc(loc)),
                 ExprStorage {
                     tok: ExprType::Switch(ref_expr, cases, default_case),
                     loc,
@@ -1275,9 +1343,13 @@ where
                         } else {
                             Err(Error::new(
                                 ErrorType::Eval,
-                                format!("No matching case for {}", ref_expr.diag()),
+                                format!("no case matches the value {}", ref_expr.diag()),
                             )
-                            .reref(&loc))
+                            .primary(&loc, "")
+                            .label(
+                                &ref_expr.origin(),
+                                format!("this is {}", ref_expr.describe()),
+                            ))
                         }
                     }
                 }
@@ -1308,16 +1380,21 @@ where
                     } else {
                         Err(Error::new(
                             ErrorType::Eval,
-                            format!("No matching case for {}", ref_expr.diag()),
+                            format!("no case matches the value {}", ref_expr.diag()),
                         )
-                        .reref(&loc))
+                        .primary(&loc, "")
+                        .label(
+                            &ref_expr.origin(),
+                            format!("this is {}", ref_expr.describe()),
+                        ))
                     }
                 }
                 ExprStorage {
                     tok: ExprType::Var(name),
                     loc,
                 } => Err(
-                    Error::new(ErrorType::Scope, format!("Unknown variable {}", name)).reref(&loc),
+                    Error::new(ErrorType::Scope, format!("unknown variable `{}`", name))
+                        .reref(&loc),
                 ),
                 ExprStorage {
                     tok: ExprType::UnderEval,
@@ -1339,38 +1416,41 @@ where
         Ok(self.inner_ref())
     }
 
+    /// Resolve the expression and everything in it, and report the first
+    /// error. The rest of a list or object is still evaluated after an
+    /// error in one of its parts.
     pub fn eval(&self) -> Result<(), F> {
-        let mut first_err: Option<Error<F>> = None;
+        // A cell that fails to resolve keeps its unresolved expression, and
+        // its parts are not evaluated: the scope of a bound expression holds
+        // the `self` of its module, which leads straight back to this cell.
+        self.resolve()?;
 
-        if let Err(err) = self.resolve() {
-            first_err = Some(err);
-        }
-
-        let fields: Vec<Expr<T, F>> = match &self.inner_ref().tok {
-            ExprType::Object(fields) => fields.values().cloned().collect(),
-            ExprType::List(fields) | ExprType::Tuple(fields) | ExprType::Concat(fields) => {
-                fields.to_vec()
-            }
-            ExprType::Bind(varspace, bound_expr) => {
-                let mut parts: Vec<Expr<T, F>> = varspace.values().cloned().collect();
-                parts.push(bound_expr.clone());
-                parts
-            }
+        // Each part with its place in the result, for an error in it
+        let fields: Vec<(String, Expr<T, F>)> = match &self.inner_ref().tok {
+            ExprType::Object(fields) => fields
+                .iter()
+                .map(|(name, field)| (format!(".{name}"), field.clone()))
+                .collect(),
+            ExprType::List(items) | ExprType::Tuple(items) => items
+                .iter()
+                .enumerate()
+                .map(|(index, item)| (format!("[{index}]"), item.clone()))
+                .collect(),
             _ => vec![],
         };
 
-        for ex in fields.into_iter() {
+        let mut first_err: Option<Error<F>> = None;
+        for (part, ex) in fields.into_iter() {
             if let Err(err) = ex.eval()
                 && first_err.is_none()
             {
-                first_err = Some(err);
+                first_err = Some(err.in_result(part));
             }
         }
 
-        if let Some(err) = first_err {
-            Err(err)
-        } else {
-            Ok(())
+        match first_err {
+            Some(err) => Err(err),
+            None => Ok(()),
         }
     }
 
@@ -1379,9 +1459,9 @@ where
         self.resolve()?;
         match &self.inner_ref().tok {
             ExprType::Value(val) => Ok(val.clone()),
-            _ => Err(Error::new(
+            other => Err(Error::new(
                 ErrorType::NoValue,
-                format!("Not a value: {}", self.diag()),
+                format!("expected a plain value, got {}", other.describe()),
             )),
         }
     }
@@ -1391,9 +1471,9 @@ where
         self.resolve()?;
         match &self.inner_ref().tok {
             ExprType::Value(val) => Ok(val.as_string()?),
-            _ => Err(Error::new(
+            other => Err(Error::new(
                 ErrorType::NoValue,
-                format!("Not a string: {}", self.diag()),
+                format!("expected a string, got {}", other.describe()),
             )),
         }
     }
@@ -1402,14 +1482,34 @@ where
         self.resolve()?;
         let node = self.inner_ref();
         match &node.tok {
-            ExprType::Object(vars) => Ok(vars
-                .get(&StrKey::from(name))
-                .ok_or_else(|| Error::new(ErrorType::NoValue, format!("Invalid field '{}'", name)))?
-                .clone()),
-            _ => Err(Error::new(
-                ErrorType::NoValue,
-                format!("Missing item '{}'", name),
-            )),
+            ExprType::Object(vars) => match vars.get(&StrKey::from(name)) {
+                Some(value) => Ok(value.clone()),
+                None => {
+                    let err = Error::new(
+                        ErrorType::NoValue,
+                        format!("the object has no field `{name}`"),
+                    )
+                    .label(&self.origin(), "this is the object");
+                    let fields = || vars.keys().map(|key| key.as_string());
+                    Err(if let Some(similar) = closest(name, fields()) {
+                        err.help(format!("a field with a similar name exists: `{similar}`"))
+                    } else if vars.is_empty() {
+                        err.help("the object has no fields at all")
+                    } else if vars.len() <= MAX_LISTED_FIELDS {
+                        err.help(format!("the object has the fields {}", name_list(fields())))
+                    } else {
+                        err
+                    })
+                }
+            },
+            other => Err(Error::new(
+                ErrorType::Type,
+                format!(
+                    "cannot select the field `{name}` of {}, it is not an object",
+                    other.describe()
+                ),
+            )
+            .label(&self.origin(), format!("this is {}", other.describe()))),
         }
     }
 

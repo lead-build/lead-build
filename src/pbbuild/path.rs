@@ -47,21 +47,25 @@ impl Referrable for VirtPath {
         f: &mut std::fmt::Formatter<'_>,
     ) -> std::fmt::Result {
         let fs_path = self.to_path_buf();
-        let code = fs::read_to_string(fs_path.clone()).unwrap();
-        let before = code[..start].to_string();
-        let lines = before.lines().count();
-        let column = if let Some(last_line) = before.lines().last() {
-            last_line.len() + 1
-        } else {
-            0
+        // Without the text there is no line to count to, so the byte offset
+        // has to do
+        let Ok(code) = fs::read_to_string(&fs_path) else {
+            return write!(f, "{}:@{}", fs_path.display(), start);
         };
-        write!(f, "{}:{}:{}", fs_path.display(), lines, column)
+        let before = &code[..start.min(code.len())];
+        let line = before.matches('\n').count() + 1;
+        let column = before.len() - before.rfind('\n').map_or(0, |pos| pos + 1) + 1;
+        write!(f, "{}:{}:{}", fs_path.display(), line, column)
     }
 }
 
 impl SourceContext for VirtPath {
     fn source_text(&self) -> Option<String> {
         fs::read_to_string(self.to_path_buf()).ok()
+    }
+
+    fn display_path(&self) -> String {
+        self.to_path_buf().display().to_string()
     }
 }
 

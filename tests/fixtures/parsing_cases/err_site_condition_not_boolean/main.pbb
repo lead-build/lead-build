@@ -1,0 +1,5 @@
+|{ ... }|
+let
+    c = "yes";
+in
+c && true

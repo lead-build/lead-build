@@ -1,0 +1,11 @@
+No value: the field `name` is missing
+ --> $DIR/err_site_missing_argument_field/main.pbb:5:3
+  |
+5 |   f {
+  |  ___^
+6 | |     nam = "a";
+7 | |     value = 1;
+8 | | }
+  | |_^ this is an object
+  |
+  = help: a field with a similar name is given: `nam`

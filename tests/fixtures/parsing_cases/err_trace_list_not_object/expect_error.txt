@@ -1,0 +1,16 @@
+Type error: cannot apply `//` to an object and a list
+  --> $DIR/_lib/lib.pbb:20:19
+   |
+20 |         defines = ma.defines // mb.defines;
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+  ::: $DIR/err_trace_list_not_object/main.pbb:9:19
+   |
+ 9 |         defines = [ ("VERSION", 1) ];
+   |                   ------------------ the right side is a list
+
+In the result at .define_args
+
+Needed by:
+  $DIR/_lib/lib.pbb:37:66
+      define_args = [ |(name, value)| "-D${name}=${value}" for self.defines ];

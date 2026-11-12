@@ -120,7 +120,7 @@ fn test_invalid_var() -> Result<(), FRef> {
     let expr: Expr<TestValue, FRef> =
         ExprType::Bind(ExprSet::new(), parse_str("invalid_var", &FRef).unwrap()).builtin();
     if let Err(Error { msg, .. }) = expr.resolve() {
-        assert_eq!(msg.as_str(), "Unknown variable invalid_var");
+        assert_eq!(msg.as_str(), "unknown variable `invalid_var`");
     } else {
         panic!("expected resolve() to return an error");
     }

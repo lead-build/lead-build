@@ -1,0 +1,10 @@
+|{ ... }|
+let
+    f = |{ name }| name;
+    arg = {
+        name = "a";
+        extra = 1;
+        other = 2;
+    };
+in
+f arg

@@ -41,6 +41,18 @@ impl Value {
         }
     }
 
+    /// What kind of value this is, in the words of an error message.
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            Value::Int(_) => "an integer",
+            Value::String(_) => "a string",
+            Value::Path { .. } => "a path",
+            Value::Bool(_) => "a boolean",
+            Value::BuildVar(_) => "a build variable",
+            Value::BuildConcat(_) => "a string with build variables",
+        }
+    }
+
     pub fn try_as_path(self) -> Option<VirtPath> {
         match self {
             Value::Path { path, .. } => Some(path),
@@ -114,7 +126,11 @@ where
             }),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't subtract {} and {}", lhs.diag(), rhs.diag()),
+                format!(
+                    "cannot apply `-` to {} and {}",
+                    lhs.type_name(),
+                    rhs.type_name()
+                ),
             )),
         }
     }
@@ -124,7 +140,11 @@ where
             (Value::Int(lhs), Value::Int(rhs)) => Ok(Value::Int(lhs * rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't multiply {} and {}", lhs.diag(), rhs.diag()),
+                format!(
+                    "cannot apply `*` to {} and {}",
+                    lhs.type_name(),
+                    rhs.type_name()
+                ),
             )),
         }
     }
@@ -138,7 +158,11 @@ where
             }),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't divide {} and {}", lhs.diag(), rhs.diag()),
+                format!(
+                    "cannot apply `/` to {} and {}",
+                    lhs.type_name(),
+                    rhs.type_name()
+                ),
             )),
         }
     }
@@ -197,7 +221,7 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs < rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs.diag(), rhs.diag()),
+                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
             )),
         }
     }
@@ -208,7 +232,7 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs <= rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs.diag(), rhs.diag()),
+                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
             )),
         }
     }
@@ -219,7 +243,7 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs > rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs.diag(), rhs.diag()),
+                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
             )),
         }
     }
@@ -230,7 +254,7 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs >= rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs.diag(), rhs.diag()),
+                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
             )),
         }
     }
@@ -248,7 +272,7 @@ where
             Value::Int(val) => Ok(Value::Int(-val)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not an integer: {}", self.diag()),
+                format!("cannot apply `-` to {}", self.type_name()),
             )),
         }
     }
@@ -258,7 +282,7 @@ where
             Value::Bool(val) => Ok(Value::Bool(!val)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not a boolean: {}", self.diag()),
+                format!("cannot apply `!` to {}", self.type_name()),
             )),
         }
     }
@@ -268,7 +292,7 @@ where
             Value::Bool(val) => Ok(*val),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not a boolean: {}", self.diag()),
+                format!("expected a boolean, got {}", self.type_name()),
             )),
         }
     }
@@ -278,9 +302,13 @@ where
             Value::String(val) => Ok(val.clone()),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not a string: {}", self.diag()),
+                format!("expected a string, got {}", self.type_name()),
             )),
         }
+    }
+
+    fn type_name(&self) -> &'static str {
+        Value::type_name(self)
     }
 
     fn new_from_bool(value: bool) -> Self {

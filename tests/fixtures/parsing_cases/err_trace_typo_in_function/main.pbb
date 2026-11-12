@@ -1,0 +1,10 @@
+|{ cwd, include, args = { fixtures, ... }, ... }|
+let
+    lib = include "${fixtures}/_lib/lib.pbb";
+    # The mistake is in the included file: pbls would flag it in this one
+    mymod = include (cwd / "mymod.pbb") lib;
+in
+lib.build [
+    lib.config "${cwd}/out",
+    mymod "main",
+]

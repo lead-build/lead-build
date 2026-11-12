@@ -39,26 +39,35 @@ pub struct Printer<'a> {
     out: &'a mut dyn Write,
     depth_left: usize,
     items_left: usize,
+    /// Printing for a diagnostic message, see [`Printer::new_diag`]
+    diag: bool,
 }
 
 impl<'a> Printer<'a> {
     pub fn new(out: &'a mut dyn Write) -> Self {
-        Self::with_budget(out, MAX_DEPTH, MAX_ITEMS)
+        Self::with_budget(out, MAX_DEPTH, MAX_ITEMS, false)
     }
 
     /// A tightly-budgeted printer for embedding a value inline in a
     /// diagnostic message: see [`Diag`] for when to use it instead of plain
     /// `Display`.
     pub fn new_diag(out: &'a mut dyn Write) -> Self {
-        Self::with_budget(out, DIAG_MAX_DEPTH, DIAG_MAX_ITEMS)
+        Self::with_budget(out, DIAG_MAX_DEPTH, DIAG_MAX_ITEMS, true)
     }
 
-    fn with_budget(out: &'a mut dyn Write, depth: usize, items: usize) -> Self {
+    fn with_budget(out: &'a mut dyn Write, depth: usize, items: usize, diag: bool) -> Self {
         Self {
             out,
             depth_left: depth,
             items_left: items,
+            diag,
         }
+    }
+
+    /// Whether this prints for a diagnostic message, where the scope of an
+    /// unevaluated expression is noise.
+    pub fn is_diag(&self) -> bool {
+        self.diag
     }
 
     /// Runs `body` one nesting level deeper, or writes `<{concept}>` instead
@@ -262,6 +271,7 @@ where
                 out.write_str(" ")?;
                 arg.export(out)
             }
+            ExprType::Bind(_, body) if out.is_diag() => body.export(out),
             ExprType::Bind(items, body) => {
                 out.write_str("bind ")?;
                 out.list(items.iter(), "", |p, (key, value)| {

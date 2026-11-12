@@ -1,0 +1,8 @@
+|{ ... }|
+let
+    f = |{ name, value }| name;
+in
+f {
+    nam = "a";
+    value = 1;
+}

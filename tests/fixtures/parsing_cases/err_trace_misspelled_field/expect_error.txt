@@ -1,0 +1,20 @@
+No value: the object has no field `modd`
+  --> $DIR/err_trace_misspelled_field/main.pbb:7:5
+   |
+ 7 |     lib.modd {
+   |     ^^^^^^^^
+   |
+  ::: $DIR/_lib/lib.pbb:42:1
+   |
+42 | {
+   | - this is the object
+   |
+   = help: a field with a similar name exists: `mod`
+
+In the result at .objs
+
+Needed by:
+  $DIR/_lib/lib.pbb:33:28
+      self = ops.recurse (|a b| merge a b for defaults : mods);
+  $DIR/_lib/lib.pbb:36:41
+      objs = [ |file| "${file}.o" for self.src ];

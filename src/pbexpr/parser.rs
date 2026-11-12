@@ -54,26 +54,10 @@ fn parse_error_parts(err: &pblang::ParseError) -> (std::ops::Range<usize>, &'sta
     }
 }
 
-/// Renders one `ParseError` as a three-line block: location, category,
-/// detail message (the last omitted when there's nothing beyond the
-/// category itself, e.g. `InvalidToken`).
-fn parse_error_block<F>(err: pblang::ParseError, file: &F) -> String
-where
-    F: Clone + Referrable,
-{
-    let (span, kind, detail) = parse_error_parts(&err);
-    let loc = Loc::new(file.clone(), span);
-    if detail.is_empty() {
-        format!("{loc}\n{kind}")
-    } else {
-        format!("{loc}\n{kind}\n{detail}")
-    }
-}
-
 /// Combines every recovered parse error (and, if parsing ultimately failed
-/// outright, the final fatal one too) into a single `Error` with one
-/// blank-line-separated block per error — rather than surfacing only the
-/// first, as a plain `Result` would.
+/// outright, the final fatal one too) into a single `Error` that points
+/// out each of them in the source, rather than surfacing only the first,
+/// as a plain `Result` would.
 fn transform_parse_errors<F>(
     recovered: Vec<pblang::ErrorRecovery>,
     fatal: Option<pblang::ParseError>,
@@ -82,14 +66,32 @@ fn transform_parse_errors<F>(
 where
     F: Clone + Referrable,
 {
-    let mut blocks: Vec<String> = recovered
-        .into_iter()
-        .map(|recovery| parse_error_block(recovery.error, file))
+    let parts: Vec<_> = recovered
+        .iter()
+        .map(|recovery| &recovery.error)
+        .chain(fatal.iter())
+        .map(parse_error_parts)
         .collect();
-    if let Some(fatal) = fatal {
-        blocks.push(parse_error_block(fatal, file));
+    let loc = |span: &std::ops::Range<usize>| Some(Loc::new(file.clone(), span.clone()));
+
+    if let [(span, kind, detail)] = parts.as_slice() {
+        // A single error: its category is the message, the detail the note
+        return Error::new(ErrorType::Parse, kind).primary(&loc(span), detail);
     }
-    Error::new(ErrorType::Parse, blocks.join("\n\n"))
+    let mut err = Error::new(ErrorType::Parse, format!("{} syntax errors", parts.len()));
+    for (idx, (span, kind, detail)) in parts.iter().enumerate() {
+        let text = if detail.is_empty() {
+            kind.to_string()
+        } else {
+            format!("{kind}: {detail}")
+        };
+        err = if idx == 0 {
+            err.primary(&loc(span), text)
+        } else {
+            err.label(&loc(span), text)
+        };
+    }
+    err
 }
 
 pub fn parse_str<T, F>(code: &str, file: &F) -> Result<Expr<T, F>, F>

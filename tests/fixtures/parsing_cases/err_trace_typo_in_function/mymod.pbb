@@ -1,0 +1,4 @@
+|{ cwd, ... } lib name|
+lib.mod {
+    src = [ "${cwd}/${nam}.c" ];
+}

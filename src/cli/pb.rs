@@ -38,6 +38,10 @@ pub struct Args {
     #[arg(short = 'E', long)]
     pub eval: bool,
 
+    /// Show the whole trace of an error, however long
+    #[arg(long)]
+    pub trace: bool,
+
     /// Set verbosity level. Pass many times for more log output (up to three)
     #[arg(short, long, action = ArgAction::Count)]
     pub verbose: u8,

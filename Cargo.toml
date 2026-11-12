@@ -53,6 +53,7 @@ assets = [
 lalrpop = { version = "0.23.1" }
 
 [dependencies]
+annotate-snippets = "0.12.18"
 clap = { version = "4.6.1", features = ["derive"] }
 env_logger = "0.11.11"
 globset = "0.4.20"

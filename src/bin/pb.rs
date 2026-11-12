@@ -3,7 +3,7 @@ use lead_build::{
     Expr, LangContext, Result, Value, add_expr_to_ninjafile,
     cli::pb::Args,
     pbbuild::{NinjaFile, VirtPath},
-    pbexpr::{Error, ErrorType, ExprSet, ExprType},
+    pbexpr::{Error, ErrorType, ExprSet, ExprType, RenderOptions},
     strkey::StrKey,
 };
 use std::{
@@ -89,13 +89,17 @@ fn setup_log(verbose: u8) {
 fn main() {
     let args = Args::parse();
     setup_log(args.verbose);
+    let render_options = RenderOptions {
+        color: std::io::IsTerminal::is_terminal(&std::io::stderr()),
+        full_trace: args.trace,
+    };
 
     match run(args) {
         Ok(_) => {
             exit(0);
         }
         Err(err) => {
-            eprintln!("{}", err.rich());
+            eprint!("{}", err.render(&render_options));
             exit(1);
         }
     }

@@ -4,6 +4,7 @@ use std::{
 };
 
 use super::{Error, ErrorType, Exportable, Expr, ExprOps, ExprSet, ExprType, Referrable, Result};
+use crate::pbexpr::suggest::{closest, name_list};
 use crate::strkey::StrKey;
 
 pub type ObjectMatch<T, F> = (StrKey, Matcher<T, F>, Option<Expr<T, F>>);
@@ -100,7 +101,14 @@ where
                 }
             };
         }
-        let mismatch = |typ, msg: String| Ok(Err(Error::new(typ, msg).reref(&expr.get_loc())));
+        // The value is pointed out where it is passed and where it was
+        // written, which for a variable are two places
+        let mismatch = |typ, msg: String| {
+            Ok(Err(Error::new(typ, msg).reref(&expr.get_loc()).label(
+                &expr.origin(),
+                format!("this is {}", expr.describe()),
+            )))
+        };
 
         match self {
             Matcher::Alias(matcher, name) => {
@@ -116,7 +124,11 @@ where
                     if exprs.len() != matchers.len() {
                         return mismatch(
                             ErrorType::Type,
-                            format!("Expected tuple of length {}", matchers.len()),
+                            format!(
+                                "expected a tuple of {} items, got one of {}",
+                                matchers.len(),
+                                exprs.len()
+                            ),
                         );
                     }
                     let mut output = ExprSet::new();
@@ -127,20 +139,31 @@ where
                     }
                     Ok(Ok(output))
                 }
-                _ => mismatch(ErrorType::Type, "Expected tuple".to_string()),
+                other => mismatch(
+                    ErrorType::Type,
+                    format!("expected a tuple, got {}", other.describe()),
+                ),
             },
             Matcher::List(matchers, need_all) => match &expr.res_type()?.tok {
                 ExprType::List(exprs) => {
                     if *need_all && exprs.len() != matchers.len() {
                         return mismatch(
                             ErrorType::Type,
-                            format!("Expected list of length {}", matchers.len()),
+                            format!(
+                                "expected a list of {} items, got one of {}",
+                                matchers.len(),
+                                exprs.len()
+                            ),
                         );
                     }
                     if exprs.len() < matchers.len() {
                         return mismatch(
                             ErrorType::Type,
-                            format!("Expected list of at least length {}", matchers.len()),
+                            format!(
+                                "expected a list of at least {} items, got one of {}",
+                                matchers.len(),
+                                exprs.len()
+                            ),
                         );
                     }
                     let mut output = ExprSet::new();
@@ -153,7 +176,10 @@ where
                     }
                     Ok(Ok(output))
                 }
-                _ => mismatch(ErrorType::Type, "Expected list".to_string()),
+                other => mismatch(
+                    ErrorType::Type,
+                    format!("expected a list, got {}", other.describe()),
+                ),
             },
             Matcher::Object(items, need_all) => match &expr.res_type()?.tok {
                 ExprType::Object(exprs) => {
@@ -164,10 +190,19 @@ where
                         let Some(in_expr) = input.remove(itname).or_else(|| itdefault.clone())
                         else {
                             // TODO: Add location of matcher
-                            return mismatch(
+                            let given = exprs.keys().map(|key| key.as_string());
+                            return Ok(mismatch(
                                 ErrorType::NoValue,
-                                format!("Expected field '{}' not found", itname),
-                            );
+                                format!("the field `{}` is missing", itname),
+                            )?
+                            .map_err(|err| {
+                                match closest(&itname.as_string(), given) {
+                                    Some(similar) => err.help(format!(
+                                        "a field with a similar name is given: `{similar}`"
+                                    )),
+                                    None => err,
+                                }
+                            }));
                         };
                         let mut subvars = sub_match!(itmatch, in_expr);
                         // TODO: Check if overlapping keysets
@@ -175,15 +210,31 @@ where
                     }
 
                     if *need_all && !input.is_empty() {
-                        return mismatch(
+                        let extra = name_list(input.keys().map(|key| key.as_string()));
+                        let expected = name_list(items.iter().map(|(name, ..)| name.as_string()));
+                        return Ok(mismatch(
                             ErrorType::NoValue,
-                            "Extra fields passed to function".to_string(),
-                        );
+                            if input.len() == 1 {
+                                format!("the field {extra} is not expected")
+                            } else {
+                                format!("the fields {extra} are not expected")
+                            },
+                        )?
+                        .map_err(|err| {
+                            if items.is_empty() {
+                                err.help("no fields are expected")
+                            } else {
+                                err.help(format!("the expected fields are {expected}"))
+                            }
+                        }));
                     }
 
                     Ok(Ok(output))
                 }
-                _ => mismatch(ErrorType::Type, "Expected tuple".to_string()),
+                other => mismatch(
+                    ErrorType::Type,
+                    format!("expected an object, got {}", other.describe()),
+                ),
             },
         }
     }

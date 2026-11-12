@@ -1,0 +1,10 @@
+|{ cwd, include, args = { fixtures, ... }, ... }|
+let
+    lib = include "${fixtures}/_lib/lib.pbb";
+in
+lib.build [
+    lib.config "${cwd}/out",
+    lib.mod_fn (|self| {
+        flags = [ "-O${self.optlevel}" ];
+    }),
+]

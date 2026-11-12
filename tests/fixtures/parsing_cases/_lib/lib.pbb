@@ -1,0 +1,47 @@
+|{ ops, ... }|
+let
+    # A miniature of lead-lib for the error trace fixtures: a module is a
+    # function from the combined result to its own fields, and modules are
+    # merged field by field on top of the defaults.
+    defaults = |self| {
+        src = [];
+        defines = { };
+        flags = [];
+        outdir = null;
+        name = "app";
+    };
+    merge = |a b| |self|
+    let
+        ma = a self;
+        mb = b self;
+    in
+    {
+        src = ma.src ++ mb.src;
+        defines = ma.defines // mb.defines;
+        flags = ma.flags ++ mb.flags;
+        outdir = switch (mb.outdir == null) {
+            true => ma.outdir;
+            _ => mb.outdir;
+        };
+        name = mb.name;
+    };
+    mod_fn = |f| |self| (defaults self) // (f self);
+    mod = |fields| mod_fn (|self| fields);
+    config = |dir| mod { outdir = dir; };
+    build = |mods|
+    let
+        self = ops.recurse (|a b| merge a b for defaults : mods);
+    in
+    {
+        objs = [ |file| "${file}.o" for self.src ];
+        define_args = [ |(name, value)| "-D${name}=${value}" for self.defines ];
+        flags = self.flags;
+        out = self.outdir / self.name;
+    };
+in
+{
+    build;
+    config;
+    mod;
+    mod_fn;
+}

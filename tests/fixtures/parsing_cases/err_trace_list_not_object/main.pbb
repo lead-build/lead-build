@@ -1,0 +1,11 @@
+|{ cwd, include, args = { fixtures, ... }, ... }|
+let
+    lib = include "${fixtures}/_lib/lib.pbb";
+in
+lib.build [
+    lib.config "${cwd}/out",
+    lib.mod {
+        src = [ "${cwd}/main.c" ];
+        defines = [ ("VERSION", 1) ];
+    },
+]

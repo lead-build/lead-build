@@ -1,0 +1,8 @@
+Type error: expected a boolean, got a string
+ --> $DIR/err_site_condition_not_boolean/main.pbb:5:1
+  |
+3 |     c = "yes";
+  |         ----- the left side is a string
+4 | in
+5 | c && true
+  | ^^^^^^^^^

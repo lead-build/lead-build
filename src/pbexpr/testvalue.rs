@@ -30,6 +30,17 @@ pub enum TestValue {
     Bool(bool),
 }
 
+impl TestValue {
+    /// What kind of value this is, in the words of an error message.
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            TestValue::Int(_) => "an integer",
+            TestValue::String(_) => "a string",
+            TestValue::Bool(_) => "a boolean",
+        }
+    }
+}
+
 impl Exportable for TestValue {
     fn export(&self, out: &mut Printer<'_>) -> std::fmt::Result {
         match self {
@@ -69,7 +80,11 @@ impl ExprOps<FRef> for TestValue {
             }
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't add {} and {}", lhs, rhs),
+                format!(
+                    "cannot apply `+` to {} and {}",
+                    lhs.type_name(),
+                    rhs.type_name()
+                ),
             )),
         }
     }
@@ -79,7 +94,11 @@ impl ExprOps<FRef> for TestValue {
             (TestValue::Int(lhs), TestValue::Int(rhs)) => Ok(TestValue::Int(lhs - rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't subtract {} and {}", lhs, rhs),
+                format!(
+                    "cannot apply `-` to {} and {}",
+                    lhs.type_name(),
+                    rhs.type_name()
+                ),
             )),
         }
     }
@@ -89,7 +108,11 @@ impl ExprOps<FRef> for TestValue {
             (TestValue::Int(lhs), TestValue::Int(rhs)) => Ok(TestValue::Int(lhs * rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't multiply {} and {}", lhs, rhs),
+                format!(
+                    "cannot apply `*` to {} and {}",
+                    lhs.type_name(),
+                    rhs.type_name()
+                ),
             )),
         }
     }
@@ -99,7 +122,11 @@ impl ExprOps<FRef> for TestValue {
             (TestValue::Int(lhs), TestValue::Int(rhs)) => Ok(TestValue::Int(lhs / rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't divide {} and {}", lhs, rhs),
+                format!(
+                    "cannot apply `/` to {} and {}",
+                    lhs.type_name(),
+                    rhs.type_name()
+                ),
             )),
         }
     }
@@ -126,7 +153,7 @@ impl ExprOps<FRef> for TestValue {
             (TestValue::String(lhs), TestValue::String(rhs)) => Ok(TestValue::Bool(lhs < rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs, rhs),
+                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
             )),
         }
     }
@@ -137,7 +164,7 @@ impl ExprOps<FRef> for TestValue {
             (TestValue::String(lhs), TestValue::String(rhs)) => Ok(TestValue::Bool(lhs <= rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs, rhs),
+                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
             )),
         }
     }
@@ -148,7 +175,7 @@ impl ExprOps<FRef> for TestValue {
             (TestValue::String(lhs), TestValue::String(rhs)) => Ok(TestValue::Bool(lhs > rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs, rhs),
+                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
             )),
         }
     }
@@ -159,7 +186,7 @@ impl ExprOps<FRef> for TestValue {
             (TestValue::String(lhs), TestValue::String(rhs)) => Ok(TestValue::Bool(lhs >= rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("can't compare {} and {}", lhs, rhs),
+                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
             )),
         }
     }
@@ -187,7 +214,7 @@ impl ExprOps<FRef> for TestValue {
             TestValue::Int(val) => Ok(TestValue::Int(-val)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not an integer: {}", self),
+                format!("cannot apply `-` to {}", self.type_name()),
             )),
         }
     }
@@ -197,7 +224,7 @@ impl ExprOps<FRef> for TestValue {
             TestValue::Bool(val) => Ok(TestValue::Bool(!val)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not a boolean: {}", self),
+                format!("cannot apply `!` to {}", self.type_name()),
             )),
         }
     }
@@ -207,7 +234,7 @@ impl ExprOps<FRef> for TestValue {
             TestValue::Bool(val) => Ok(*val),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not a boolean: {}", self),
+                format!("expected a boolean, got {}", self.type_name()),
             )),
         }
     }
@@ -217,9 +244,13 @@ impl ExprOps<FRef> for TestValue {
             TestValue::String(val) => Ok(val.clone()),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("not a string: {}", self),
+                format!("expected a string, got {}", self.type_name()),
             )),
         }
+    }
+
+    fn type_name(&self) -> &'static str {
+        TestValue::type_name(self)
     }
 
     fn new_from_bool(value: bool) -> Self {

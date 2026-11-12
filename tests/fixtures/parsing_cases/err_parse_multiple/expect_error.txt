@@ -1,0 +1,11 @@
+Parse error: 2 syntax errors
+ --> $DIR/err_parse_multiple/bad.pbb:1:20
+  |
+1 | |{ ... }| bind x = ; y = ; in null
+  |                    ^     - Unrecognized token: found `;`, expected one of: "bind", "let", "switch", "match", "null", "true", "false", "|", "-", "!", "{", "(", "[", "ident", "num", "strquote"
+  |                    |
+  |                    Unrecognized token: found `;`, expected one of: "bind", "let", "switch", "match", "null", "true", "false", "|", "-", "!", "{", "(", "[", "ident", "num", "strquote"
+
+Needed by:
+  $DIR/err_parse_multiple/main.pbb:1:25
+      |{ cwd, include, ... }| include (cwd / "bad.pbb")

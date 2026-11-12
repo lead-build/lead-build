@@ -1,2 +1,2 @@
-kind = "err_eval"
-error_contains = "Unsupported binary operation"
+kind = "err_type"
+error_contains = "cannot apply `++` to a list and a function"

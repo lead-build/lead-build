@@ -51,8 +51,9 @@ fn add_expr_to_ninjafile_inner(
             tok: ExprType::List(list),
             ..
         } => {
-            for item in list.iter() {
-                add_expr_to_ninjafile_inner(item, ninja_file, alias)?;
+            for (index, item) in list.iter().enumerate() {
+                add_expr_to_ninjafile_inner(item, ninja_file, alias)
+                    .map_err(|e| e.in_result(format!("[{index}]")))?;
             }
             Ok(())
         }
@@ -62,7 +63,8 @@ fn add_expr_to_ninjafile_inner(
         } => {
             for (name, value) in fields.iter() {
                 let name = name.as_string();
-                add_expr_to_ninjafile_inner(value, ninja_file, Some(&name))?;
+                add_expr_to_ninjafile_inner(value, ninja_file, Some(&name))
+                    .map_err(|e| e.in_result(format!(".{name}")))?;
             }
             Ok(())
         }

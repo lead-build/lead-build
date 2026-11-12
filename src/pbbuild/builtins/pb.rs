@@ -184,7 +184,8 @@ where
         /* Convert all variables to ninja rule */
         let mut vars: Vec<(StrKey, Vec<NinjaArg>)> = Vec::new();
         for (name, expr) in objargs.into_iter() {
-            expr.resolve()?;
+            let in_variable = |e: Error<F>| e.context(format!("the rule variable `{name}`"));
+            expr.resolve().map_err(in_variable)?;
             let attrs = match &expr.inner_ref().tok {
                 ExprType::List(exprs) => exprs.clone(),
                 ExprType::Value(value) => vec![ExprType::from(value.clone()).reref(loc.clone())],
@@ -199,7 +200,8 @@ where
                         _ => Err(Error::new(ErrorType::Type, "Rule attr is not a value")),
                     }
                 })
-                .collect::<Result<Vec<NinjaArg>, _>>()?;
+                .collect::<Result<Vec<NinjaArg>, _>>()
+                .map_err(in_variable)?;
 
             vars.push((name, ninja_attrs));
         }
@@ -263,7 +265,8 @@ where
         if !rule.rule_args().contains(&StrKey::from("deps"))
             && let Some(build_arg) = arg_obj.remove(&StrKey::from("deps"))
         {
-            let tree = PathTree::from_expr(&build_arg, "deps")?;
+            let tree = PathTree::from_expr(&build_arg, "deps")
+                .map_err(|e| e.context("the build argument `deps`"))?;
             deps = tree.paths();
             dep_builds.extend(tree.depends());
         }
@@ -273,16 +276,21 @@ where
             let build_arg = expr_get_arg!(arg_obj, arg_name);
             match arg_name.as_string().as_str() {
                 "input" => {
-                    let tree = PathTree::from_expr(&build_arg, "input")?;
+                    let tree = PathTree::from_expr(&build_arg, "input")
+                        .map_err(|e| e.context("the build argument `input`"))?;
                     input = tree.paths();
                     dep_builds.extend(tree.depends());
                 }
                 "output" => {
-                    output = Some(PathTree::from_expr(&build_arg, "output")?);
+                    output = Some(
+                        PathTree::from_expr(&build_arg, "output")
+                            .map_err(|e| e.context("the build argument `output`"))?,
+                    );
                 }
                 name => {
                     let value =
-                        resolve_build_arg_to_ninja_values(&build_arg, name, &mut dep_builds)?;
+                        resolve_build_arg_to_ninja_values(&build_arg, name, &mut dep_builds)
+                            .map_err(|e| e.context(format!("the build argument `{name}`")))?;
                     args.insert(*arg_name, value);
                 }
             }
