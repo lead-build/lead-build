@@ -14,6 +14,7 @@ use crate::strkey::StrKey;
 use rowan::NodeOrToken;
 use rowan::TextRange;
 use std::fmt::{Debug, Display};
+use std::rc::Rc;
 
 pub trait ParsableValue
 where
@@ -104,6 +105,7 @@ where
         Ok(tree) if parsed.errors.is_empty() => {
             let mut generator = ExprGenerator {
                 file,
+                shared_file: Rc::new(file.clone()),
                 _value: std::marker::PhantomData,
             };
             walk_expr(&tree, &mut generator, &())
@@ -212,6 +214,8 @@ where
 
 struct ExprGenerator<'a, T, F> {
     file: &'a F,
+    /// `file`, shared by the locations of all the expressions of the file
+    shared_file: Rc<F>,
     _value: std::marker::PhantomData<T>,
 }
 
@@ -222,7 +226,7 @@ where
 {
     fn expr(&self, kind: ExprType<T, F>, range: TextRange) -> Expr<T, F> {
         let (start, end) = range_usize(range);
-        kind.toexpr(start, end, self.file)
+        kind.toexpr(start, end, &self.shared_file)
     }
 
     /// Resolves an `AssignKey` (as extracted by `walk_expr`) to a `StrKey`,

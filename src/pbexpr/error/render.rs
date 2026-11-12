@@ -147,7 +147,7 @@ where
                 .map(|label| (AnnotationKind::Context, label)),
         );
     for (kind, label) in annotated {
-        let (path, text) = sources.get(&label.loc.file);
+        let (path, text) = sources.get(&*label.loc.file);
         let Some(text) = text else {
             notes.push(if label.text.is_empty() {
                 format!("at {path}")
@@ -229,7 +229,7 @@ fn render_frames<'a, F>(
 
     let mut describe = |loc: &Loc<F>, what: Option<&str>| -> ((String, usize), Frame) {
         let what = what.map(str::to_string);
-        let (path, text) = sources.get(&loc.file);
+        let (path, text) = sources.get(&*loc.file);
         match text {
             Some(text) => {
                 let (line, column, line_text) = line_of(text, loc.span.start);

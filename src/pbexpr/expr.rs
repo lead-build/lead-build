@@ -459,8 +459,8 @@ where
         Expr(Rc::new(RefCell::new(ExprStorage { tok: self, loc })))
     }
 
-    pub fn toexpr(self: ExprType<T, F>, start: usize, end: usize, f: &F) -> Expr<T, F> {
-        self.reref(Some(Loc::new(f.clone(), Span { start, end })))
+    pub fn toexpr(self: ExprType<T, F>, start: usize, end: usize, f: &Rc<F>) -> Expr<T, F> {
+        self.reref(Some(Loc::new(Rc::clone(f), Span { start, end })))
     }
 
     pub fn new_builtin(func: impl ExprBuiltin<T, F> + 'static) -> ExprType<T, F> {

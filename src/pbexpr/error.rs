@@ -45,7 +45,10 @@ pub trait SourceContext: Referrable {
 /// function is written once but evaluated for every call.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Loc<F> {
-    pub file: F,
+    /// Shared by all locations in a file: a location is copied on almost
+    /// every step of an evaluation, and a file reference (a path) is costly
+    /// to copy
+    pub file: Rc<F>,
     pub span: Span,
     /// The location this one was resolved *from*, e.g. for a variable
     /// reference, the definition site of the binding it resolved to; for
@@ -59,9 +62,11 @@ pub struct Loc<F> {
 }
 
 impl<F> Loc<F> {
-    pub fn new(file: F, span: Span) -> Self {
+    /// `file` is either a file reference, or one already shared with other
+    /// locations, which should be preferred where many are created.
+    pub fn new(file: impl Into<Rc<F>>, span: Span) -> Self {
         Loc {
-            file,
+            file: file.into(),
             span,
             via: None,
             ctx: None,
@@ -439,7 +444,7 @@ where
                 Some(primary) => Some(&primary.loc),
                 None => err.details.trace.first().map(|frame| &frame.loc),
             };
-            loc.map(|loc| (&loc.file, &loc.span))
+            loc.map(|loc| (&*loc.file, &loc.span))
         }
         self.typ == other.typ && self.msg == other.msg && site(self) == site(other)
     }
