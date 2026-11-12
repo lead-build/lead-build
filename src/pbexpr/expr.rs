@@ -68,6 +68,14 @@ pub type ExprSet<T, F> = BTreeMap<StrKey, Expr<T, F>>;
 /// reported as an infinite recursion, see [`Expr::resolve`].
 const MAX_RESOLVE_STEPS: usize = 250_000;
 
+/// The name under which a scope holds the call it was made for, see
+/// [`Expr::bind_fresh`]. It is not a valid identifier, so no variable can
+/// have it.
+fn call_key() -> StrKey {
+    static KEY: std::sync::OnceLock<StrKey> = std::sync::OnceLock::new();
+    *KEY.get_or_init(|| StrKey::from("<call>"))
+}
+
 /// The most fields an object may have for an error to list them all.
 const MAX_LISTED_FIELDS: usize = 8;
 
@@ -536,8 +544,39 @@ where
     /// The whole varspace is cloned (cheap: keys are copied, values are
     /// reference counted). Narrowing it to the variables the expression
     /// refers to was tried and cost more than it saved.
+    ///
+    /// The location of the new cell gets the call the scope was made for
+    /// (see [`Expr::call_marker`]), so that an error in it can show where
+    /// the function it is part of was called from.
     pub fn bind_fresh(&self, varspace: &ExprSet<T, F>) -> Expr<T, F> {
-        ExprType::Bind(varspace.clone(), self.clone()).reref(self.get_loc())
+        let mut loc = self.get_loc();
+        if let Some(loc) = &mut loc
+            && let Some(marker) = varspace.get(&call_key())
+            && let Some(call) = marker.inner_ref().loc.as_ref().and_then(|l| l.ctx.clone())
+        {
+            loc.ctx = Some(call);
+        }
+        ExprType::Bind(varspace.clone(), self.clone()).reref(loc)
+    }
+
+    /// The entry a function call adds to the scope of the function body,
+    /// under [`call_key`]: a cell that only carries the location of the
+    /// call, as the `ctx` of its own location, ready to be shared by every
+    /// cell bound in that scope.
+    fn call_marker(call_site: &Loc<F>) -> Expr<T, F> {
+        let call = match &call_site.ctx {
+            // A recursion calls from the same expression round after round.
+            // One entry stands for all of those rounds, as they would be
+            // shown as one anyway, and the chain does not grow with the
+            // depth of the recursion. (Spans are compared without their
+            // files; a call that calls into another file from the very same
+            // span is not worth a bound on the file type.)
+            Some(outer) if outer.span == call_site.span => outer.clone(),
+            _ => Rc::new(call_site.clone()),
+        };
+        let mut loc = Loc::new(call_site.file.clone(), call_site.span.clone());
+        loc.ctx = Some(call);
+        ExprType::Null.reref(Some(loc))
     }
 
     pub fn inner_ref(&self) -> Ref<'_, ExprStorage<T, F>> {
@@ -968,12 +1007,18 @@ where
                                 .loc(Loc::chain(loc, resolved_loc)))
                         }
                         None => {
+                            // The location of the bound cell, which knows
+                            // the call it is in; the variable itself is the
+                            // expression as written, shared by all calls
                             let err = Error::new(
                                 ErrorType::Scope,
                                 format!("unknown variable `{}`", name),
                             )
-                            .reref(vloc);
-                            let known = varspace.keys().map(|key| key.as_string());
+                            .reref(if loc.is_some() { &loc } else { vloc });
+                            let known = varspace
+                                .keys()
+                                .filter(|key| **key != call_key())
+                                .map(|key| key.as_string());
                             Err(match closest(&name.as_string(), known) {
                                 Some(similar) => err.help(format!(
                                     "a variable with a similar name exists: `{similar}`"
@@ -1108,6 +1153,9 @@ where
                         let mut vars = matcher.run(fargs).map_err(|e| e.reref(&loc))?;
 
                         fbound.append(&mut vars);
+                        if let Some(call_site) = &loc {
+                            fbound.insert(call_key(), Self::call_marker(call_site));
+                        }
 
                         Ok(fexpr.bind_fresh(&fbound).inner_ref().clone())
                     }

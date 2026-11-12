@@ -12,3 +12,13 @@ No value: the object has no field `optlevel`
    = help: the object has the fields `name`, `src`, `defines`, `flags` and `outdir`
 
 In the result at .flags[0]
+
+Called from:
+  $DIR/_lib/lib.pbb:28:45
+      mod_fn = |f| |self| (defaults self) // (f self);
+  $DIR/_lib/lib.pbb:16:14
+      mb = b self;
+  $DIR/_lib/lib.pbb:33:28
+      self = ops.recurse (|a b| merge a b for defaults : mods);
+  $DIR/err_trace_missing_self_field/main.pbb:5:1
+      lib.build [

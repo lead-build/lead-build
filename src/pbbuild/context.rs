@@ -1,7 +1,7 @@
 use std::{fmt::Debug, fs, rc::Rc};
 
 use crate::{
-    pbexpr::{Error, ErrorType, Expr, ExprBuiltin, ExprSet, ExprType, Result, parse_str},
+    pbexpr::{Error, ErrorType, Expr, ExprBuiltin, ExprSet, ExprType, Loc, Result, parse_str},
     strkey::StrKey,
 };
 
@@ -24,7 +24,8 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinInclude {
         let file_path = file_value
             .try_as_path()
             .ok_or(Error::new(ErrorType::Type, "Include of non-path argument"))?;
-        let result = self.0.include(file_path, None)?;
+        // The argument is where the file is included from
+        let result = self.0.include_at(file_path, None, arg.get_loc())?;
         Ok(result)
     }
 }
@@ -96,13 +97,25 @@ impl LangContext {
         file: VirtPath,
         args: Option<Expr<Value, VirtPath>>,
     ) -> Result<Expr<Value, VirtPath>, VirtPath> {
+        self.include_at(file, args, None)
+    }
+
+    /// Include a file from `call_site`, the place in another file that
+    /// asks for it. An error in the included file then shows where it was
+    /// included from.
+    fn include_at(
+        &self,
+        file: VirtPath,
+        args: Option<Expr<Value, VirtPath>>,
+        call_site: Option<Loc<VirtPath>>,
+    ) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let file_expr = self.read_file(&file)?;
         let file_args = self.setup_file_args(file, args)?;
         let called_expr: Expr<Value, VirtPath> = ExprType::FuncCall {
             arg: file_args,
             func: file_expr,
         }
-        .builtin(); // TODO: Should this outermost builtin actually be a .loc()?
+        .reref(call_site);
         Ok(called_expr)
     }
 }

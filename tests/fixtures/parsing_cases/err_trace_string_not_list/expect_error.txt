@@ -11,6 +11,12 @@ Type error: cannot apply `++` to a list and a path
 
 In the result at .objs
 
+Called from:
+  $DIR/_lib/lib.pbb:33:28
+      self = ops.recurse (|a b| merge a b for defaults : mods);
+  $DIR/err_trace_string_not_list/main.pbb:5:1
+      lib.build [
+
 Needed by:
   $DIR/_lib/lib.pbb:36:41
       objs = [ |file| "${file}.o" for self.src ];

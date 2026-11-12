@@ -274,7 +274,9 @@ where
             ExprType::Bind(_, body) if out.is_diag() => body.export(out),
             ExprType::Bind(items, body) => {
                 out.write_str("bind ")?;
-                out.list(items.iter(), "", |p, (key, value)| {
+                // Without the entry for the call, which is no variable
+                let vars: Vec<_> = items.iter().filter(|(key, _)| **key != call_key()).collect();
+                out.list(vars.into_iter(), "", |p, (key, value)| {
                     write!(p, "{key}=")?;
                     value.export(p)?;
                     p.write_str(";")

@@ -78,7 +78,24 @@ where
 
     let _ = err.fmt_context(&mut out);
 
-    render_trace(&mut out, site.as_ref(), trace, &mut sources, options);
+    if let Some(site) = &site {
+        render_frames(
+            &mut out,
+            "Called from:",
+            site,
+            site.loc.calls(),
+            &mut sources,
+            options,
+        );
+        render_frames(
+            &mut out,
+            "Needed by:",
+            site,
+            trace.iter(),
+            &mut sources,
+            options,
+        );
+    }
     out
 }
 
@@ -180,18 +197,20 @@ where
     renderer.render(&[group])
 }
 
-/// The expressions that needed the failing one, each as its location and its
-/// source line. Evaluation passes through the same line several times in a
-/// row (an expression and its parts), so only the first of those is shown,
-/// and nothing for the line of the site itself.
-fn render_trace<F>(
+/// A list of locations, each printed as the location and its source line:
+/// the calls the site was evaluated in, or the expressions that needed it.
+/// Evaluation passes through the same line several times in a row (an
+/// expression and its parts, or every round of a recursion), so only the
+/// first of those is shown, and nothing for the line of the site itself.
+fn render_frames<'a, F>(
     out: &mut String,
-    site: Option<&Label<F>>,
-    trace: &[Loc<F>],
+    title: &str,
+    site: &Label<F>,
+    locations: impl Iterator<Item = &'a Loc<F>>,
     sources: &mut Sources,
     options: &RenderOptions,
 ) where
-    F: SourceContext + Clone,
+    F: SourceContext + Clone + 'a,
 {
     /// A frame ready to print: where it is, and its source line with the
     /// range of the expression within that line
@@ -227,9 +246,9 @@ fn render_trace<F>(
         }
     };
 
-    let mut previous = site.map(|site| describe(&site.loc).0);
+    let mut previous = Some(describe(&site.loc).0);
     let mut frames = Vec::new();
-    for loc in trace {
+    for loc in locations {
         let (key, frame) = describe(loc);
         if previous.as_ref() != Some(&key) {
             frames.push(frame);
@@ -245,7 +264,7 @@ fn render_trace<F>(
     } else {
         frames.len().min(TRACE_FRAMES)
     };
-    let _ = writeln!(out, "\nNeeded by:");
+    let _ = writeln!(out, "\n{title}");
     for frame in &frames[..shown] {
         let _ = writeln!(out, "  {}", frame.location);
         if let Some((line, span)) = &frame.line {

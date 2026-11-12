@@ -151,6 +151,7 @@ fn test_var_resolution_remembers_definition_site() -> Result<(), FRef> {
 
     let via = loc
         .via
+        .clone()
         .expect("should remember where the variable was defined");
     assert_eq!(&code[via.span.clone()], "5");
     Ok(())
@@ -170,6 +171,7 @@ fn test_attr_sel_resolution_remembers_definition_site() -> Result<(), FRef> {
 
     let via = loc
         .via
+        .clone()
         .expect("should remember where the field's value was defined");
     assert_eq!(&code[via.span.clone()], "42");
     Ok(())

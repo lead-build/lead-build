@@ -11,6 +11,12 @@ Type error: cannot apply `//` to an object and a list
 
 In the result at .define_args
 
+Called from:
+  $DIR/_lib/lib.pbb:33:28
+      self = ops.recurse (|a b| merge a b for defaults : mods);
+  $DIR/err_trace_list_not_object/main.pbb:5:1
+      lib.build [
+
 Needed by:
   $DIR/_lib/lib.pbb:37:66
       define_args = [ |(name, value)| "-D${name}=${value}" for self.defines ];

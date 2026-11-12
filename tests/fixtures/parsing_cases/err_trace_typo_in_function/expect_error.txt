@@ -8,6 +8,10 @@ Scope error: unknown variable `nam`
 
 In the result at .objs[0]
 
+Called from:
+  $DIR/err_trace_typo_in_function/main.pbb:9:5
+      mymod "main",
+
 Needed by:
   $DIR/_lib/lib.pbb:36:25
       objs = [ |file| "${file}.o" for self.src ];

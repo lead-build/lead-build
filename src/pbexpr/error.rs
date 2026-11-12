@@ -35,11 +35,14 @@ pub trait SourceContext: Referrable {
     fn display_path(&self) -> String;
 }
 
-/// A place in the source, and where the value found there came from.
+/// A place in the source, where the value found there came from, and which
+/// call it belongs to.
 ///
 /// The location itself is where an expression is written, the use site.
 /// `via` leads on to where its value was resolved from, so the end of the
-/// chain, [`Loc::origin`], is where the value was written.
+/// chain, [`Loc::origin`], is where the value was written. `ctx` leads to
+/// the call for which the expression was instantiated: the body of a
+/// function is written once but evaluated for every call.
 #[derive(Debug, PartialEq, Clone)]
 pub struct Loc<F> {
     pub file: F,
@@ -49,6 +52,10 @@ pub struct Loc<F> {
     /// `.attr` access, the location of the field's value. `Rc`-shared so
     /// following/cloning a chain is O(1) per hop rather than a data copy.
     pub via: Option<Rc<Loc<F>>>,
+    /// The call whose function body this expression is part of, if any.
+    /// That call has a `ctx` of its own, the call it was made in, so the
+    /// chain is the call stack an eager language would show.
+    pub ctx: Option<Rc<Loc<F>>>,
 }
 
 impl<F> Loc<F> {
@@ -57,6 +64,7 @@ impl<F> Loc<F> {
             file,
             span,
             via: None,
+            ctx: None,
         }
     }
 
@@ -69,6 +77,11 @@ impl<F> Loc<F> {
         }
         loc
     }
+
+    /// The calls this expression was evaluated in, innermost first.
+    pub fn calls(&self) -> impl Iterator<Item = &Loc<F>> {
+        std::iter::successors(self.ctx.as_deref(), |call| call.ctx.as_deref())
+    }
 }
 
 impl<F: Clone> Loc<F> {
@@ -78,12 +91,38 @@ impl<F: Clone> Loc<F> {
     /// has no location), matching prior behavior for such nodes.
     pub fn chain(site: Option<Loc<F>>, resolved: Option<Loc<F>>) -> Option<Loc<F>> {
         match (site, resolved) {
-            (Some(site), Some(resolved)) => Some(Loc {
-                via: Some(Rc::new(resolved)),
-                ..site
-            }),
+            (Some(mut site), Some(resolved)) => {
+                site.via = Some(Rc::new(resolved));
+                Some(site)
+            }
             (Some(site), None) => Some(site),
             (None, resolved) => resolved,
+        }
+    }
+}
+
+/// Both chains can get long: `via` through a value passed along many times,
+/// `ctx` through a recursion, where it is as long as the recursion is deep.
+/// The default drop would recurse once per link and overflow the stack, so
+/// the links that only this location holds are unlinked one by one instead.
+impl<F> Drop for Loc<F> {
+    fn drop(&mut self) {
+        fn last_holder<F>(link: &Option<Rc<Loc<F>>>) -> bool {
+            link.as_ref().is_some_and(|rc| Rc::strong_count(rc) == 1)
+        }
+        // The common case: nothing would be freed by dropping the links
+        if !last_holder(&self.via) && !last_holder(&self.ctx) {
+            return;
+        }
+        let mut pending: Vec<Rc<Loc<F>>> = Vec::new();
+        pending.extend(self.via.take());
+        pending.extend(self.ctx.take());
+        while let Some(link) = pending.pop() {
+            if let Ok(mut loc) = Rc::try_unwrap(link) {
+                pending.extend(loc.via.take());
+                pending.extend(loc.ctx.take());
+                // `loc` is dropped here with no links left to follow
+            }
         }
     }
 }
@@ -151,6 +190,7 @@ pub struct Label<F> {
 /// - *labels*, the values involved, each placed where the value was written,
 ///   which is where a mistake most often is,
 /// - *help*, a suggested correction,
+/// - the *calls* the site was evaluated in, taken from its location,
 /// - the *trace*: evaluation is lazy, so this is not a call stack but the
 ///   chain of expressions that needed the failing one, innermost first,
 /// - the *context*: what a builtin was evaluating the value for,
@@ -276,6 +316,15 @@ where
             writeln!(f, "  help: {help}")?;
         }
         self.fmt_context(f)?;
+        if let Some(site) = &site
+            && site.loc.ctx.is_some()
+        {
+            writeln!(f)?;
+            writeln!(f, "Called from:")?;
+            for (idx, call) in site.loc.calls().enumerate() {
+                writeln!(f, "  {:3} - {}", idx + 1, call)?;
+            }
+        }
         if site.is_some() {
             writeln!(f)?;
             writeln!(f, "Backtrace:")?;
@@ -430,6 +479,44 @@ mod tests {
         assert_eq!(again.span, 10..14);
         assert_eq!(again.origin().span, written.span);
         assert_eq!(written.origin().span, written.span);
+    }
+
+    #[test]
+    fn long_chains_are_dropped_without_recursion() {
+        // Either chain as long as a deep recursion makes it
+        let mut by_via = Loc::new(MemFile(SOURCE), 0..4);
+        let mut by_ctx = Loc::new(MemFile(SOURCE), 0..4);
+        for _ in 0..500_000 {
+            by_via = Loc::chain(loc(5), Some(by_via)).unwrap();
+            let mut next = Loc::new(MemFile(SOURCE), 5..9);
+            next.ctx = Some(Rc::new(by_ctx));
+            by_ctx = next;
+        }
+        assert_eq!(by_ctx.calls().count(), 500_000);
+        drop(by_via);
+        drop(by_ctx);
+    }
+
+    #[test]
+    fn the_calls_of_the_site_are_rendered() {
+        let mut outer_call = Loc::new(MemFile(SOURCE), 10..14);
+        outer_call.ctx = None;
+        let mut inner_call = Loc::new(MemFile(SOURCE), 5..9);
+        inner_call.ctx = Some(Rc::new(outer_call));
+        let mut site = Loc::new(MemFile(SOURCE), 0..4);
+        site.ctx = Some(Rc::new(inner_call));
+
+        let err: Error<MemFile> = Error::new(ErrorType::Eval, "boom").reref(&Some(site));
+        let out = err.render(&plain(false));
+        assert!(
+            out.contains("Called from:\n  mem:2:1\n      bbbb\n  mem:3:1\n      cccc\n"),
+            "{out}"
+        );
+        let plain = format!("{err}");
+        assert!(
+            plain.contains("Called from:\n    1 - mem:5\n    2 - mem:10\n"),
+            "{plain}"
+        );
     }
 
     #[test]
