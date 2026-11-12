@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     fmt::{Debug, Display},
     rc::Rc,
 };
@@ -10,7 +10,7 @@ use crate::{
 };
 
 use super::{
-    ninjawriter::{NinjaArg, NinjaBuild, NinjaFile, NinjaRule, NinjaRuleRef},
+    ninjawriter::{NinjaArg, NinjaBuild, NinjaBuildRef, NinjaFile, NinjaRule, NinjaRuleRef},
     path::VirtPath,
 };
 
@@ -51,6 +51,15 @@ impl PbBuildRule {
         nf.add_rule(rule)
     }
 }
+
+/// The builds already added to a ninja file, by address, each with its
+/// reference in the file. A build that many outputs depend on, such as the
+/// object file of a module that many programs link, is reached once for each
+/// of them, and adding it again would only clone and hash it to find it is
+/// there already. Each build is kept alive here, so that its address cannot
+/// be taken by another build while the file is generated.
+#[derive(Default)]
+pub struct PopulatedBuilds(HashMap<*const PbBuild, (Rc<PbBuild>, NinjaBuildRef)>);
 
 #[derive(PartialEq, Debug)]
 pub struct PbBuild {
@@ -100,14 +109,24 @@ impl PbBuild {
         &self.output
     }
 
+    /// Add the build and the builds it depends on to `nf`, each once.
     pub fn populate_ninja_file<F: Clone + Debug + Referrable>(
-        &self,
+        self: &Rc<Self>,
         nf: &mut NinjaFile,
+        populated: &mut PopulatedBuilds,
         is_default: bool,
     ) -> Result<(), F> {
+        if let Some((_, build_ref)) = populated.0.get(&Rc::as_ptr(self)) {
+            // Added already, with the builds it depends on
+            if is_default {
+                let build_ref = build_ref.clone();
+                nf.set_build_default(&build_ref);
+            }
+            return Ok(());
+        }
+
         for dep in self.dep_builds.iter() {
-            /* TODO: Block duplicates */
-            dep.populate_ninja_file(nf, false)?;
+            dep.populate_ninja_file(nf, populated, false)?;
         }
 
         let rule = self.rule.populate_ninja_file(nf);
@@ -132,6 +151,9 @@ impl PbBuild {
         if is_default {
             nf.set_build_default(&build_ref);
         }
+        populated
+            .0
+            .insert(Rc::as_ptr(self), (Rc::clone(self), build_ref));
 
         Ok(())
     }

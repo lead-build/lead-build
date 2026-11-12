@@ -3,13 +3,13 @@ use crate::{
     pbexpr::{Error, ErrorList, ErrorType, ExprStorage, ExprType, Result},
 };
 
-use super::{ninjawriter::NinjaFile, path::VirtPath};
+use super::{build::PopulatedBuilds, ninjawriter::NinjaFile, path::VirtPath};
 
 pub fn add_expr_to_ninjafile(
     expr: &Expr<Value, VirtPath>,
     ninja_file: &mut NinjaFile,
 ) -> Result<(), VirtPath> {
-    add_expr_to_ninjafile_inner(expr, ninja_file, None)
+    add_expr_to_ninjafile_inner(expr, ninja_file, &mut PopulatedBuilds::default(), None)
 }
 
 /// Like [`add_expr_to_ninjafile`], but with the errors of all the parts of
@@ -20,7 +20,14 @@ pub fn add_expr_to_ninjafile_all(
     ninja_file: &mut NinjaFile,
 ) -> ErrorList<VirtPath> {
     let mut errors = ErrorList::new();
-    add_expr_to_ninjafile_collect(expr, ninja_file, None, &mut Vec::new(), &mut errors);
+    add_expr_to_ninjafile_collect(
+        expr,
+        ninja_file,
+        &mut PopulatedBuilds::default(),
+        None,
+        &mut Vec::new(),
+        &mut errors,
+    );
     errors
 }
 
@@ -30,6 +37,7 @@ pub fn add_expr_to_ninjafile_all(
 fn add_expr_to_ninjafile_collect(
     expr: &Expr<Value, VirtPath>,
     ninja_file: &mut NinjaFile,
+    populated: &mut PopulatedBuilds,
     alias: Option<&str>,
     path: &mut Vec<String>,
     errors: &mut ErrorList<VirtPath>,
@@ -68,12 +76,19 @@ fn add_expr_to_ninjafile_collect(
                     return;
                 }
                 path.push(part);
-                add_expr_to_ninjafile_collect(&value, ninja_file, alias.as_deref(), path, errors);
+                add_expr_to_ninjafile_collect(
+                    &value,
+                    ninja_file,
+                    populated,
+                    alias.as_deref(),
+                    path,
+                    errors,
+                );
                 path.pop();
             }
         }
         None => {
-            if let Err(err) = add_expr_to_ninjafile_inner(expr, ninja_file, alias) {
+            if let Err(err) = add_expr_to_ninjafile_inner(expr, ninja_file, populated, alias) {
                 errors.push(at_path(err, path));
             }
         }
@@ -83,6 +98,7 @@ fn add_expr_to_ninjafile_collect(
 fn add_expr_to_ninjafile_inner(
     expr: &Expr<Value, VirtPath>,
     ninja_file: &mut NinjaFile,
+    populated: &mut PopulatedBuilds,
     alias: Option<&str>,
 ) -> Result<(), VirtPath> {
     expr.resolve()?;
@@ -100,7 +116,7 @@ fn add_expr_to_ninjafile_inner(
                     return Err(Error::new(ErrorType::Custom, message).reref(&expr.get_loc()));
                 }
                 for build in depends.iter() {
-                    build.populate_ninja_file(ninja_file, true)?;
+                    build.populate_ninja_file(ninja_file, populated, true)?;
                 }
 
                 if let Some(alias) = alias {
@@ -120,7 +136,7 @@ fn add_expr_to_ninjafile_inner(
             ..
         } => {
             for (index, item) in list.iter().enumerate() {
-                add_expr_to_ninjafile_inner(item, ninja_file, alias)
+                add_expr_to_ninjafile_inner(item, ninja_file, populated, alias)
                     .map_err(|e| e.in_result(format!("[{index}]")))?;
             }
             Ok(())
@@ -131,7 +147,7 @@ fn add_expr_to_ninjafile_inner(
         } => {
             for (name, value) in fields.iter() {
                 let name = name.as_string();
-                add_expr_to_ninjafile_inner(value, ninja_file, Some(&name))
+                add_expr_to_ninjafile_inner(value, ninja_file, populated, Some(&name))
                     .map_err(|e| e.in_result(format!(".{name}")))?;
             }
             Ok(())
