@@ -8,6 +8,15 @@ use pathdiff::diff_paths;
 
 use crate::pbexpr::{Error, ErrorType, Referrable, Result, SourceContext};
 
+/// An empty relative path means the current directory, which is written `.`.
+fn non_empty_path(path: PathBuf) -> PathBuf {
+    if path.as_os_str().is_empty() {
+        PathBuf::from(".")
+    } else {
+        path
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash, Debug)]
 pub struct VirtPath {
     name: String,
@@ -181,7 +190,9 @@ impl VirtPath {
         out.check_last(&format!("removing suffix \"{}\"", suffix))
     }
 
-    pub fn to_path_buf(&self) -> PathBuf {
+    /// The joined path, which is empty for the directory of a relative root
+    /// such as the one of `main.pbb`.
+    fn join_parts(&self) -> PathBuf {
         let mut cur_path = self.root.clone();
         for part in self.locked_parts.iter() {
             cur_path.push(part);
@@ -192,17 +203,26 @@ impl VirtPath {
         cur_path
     }
 
+    /// The path in the file system. Never empty: the current directory is
+    /// `.`.
+    pub fn to_path_buf(&self) -> PathBuf {
+        non_empty_path(self.join_parts())
+    }
+
     /// The unlocked part of the path, with `/` as separator. Independent of
     /// where the build is located in the file system.
     pub fn to_unlocked_string(&self) -> String {
         self.parts.join("/")
     }
 
+    /// The path relative to `base`. Never empty: the same path is `.`.
     pub fn to_path_buf_rebase<F: Clone>(&self, base: &VirtPath) -> Result<PathBuf, F> {
-        let self_path = self.to_path_buf();
-        let base_path = base.to_path_buf();
+        // Not `to_path_buf()`: a leading `.` would make `diff_paths` add a
+        // `.` element to the result.
+        let self_path = self.join_parts();
+        let base_path = base.join_parts();
         if let Some(relative_path) = diff_paths(self_path, base_path) {
-            Ok(relative_path)
+            Ok(non_empty_path(relative_path))
         } else {
             Err(Error::new(
                 ErrorType::Custom,
@@ -577,5 +597,42 @@ mod tests {
                 .remove_suffix::<TestF>(".c")
                 .is_err()
         )
+    }
+
+    /// `pb` reads `main.pbb` by default, whose parent is the empty path.
+    fn bare_file_cwd() -> VirtPath {
+        VirtPath::from_file(&PathBuf::from("main.pbb"), "root")
+            .parent::<TestF>()
+            .unwrap()
+            .lock()
+    }
+
+    #[test]
+    fn test_current_dir_is_dot() {
+        let cwd = bare_file_cwd();
+        assert_eq!(cwd.to_path_buf(), PathBuf::from("."));
+        assert_eq!(
+            cwd.step::<TestF>("a/..").unwrap().to_path_buf(),
+            PathBuf::from(".")
+        );
+    }
+
+    #[test]
+    fn test_below_current_dir_has_no_dot() {
+        let file = bare_file_cwd().step::<TestF>("myfile.txt").unwrap();
+        assert_eq!(file.to_path_buf(), PathBuf::from("myfile.txt"));
+    }
+
+    #[test]
+    fn test_rebase_same_is_dot() {
+        let cwd = bare_file_cwd();
+        let sub = cwd.clone().step::<TestF>("sub").unwrap();
+        let rebase = |path: &VirtPath, base: &VirtPath| {
+            path.to_path_buf_rebase::<TestF>(base).unwrap()
+        };
+        assert_eq!(rebase(&cwd, &cwd), PathBuf::from("."));
+        assert_eq!(rebase(&sub, &sub), PathBuf::from("."));
+        assert_eq!(rebase(&cwd, &sub), PathBuf::from(".."));
+        assert_eq!(rebase(&sub, &cwd), PathBuf::from("sub"));
     }
 }
