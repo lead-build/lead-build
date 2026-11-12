@@ -1,0 +1,13 @@
+|{ ops, ... }|
+let
+    # A recursion that is not a tail call: each round adds to the result
+    # of the next, so the evaluation nests once per round.
+    mod = |self| {
+        count = |n| switch n {
+            0 => 0;
+            _ => 1 + (self.count (n - 1));
+        };
+    };
+    evaled = ops.recurse mod;
+in
+evaled.count 20000

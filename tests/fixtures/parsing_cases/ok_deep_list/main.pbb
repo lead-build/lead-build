@@ -1,0 +1,15 @@
+|{ ops, ... }|
+let
+    # A list built by prepending in a tail call: each `++` is unevaluated
+    # until the end, and so is each step of the fold that counts the items.
+    # Fewer rounds than the other deep cases, as each `++` copies the list.
+    mod = |self| {
+        build = |(i, acc)| switch i {
+            0 => acc;
+            _ => self.build (i - 1, [i] ++ acc);
+        };
+    };
+    evaled = ops.recurse mod;
+    items = evaled.build (5000, []);
+in
+(|n item| n + 1 for 0 : items)

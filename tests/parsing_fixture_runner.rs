@@ -32,6 +32,12 @@ struct CaseExpect {
     /// directory. Run with `UPDATE_EXPECT=1` to write that file.
     #[serde(default)]
     golden: bool,
+    /// Evaluate the case on a thread with this much stack, in KiB, so that
+    /// a case that must not depend on the native stack fails when it does
+    stack_kb: Option<usize>,
+    /// Do not run the case, for this reason. For a case that is known to
+    /// abort the whole test process (a stack overflow) until it is fixed.
+    skip: Option<String>,
 }
 
 fn parse_expect(path: &Path) -> CaseExpect {
@@ -94,13 +100,21 @@ type CaseResult = Result<String, CaseError>;
 ///
 /// Every case gets the fixture root as the path argument `fixtures`, to
 /// include files shared between cases.
-fn run_case_with_timeout(case_name: &str, main_file: &Path, fixture_root: &Path) -> CaseResult {
+fn run_case_with_timeout(
+    case_name: &str,
+    main_file: &Path,
+    fixture_root: &Path,
+    stack_kb: Option<usize>,
+) -> CaseResult {
     let main_file = main_file.to_path_buf();
     let fixture_root = fixture_root.to_path_buf();
     let thread_name = format!("case-{case_name}");
     let (tx, rx) = mpsc::channel();
-    thread::Builder::new()
-        .name(thread_name.clone())
+    let mut builder = thread::Builder::new().name(thread_name.clone());
+    if let Some(stack_kb) = stack_kb {
+        builder = builder.stack_size(stack_kb * 1024);
+    }
+    builder
         .spawn(move || {
             let main_vpath = VirtPath::from_file(&main_file, thread_name);
             let mut args = ExprSet::new();
@@ -172,7 +186,11 @@ fn run_parsing_fixture_cases() {
         let expect = parse_expect(&case_dir.join("expect.toml"));
         let main_file = case_dir.join("main.pbb");
 
-        let result = run_case_with_timeout(&case_name, &main_file, &fixture_root);
+        if let Some(reason) = &expect.skip {
+            println!("case '{case_name}' skipped: {reason}");
+            continue;
+        }
+        let result = run_case_with_timeout(&case_name, &main_file, &fixture_root, expect.stack_kb);
 
         match expect.kind {
             ExpectKind::Ok => {

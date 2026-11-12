@@ -68,6 +68,44 @@ pub type ExprSet<T, F> = BTreeMap<StrKey, Expr<T, F>>;
 /// reported as an infinite recursion, see [`Expr::resolve`].
 const MAX_RESOLVE_STEPS: usize = 250_000;
 
+/// A cell being resolved by [`Expr::resolve`].
+struct Frame<T, F>
+where
+    T: Clone + PartialEq + Display + ExprOps<F>,
+    F: Clone,
+{
+    cell: Expr<T, F>,
+    /// The expression so far, rewritten step by step
+    storage: ExprStorage<T, F>,
+    /// What the cell held before, put back if the frame fails
+    original: ExprStorage<T, F>,
+    /// Steps taken, for the budget against a loop in tail position
+    steps: usize,
+    /// For [`Expr::pending_child`], reset for each new storage
+    cursor: usize,
+    /// Added to the trace of an error from this frame, in this order. Set
+    /// by whoever pushed the frame, as the locations the native resolve of
+    /// that child added.
+    trace: Trace<F>,
+}
+
+/// Locations added to the trace of an error from a frame, see
+/// [`Frame::trace`]. Two at most: a child that a step resolves through a
+/// comparison it builds (`switch`) passes through that comparison too.
+type Trace<F> = [Option<Loc<F>>; 2];
+
+/// A child that must be resolved before the next step, see
+/// [`Expr::pending_child`].
+struct Pending<T, F>
+where
+    T: Clone + PartialEq + Display + ExprOps<F>,
+    F: Clone,
+{
+    child: Expr<T, F>,
+    /// The locations to add to the trace if the child fails
+    trace: Trace<F>,
+}
+
 /// The name under which a scope holds the call it was made for, see
 /// [`Expr::bind_fresh`]. It is not a valid identifier, so no variable can
 /// have it.
@@ -811,327 +849,410 @@ where
         }
     }
 
+    /// Resolve the expression in place, if it is not resolved already.
+    ///
+    /// The evaluation does not recurse on the native stack for the children
+    /// an expression needs: they are resolved first, on a stack of frames on
+    /// the heap (see [`Expr::pending_child`]), so the depth of an evaluation
+    /// is limited by memory, not by the stack of the thread. A builtin or a
+    /// pattern that resolves a value itself still nests a new resolve.
     pub fn resolve(&self) -> Result<(), F> {
-        let storref: ExprStorage<T, F> = {
-            let inner = self.inner_ref();
-            match &inner.tok {
-                // The cell is already being resolved further up the stack, so
-                // its value depends on itself.
-                ExprType::UnderEval => {
-                    return Err(Error::new(
-                        ErrorType::Eval,
-                        "infinite recursion: the value depends on itself",
-                    )
-                    .reref(&inner.loc));
-                }
-                tok if !Self::needs_resolve(tok) => return Ok(()),
-                _ => inner.clone(),
-            }
+        let mut frames: Vec<Frame<T, F>> = match Self::enter(self, [None, None])? {
+            Some(frame) => vec![frame],
+            None => return Ok(()),
         };
 
-        // Blackholing: mark the cell as under evaluation while it is being
-        // resolved, so that a cycle back into it is reported as an error
-        // instead of recursing until the stack overflows. The original
-        // expression is put back on error, so that a later evaluation (eval()
-        // collecting all errors, or partial evaluation in the language server)
-        // sees the unresolved expression again, as before.
-        let original = storref.clone();
-        self.0.as_ref().replace(ExprStorage {
-            tok: ExprType::UnderEval,
-            loc: storref.loc.clone(),
-        });
-
-        match Self::resolve_steps(storref) {
-            Ok(resolved) => {
-                self.0.as_ref().replace(resolved);
-                Ok(())
+        while let Some(top) = frames.last_mut() {
+            if !Self::needs_resolve(&top.storage.tok) {
+                let Some(done) = frames.pop() else {
+                    unreachable!("the loop runs while there is a frame")
+                };
+                done.cell.0.as_ref().replace(done.storage);
+                continue;
             }
-            Err(err) => {
-                self.0.as_ref().replace(original);
-                Err(err)
+
+            // A child the next step needs is resolved first, as a frame of
+            // its own, instead of by the step itself
+            if let Some(Pending { child, trace }) = Self::pending_child(&top.storage, &mut top.cursor)
+            {
+                match Self::enter(&child, trace) {
+                    Ok(Some(frame)) => frames.push(frame),
+                    // `pending_child` only names a child that needs resolving
+                    Ok(None) => unreachable!("a pending child is never resolved already"),
+                    Err(err) => return Err(Self::unwind(frames, err)),
+                }
+                continue;
             }
-        }
-    }
 
-    /// Rewrite an expression step by step until it is in a resolved form.
-    ///
-    /// A self-call in tail position is rewritten in place here, step after
-    /// step, instead of nesting resolves, so an infinite one never reaches
-    /// the blackholing check in [`Expr::resolve`]. It is caught by a budget
-    /// on the number of steps for one cell instead: no real description
-    /// rewrites a single expression anywhere near that many times.
-    fn resolve_steps(mut storref: ExprStorage<T, F>) -> Result<ExprStorage<T, F>, F> {
-        let mut first_match = true;
-        let mut steps: usize = 0;
-
-        while Self::needs_resolve(&storref.tok) {
-            steps += 1;
-            if steps > MAX_RESOLVE_STEPS {
-                return Err(Error::new(
+            top.steps += 1;
+            if top.steps > MAX_RESOLVE_STEPS {
+                let err = Error::new(
                     ErrorType::Eval,
                     format!(
                         "infinite recursion: the expression is still not resolved after {} steps",
                         MAX_RESOLVE_STEPS
                     ),
                 )
-                .reref(&storref.loc));
+                .reref(&top.storage.loc);
+                return Err(Self::unwind(frames, err));
             }
             trace!(
                 "{} {} at {}",
-                if first_match {
-                    "Resolving"
-                } else {
-                    "   ...   "
-                },
-                storref.tok.get_message().unwrap(),
-                storref
+                if top.steps == 1 { "Resolving" } else { "   ...   " },
+                top.storage.tok.get_message().unwrap(),
+                top.storage
                     .loc
                     .as_ref()
                     .map_or_else(|| "unknown location".to_string(), |loc| loc.to_string())
             );
-            first_match = false;
 
-            storref = match storref {
+            let storage = std::mem::take(&mut top.storage);
+            match Self::step(storage) {
+                Ok(next) => {
+                    top.storage = next;
+                    top.cursor = 0;
+                }
+                Err(err) => return Err(Self::unwind(frames, err)),
+            }
+        }
+        Ok(())
+    }
+
+    /// Start resolving `cell`: `None` if it is resolved already, otherwise
+    /// a frame for it, with the cell marked as under evaluation.
+    ///
+    /// The mark is the blackholing that detects a cycle: a value that needs
+    /// itself finds its own cell marked and fails instead of recursing until
+    /// memory runs out. The original expression is put back if the frame
+    /// fails, see [`Expr::unwind`].
+    fn enter(cell: &Expr<T, F>, trace: Trace<F>) -> Result<Option<Frame<T, F>>, F> {
+        let storage: ExprStorage<T, F> = {
+            let inner = cell.inner_ref();
+            match &inner.tok {
+                // The cell is already being resolved further up, so its value
+                // depends on itself.
+                ExprType::UnderEval => {
+                    let err = Error::new(
+                        ErrorType::Eval,
+                        "infinite recursion: the value depends on itself",
+                    )
+                    .reref(&inner.loc);
+                    let [first, second] = &trace;
+                    return Err(err.reref(first).reref(second));
+                }
+                tok if !Self::needs_resolve(tok) => return Ok(None),
+                _ => inner.clone(),
+            }
+        };
+        cell.0.as_ref().replace(ExprStorage {
+            tok: ExprType::UnderEval,
+            loc: storage.loc.clone(),
+        });
+        Ok(Some(Frame {
+            cell: cell.clone(),
+            original: storage.clone(),
+            storage,
+            steps: 0,
+            cursor: 0,
+            trace,
+        }))
+    }
+
+    /// Fail every frame with `err`, innermost first: each cell gets its
+    /// original expression back, so that a later evaluation sees it
+    /// unresolved as before, and each frame adds to the trace what the step
+    /// that needed it would have added.
+    fn unwind(frames: Vec<Frame<T, F>>, mut err: Error<F>) -> Error<F> {
+        for frame in frames.into_iter().rev() {
+            frame.cell.0.as_ref().replace(frame.original);
+            let [first, second] = &frame.trace;
+            err = err.reref(first).reref(second);
+        }
+        err
+    }
+
+    /// The next child that the step of `storage` will resolve, if it is not
+    /// resolved yet. Naming it here lets [`Expr::resolve`] resolve it as a
+    /// frame of its own, after which the step finds it resolved and does
+    /// not nest. A step whose children are not listed here still works, it
+    /// resolves them itself on the native stack.
+    ///
+    /// Only a child the step resolves unconditionally, and in this order, may
+    /// be named: resolving one the step would not have resolved changes what
+    /// is evaluated, and so which error is reported, or whether one is.
+    ///
+    /// `cursor` is reset to 0 for each new storage, and may be used to skip
+    /// the children of a long list that are known to be resolved.
+    fn pending_child(storage: &ExprStorage<T, F>, cursor: &mut usize) -> Option<Pending<T, F>> {
+        // The first unresolved one of `children`, from `cursor` on
+        let need_each = |children: &[Expr<T, F>],
+                         cursor: &mut usize,
+                         trace: &dyn Fn(&Expr<T, F>) -> Trace<F>| {
+            while let Some(child) = children.get(*cursor) {
+                if Self::unresolved(child) {
+                    return Some(Pending {
+                        child: child.clone(),
+                        trace: trace(child),
+                    });
+                }
+                *cursor += 1;
+            }
+            None
+        };
+        // The locations are only built for a child that is pending: building
+        // one allocates, and most checks find the child resolved
+        let at_site = || [storage.loc.clone(), None];
+        let at_child = |child: &Expr<T, F>| [child.get_loc(), None];
+
+        match &storage.tok {
+            // A variable: the cell it refers to
+            ExprType::Bind(varspace, body) => match &body.inner_ref().tok {
+                ExprType::Var(name) => varspace.get(name).and_then(|value| Self::need(value, at_site)),
+                _ => None,
+            },
+            // The name, the object, then the field
+            ExprType::AttrSel(val, attr) => {
+                if let Some(pending) = Self::need(attr, at_site).or_else(|| Self::need(val, at_site)) {
+                    return Some(pending);
+                }
+                let name = match &attr.inner_ref().tok {
+                    ExprType::Value(value) => value.as_string().ok()?,
+                    _ => return None,
+                };
+                match &val.inner_ref().tok {
+                    ExprType::Object(fields) => fields
+                        .get(&StrKey::from(&name))
+                        .and_then(|field| Self::need(field, at_site)),
+                    _ => None,
+                }
+            }
+            // The function; the argument is left to its pattern
+            ExprType::FuncCall { func, .. } => Self::need(func, at_site),
+            ExprType::UnOp(_, operand) => Self::need(operand, at_site),
+            ExprType::BinOp(op @ (ExprBinOp::LogAnd | ExprBinOp::LogOr | ExprBinOp::LogImpl), lhs, rhs) => {
+                if let Some(pending) = Self::need(lhs, || at_child(lhs)) {
+                    return Some(pending);
+                }
+                // The right side only when the left one does not decide
+                let lhs_true = match &lhs.inner_ref().tok {
+                    ExprType::Value(value) => value.as_bool().ok()?,
+                    _ => return None,
+                };
+                let needs_rhs = match op {
+                    ExprBinOp::LogOr => !lhs_true,
+                    _ => lhs_true,
+                };
+                if needs_rhs { Self::need(rhs, || at_child(rhs)) } else { None }
+            }
+            ExprType::BinOp(_, lhs, rhs) => {
+                Self::need(lhs, || at_child(lhs)).or_else(|| Self::need(rhs, || at_child(rhs)))
+            }
+            ExprType::Concat(parts) => need_each(parts, cursor, &|_| at_site()),
+            // The value, as the first case compares it. A case value that is
+            // not resolved yet comes first, and that is left to the step.
+            ExprType::Switch(value, cases, _) => match cases.first() {
+                Some((first_case, _)) if !Self::unresolved(first_case) => {
+                    Self::need(value, || [value.get_loc(), storage.loc.clone()])
+                }
+                _ => None,
+            },
+            ExprType::Match(value, cases) => match cases.first() {
+                Some((pattern, _)) if Self::pattern_resolves(pattern) => Self::need(value, at_site),
+                _ => None,
+            },
+            // The list, then each item in turn
+            ExprType::Fold { input, .. } => {
+                if let Some(pending) = Self::need(input, at_site) {
+                    return Some(pending);
+                }
+                match &input.inner_ref().tok {
+                    ExprType::List(items) => need_each(items, cursor, &at_child),
+                    _ => None,
+                }
+            }
+            // The list or object; the rest are cells the step creates
+            ExprType::Map(_, _, input, _) => Self::need(input, at_site),
+            _ => None,
+        }
+    }
+
+    /// `child` as pending if it is not resolved, with the locations its
+    /// failure adds to the trace.
+    fn need(child: &Expr<T, F>, trace: impl FnOnce() -> Trace<F>) -> Option<Pending<T, F>> {
+        Self::unresolved(child).then(|| Pending {
+            child: child.clone(),
+            trace: trace(),
+        })
+    }
+
+    fn unresolved(expr: &Expr<T, F>) -> bool {
+        Self::needs_resolve(&expr.inner_ref().tok)
+    }
+
+    /// Whether matching `pattern` resolves the value, or only names it.
+    fn pattern_resolves(pattern: &Matcher<T, F>) -> bool {
+        match pattern {
+            Matcher::Alias(inner, _) => Self::pattern_resolves(inner),
+            Matcher::Tuple(..) | Matcher::List(..) | Matcher::Object(..) => true,
+            _ => false,
+        }
+    }
+
+    /// One rewrite step of an expression that is not resolved yet: the
+    /// expression it turns into, which may need more steps.
+    ///
+    /// A self-call in tail position is rewritten in place, step after step,
+    /// instead of nesting resolves, so an infinite one never reaches the
+    /// blackholing check in [`Expr::enter`]. It is caught by a budget on the
+    /// number of steps for one cell instead, in [`Expr::resolve`]: no real
+    /// description rewrites a single expression anywhere near that many
+    /// times.
+    fn step(storref: ExprStorage<T, F>) -> Result<ExprStorage<T, F>, F> {
+        match storref {
+            ExprStorage {
+                tok: ExprType::Bind(varspace, bound_expr),
+                loc,
+            } => match &*bound_expr.inner_ref() {
                 ExprStorage {
-                    tok: ExprType::Bind(varspace, bound_expr),
-                    loc,
-                } => match &*bound_expr.inner_ref() {
-                    ExprStorage {
-                        tok: ExprType::Object(fields),
-                        ..
-                    } => Ok(ExprType::Object(
-                        fields
-                            .iter()
-                            .map(|(k, val)| (*k, val.bind(&varspace)))
-                            .collect(),
-                    )
-                    .loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::List(items),
-                        ..
-                    } => Ok(ExprType::List(
-                        items.iter().map(|item| item.bind(&varspace)).collect(),
-                    )
-                    .loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::Tuple(items),
-                        ..
-                    } => Ok(ExprType::Tuple(
-                        items.iter().map(|item| item.bind(&varspace)).collect(),
-                    )
-                    .loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::Concat(parts),
-                        ..
-                    } => Ok(ExprType::Concat(
-                        parts.iter().map(|part| part.bind(&varspace)).collect(),
-                    )
-                    .loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::AttrSel(val, attr),
-                        ..
-                    } => Ok(ExprType::AttrSel(val.bind(&varspace), attr.bind(&varspace)).loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::Let(fields, target_expr),
-                        ..
-                    } => {
-                        let mut vars: ExprSet<T, F> = varspace;
-                        for (field_matcher, field_expr) in fields {
-                            for (name, value) in field_matcher
-                                .run(field_expr.bind(&vars))
-                                .map_err(|e| e.reref(&loc))?
-                                .into_iter()
-                            {
-                                vars.insert(name, value).map_or_else(
-                                    || Ok(()),
-                                    |_| {
-                                        Err(Error::new(ErrorType::DupKey, name.as_string())
-                                            .reref(&loc))
-                                    },
-                                )?;
-                            }
-                        }
-                        Ok(target_expr.bind_fresh(&vars).inner_ref().clone())
-                    }
-                    ExprStorage {
-                        tok: ExprType::FuncDef(matcher, func_expr),
-                        ..
-                    } => {
-                        // Note: varspace move into the FuncDef here, but
-                        // variables coming from the matcher needs higher
-                        // priority. This all depends on when resolving FuncDef
-                        // later in FuncCall, the resuling varspace is merged
-                        // into the contained Bind
-                        Ok(ExprType::FuncDef(
-                            matcher.bind_defaults(&varspace),
-                            // Unpacked again when the function is called
-                            func_expr.bind_fresh(&varspace),
-                        )
-                        .loc(loc))
-                    }
-                    ExprStorage {
-                        tok: ExprType::FuncDefBuiltin(expr_builtin),
-                        loc: biloc,
-                    } => Ok(ExprType::FuncDefBuiltin(expr_builtin.clone()).loc(biloc.clone())),
-                    ExprStorage {
-                        tok: ExprType::Fold { func, init, input },
-                        ..
-                    } => Ok(ExprType::Fold {
-                        func: func.bind(&varspace),
-                        // Taken over as the result when the list is empty
-                        init: init.as_ref().map(|e| e.bind_fresh(&varspace)),
-                        input: input.bind(&varspace),
-                    }
-                    .loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::Map(typ, func, input, filter),
-                        ..
-                    } => Ok(ExprType::Map(
-                        *typ,
-                        func.bind(&varspace),
-                        input.bind(&varspace),
-                        filter.as_ref().map(|e| e.bind(&varspace)),
-                    )
-                    .loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::Var(name),
-                        loc: vloc,
-                    } => match &varspace.get(name) {
-                        Some(value) => {
-                            let resolved_loc = value.get_loc();
-                            Ok(value
-                                .res_type()
-                                .map_err(|e| e.reref(&loc))?
-                                .tok
-                                .clone()
-                                .loc(Loc::chain(loc, resolved_loc)))
-                        }
-                        None => {
-                            // The location of the bound cell, which knows
-                            // the call it is in; the variable itself is the
-                            // expression as written, shared by all calls
-                            let err = Error::new(
-                                ErrorType::Scope,
-                                format!("unknown variable `{}`", name),
-                            )
-                            .reref(if loc.is_some() { &loc } else { vloc });
-                            let known = varspace
-                                .keys()
-                                .filter(|key| **key != call_key())
-                                .map(|key| key.as_string());
-                            Err(match closest(&name.as_string(), known) {
-                                Some(similar) => err.help(format!(
-                                    "a variable with a similar name exists: `{similar}`"
-                                )),
-                                None => err,
-                            })
-                        }
-                    },
-                    ExprStorage {
-                        tok: ExprType::UnOp(op, expr),
-                        ..
-                    } => Ok(ExprType::UnOp(*op, expr.bind(&varspace)).loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::BinOp(op, lhs, rhs),
-                        ..
-                    } => {
-                        Ok(ExprType::BinOp(*op, lhs.bind(&varspace), rhs.bind(&varspace)).loc(loc))
-                    }
-                    ExprStorage {
-                        tok:
-                            ExprType::FuncCall {
-                                arg: fargs,
-                                func: fexpr,
-                            },
-                        ..
-                    } => Ok(ExprType::FuncCall {
-                        arg: fargs.bind(&varspace),
-                        func: fexpr.bind(&varspace),
-                    }
-                    .loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::Value(value),
-                        ..
-                    } => Ok(ExprType::Value(value.clone()).loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::Bind(inner_vars, inner_expr),
-                        ..
-                    } => Ok(inner_expr.bind_fresh(inner_vars).inner_ref().clone()),
-                    ExprStorage {
-                        tok: ExprType::Switch(inner_expr, inner_cases, inner_default),
-                        ..
-                    } => Ok(ExprType::Switch(
-                        inner_expr.bind(&varspace),
-                        inner_cases
-                            .iter()
-                            // The body of the case that matches is taken over
-                            .map(|(m, e)| (m.bind(&varspace), e.bind_fresh(&varspace)))
-                            .collect(),
-                        inner_default.as_ref().map(|e| e.bind_fresh(&varspace)),
-                    )
-                    .loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::Match(inner_expr, inner_cases),
-                        ..
-                    } => Ok(ExprType::Match(
-                        inner_expr.bind(&varspace),
-                        inner_cases
-                            .iter()
-                            // Unpacked again for the case that matches
-                            .map(|(m, e)| (m.bind_defaults(&varspace), e.bind_fresh(&varspace)))
-                            .collect(),
-                    )
-                    .loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::Null,
-                        ..
-                    } => Ok(ExprType::Null.loc(loc)),
-                    ExprStorage {
-                        tok: ExprType::UnderEval,
-                        ..
-                    } => unreachable!("ExprType::UnderEval should not be in a Bind expression"),
-                },
+                    tok: ExprType::Object(fields),
+                    ..
+                } => Ok(ExprType::Object(
+                    fields
+                        .iter()
+                        .map(|(k, val)| (*k, val.bind(&varspace)))
+                        .collect(),
+                )
+                .loc(loc)),
+                ExprStorage {
+                    tok: ExprType::List(items),
+                    ..
+                } => Ok(ExprType::List(
+                    items.iter().map(|item| item.bind(&varspace)).collect(),
+                )
+                .loc(loc)),
+                ExprStorage {
+                    tok: ExprType::Tuple(items),
+                    ..
+                } => Ok(ExprType::Tuple(
+                    items.iter().map(|item| item.bind(&varspace)).collect(),
+                )
+                .loc(loc)),
                 ExprStorage {
                     tok: ExprType::Concat(parts),
-                    loc,
-                } => {
-                    let part_values = parts
-                        .iter()
-                        .map(|part| part.value().map_err(|e| e.reref(&loc)))
-                        .collect::<Result<Vec<T>, F>>()?;
-                    Ok(
-                        ExprType::Value(T::op_string_concat(part_values).map_err(|e| e.reref(&loc))?)
-                            .loc(loc),
-                    )
-                }
+                    ..
+                } => Ok(ExprType::Concat(
+                    parts.iter().map(|part| part.bind(&varspace)).collect(),
+                )
+                .loc(loc)),
                 ExprStorage {
                     tok: ExprType::AttrSel(val, attr),
-                    loc,
+                    ..
+                } => Ok(ExprType::AttrSel(val.bind(&varspace), attr.bind(&varspace)).loc(loc)),
+                ExprStorage {
+                    tok: ExprType::Let(fields, target_expr),
+                    ..
                 } => {
-                    // TODO: Don't need to resolve here...
-                    // Need to resolve before clone here, so we guarantee that
-                    // an expression in an object is only evaluated at most once.
-                    // However, it may violate the laziness directive that if the
-                    // variable is not used, it doesn't need to be evaluated.
-                    //
-                    // To resolve this, a better combined Rc<RefCell<...>> that can
-                    // Merge two references is needed, to transfer a var resolution
-                    // to the next object.
-                    let attr_name = attr
-                        .value()
-                        .map_err(|e| e.reref(&loc))?
-                        .as_string()
-                        .map_err(|e| e.reref(&loc))?;
-                    let value = val
-                        .get_item(attr_name.as_str())
-                        .map_err(|e| e.reref(&loc))?;
-                    value.resolve().map_err(|e| e.reref(&loc))?;
-                    let resolved_loc = value.get_loc();
-                    Ok(value
-                        .inner_ref()
-                        .tok
-                        .clone()
-                        .loc(Loc::chain(loc, resolved_loc)))
+                    let mut vars: ExprSet<T, F> = varspace;
+                    for (field_matcher, field_expr) in fields {
+                        for (name, value) in field_matcher
+                            .run(field_expr.bind(&vars))
+                            .map_err(|e| e.reref(&loc))?
+                            .into_iter()
+                        {
+                            vars.insert(name, value).map_or_else(
+                                || Ok(()),
+                                |_| {
+                                    Err(Error::new(ErrorType::DupKey, name.as_string())
+                                        .reref(&loc))
+                                },
+                            )?;
+                        }
+                    }
+                    Ok(target_expr.bind_fresh(&vars).inner_ref().clone())
+                }
+                ExprStorage {
+                    tok: ExprType::FuncDef(matcher, func_expr),
+                    ..
+                } => {
+                    // Note: varspace move into the FuncDef here, but
+                    // variables coming from the matcher needs higher
+                    // priority. This all depends on when resolving FuncDef
+                    // later in FuncCall, the resuling varspace is merged
+                    // into the contained Bind
+                    Ok(ExprType::FuncDef(
+                        matcher.bind_defaults(&varspace),
+                        // Unpacked again when the function is called
+                        func_expr.bind_fresh(&varspace),
+                    )
+                    .loc(loc))
+                }
+                ExprStorage {
+                    tok: ExprType::FuncDefBuiltin(expr_builtin),
+                    loc: biloc,
+                } => Ok(ExprType::FuncDefBuiltin(expr_builtin.clone()).loc(biloc.clone())),
+                ExprStorage {
+                    tok: ExprType::Fold { func, init, input },
+                    ..
+                } => Ok(ExprType::Fold {
+                    func: func.bind(&varspace),
+                    // Taken over as the result when the list is empty
+                    init: init.as_ref().map(|e| e.bind_fresh(&varspace)),
+                    input: input.bind(&varspace),
+                }
+                .loc(loc)),
+                ExprStorage {
+                    tok: ExprType::Map(typ, func, input, filter),
+                    ..
+                } => Ok(ExprType::Map(
+                    *typ,
+                    func.bind(&varspace),
+                    input.bind(&varspace),
+                    filter.as_ref().map(|e| e.bind(&varspace)),
+                )
+                .loc(loc)),
+                ExprStorage {
+                    tok: ExprType::Var(name),
+                    loc: vloc,
+                } => match &varspace.get(name) {
+                    Some(value) => {
+                        let resolved_loc = value.get_loc();
+                        Ok(value
+                            .res_type()
+                            .map_err(|e| e.reref(&loc))?
+                            .tok
+                            .clone()
+                            .loc(Loc::chain(loc, resolved_loc)))
+                    }
+                    None => {
+                        // The location of the bound cell, which knows
+                        // the call it is in; the variable itself is the
+                        // expression as written, shared by all calls
+                        let err = Error::new(
+                            ErrorType::Scope,
+                            format!("unknown variable `{}`", name),
+                        )
+                        .reref(if loc.is_some() { &loc } else { vloc });
+                        let known = varspace
+                            .keys()
+                            .filter(|key| **key != call_key())
+                            .map(|key| key.as_string());
+                        Err(match closest(&name.as_string(), known) {
+                            Some(similar) => err.help(format!(
+                                "a variable with a similar name exists: `{similar}`"
+                            )),
+                            None => err,
+                        })
+                    }
+                },
+                ExprStorage {
+                    tok: ExprType::UnOp(op, expr),
+                    ..
+                } => Ok(ExprType::UnOp(*op, expr.bind(&varspace)).loc(loc)),
+                ExprStorage {
+                    tok: ExprType::BinOp(op, lhs, rhs),
+                    ..
+                } => {
+                    Ok(ExprType::BinOp(*op, lhs.bind(&varspace), rhs.bind(&varspace)).loc(loc))
                 }
                 ExprStorage {
                     tok:
@@ -1139,305 +1260,364 @@ where
                             arg: fargs,
                             func: fexpr,
                         },
-                    loc,
-                } => match &*fexpr.res_type().map_err(|e| e.reref(&loc))? {
-                    ExprStorage {
-                        tok: ExprType::FuncDef(matcher, fimpl),
-                        ..
-                    } => {
-                        let (mut fbound, fexpr) = match &fimpl.inner_ref().tok {
-                            ExprType::Bind(fbound, fexpr) => (fbound.clone(), fexpr.clone()),
-                            _ => (ExprSet::new(), fimpl.clone()),
-                        };
-
-                        let mut vars = matcher.run(fargs).map_err(|e| e.reref(&loc))?;
-
-                        fbound.append(&mut vars);
-                        if let Some(call_site) = &loc {
-                            fbound.insert(call_key(), Self::call_marker(call_site));
-                        }
-
-                        Ok(fexpr.bind_fresh(&fbound).inner_ref().clone())
-                    }
-                    ExprStorage {
-                        tok: ExprType::FuncDefBuiltin(ExprBuiltinWrapper(_, funcrc)),
-                        ..
-                    } => {
-                        // Resolve the returned cell in place and share its
-                        // children, rather than copying it: a builtin may
-                        // return a cell that is referenced from elsewhere
-                        // (ops.recurse ties its output to the argument), and
-                        // a copy would be evaluated again for every reference.
-                        let result = funcrc.as_ref().call(fargs).map_err(|e| e.reref(&loc))?;
-                        result.resolve().map_err(|e| e.reref(&loc))?;
-                        let resolved_loc = result.get_loc();
-                        Ok(result
-                            .inner_ref()
-                            .tok
-                            .clone()
-                            .loc(Loc::chain(loc, resolved_loc)))
-                    }
-                    ExprStorage { tok, .. } => Err(Error::new(
-                        ErrorType::Type,
-                        format!("cannot call {}, it is not a function", tok.describe()),
-                    )
-                    .primary(&loc, "")
-                    .label(&fexpr.origin(), format!("this is {}", tok.describe()))),
-                },
-                ExprStorage {
-                    tok: ExprType::Fold { func, init, input },
-                    loc,
-                } => {
-                    let mut output = init;
-                    match &*input.res_type().map_err(|e| e.reref(&loc))? {
-                        ExprStorage {
-                            tok: ExprType::List(input_items),
-                            loc: input_loc,
-                        } => {
-                            for item in input_items.iter() {
-                                item.resolve().map_err(|e| e.reref(&item.get_loc()))?;
-                                output = match output {
-                                    Some(prev) => Some(
-                                        ExprType::FuncCall {
-                                            arg: item.clone(),
-                                            func: ExprType::FuncCall {
-                                                arg: prev,
-                                                func: func.clone(),
-                                            }
-                                            .reref(input_loc.clone()),
-                                        }
-                                        .reref(item.get_loc()),
-                                    ),
-                                    None => Some(item.clone()),
-                                };
-                            }
-                            if let Some(output) = output {
-                                Ok(output.inner_ref().clone())
-                            } else {
-                                Err(Error::new(
-                                    ErrorType::Eval,
-                                    "cannot fold an empty list without a start value",
-                                )
-                                .primary(&loc, "")
-                                .label(&input.origin(), "the list is empty"))
-                            }
-                        }
-                        other => Err(Error::new(
-                            ErrorType::Type,
-                            format!(
-                                "cannot fold over {}, it is not a list",
-                                other.tok.describe()
-                            ),
-                        )
-                        .primary(&loc, "")
-                        .label(&input.origin(), format!("this is {}", other.tok.describe()))),
-                    }
+                    ..
+                } => Ok(ExprType::FuncCall {
+                    arg: fargs.bind(&varspace),
+                    func: fexpr.bind(&varspace),
                 }
+                .loc(loc)),
                 ExprStorage {
-                    tok: ExprType::Map(typ, func, input, filter),
-                    loc,
-                } => {
-                    input.resolve().map_err(|e| e.reref(&loc))?;
-                    let input_items: Vec<Expr<T, F>> = match &*input.inner_ref() {
-                        ExprStorage {
-                            tok: ExprType::List(input_vec),
-                            ..
-                        } => Ok(input_vec.to_vec()),
-                        ExprStorage {
-                            tok: ExprType::Object(args),
-                            ..
-                        } => {
-                            let args = args
-                                .iter()
-                                .map(|(k, v)| {
-                                    ExprType::Tuple(vec![
-                                        ExprType::Value(T::new_from_string(k.as_string()))
-                                            .reref(v.get_loc()),
-                                        v.clone(),
-                                    ])
-                                    .reref(v.get_loc())
-                                })
-                                .collect::<Vec<_>>();
-                            Ok(args)
-                        }
-                        other => Err(Error::new(
-                            ErrorType::Type,
-                            format!(
-                                "cannot iterate over {}, it is not a list or an object",
-                                other.tok.describe()
-                            ),
-                        )
-                        .primary(&loc, "")
-                        .label(&input.origin(), format!("this is {}", other.tok.describe()))),
-                    }?;
-
-                    let mut filtered_items: Vec<Expr<T, F>>;
-                    if let Some(filter_expr) = filter {
-                        filtered_items = Vec::new();
-                        for item in input_items.iter() {
-                            let filter_result = ExprType::FuncCall {
-                                arg: item.clone(),
-                                func: filter_expr.clone(),
-                            }
-                            .reref(item.get_loc())
-                            .value()
-                            .map_err(|e| e.reref(&item.get_loc()))?
-                            .as_bool()
-                            .map_err(|e| e.reref(&item.get_loc()))?;
-                            if filter_result {
-                                filtered_items.push(item.clone());
-                            }
-                        }
-                    } else {
-                        filtered_items = input_items;
-                    };
-
-                    let output_items = filtered_items
-                        .into_iter()
-                        .map(|iel| {
-                            let loc = iel.get_loc();
-                            ExprType::FuncCall {
-                                arg: iel,
-                                func: func.clone(),
-                            }
-                            .reref(loc)
-                        })
-                        .collect::<Vec<_>>();
-
-                    let output = match typ {
-                        ExprMapType::List => ExprType::List(output_items),
-                        ExprMapType::Object => ExprType::Object(
-                            output_items
-                                .into_iter()
-                                .map(|el| match &*el.res_type().map_err(|e| e.reref(&loc))? {
-                                    ExprStorage {
-                                        tok: ExprType::Tuple(els),
-                                        ..
-                                    } if els.len() == 2 => Ok((
-                                        StrKey::from(
-                                            &els[0]
-                                                .value()
-                                                .map_err(|e| e.reref(&el.get_loc()))?
-                                                .as_string()
-                                                .map_err(|e| e.reref(&el.get_loc()))?,
-                                        ),
-                                        els[1].clone(),
-                                    )),
-                                    other => Err(Error::new(
-                                        ErrorType::Type,
-                                        format!(
-                                            "an object is built from tuples of a name and a \
-                                             value, got {}",
-                                            other.tok.describe()
-                                        ),
-                                    )
-                                    .reref(&el.get_loc())),
-                                })
-                                .collect::<Result<ExprSet<T, F>, F>>()?,
-                        ),
-                    };
-                    Ok(output.loc(loc))
-                }
+                    tok: ExprType::Value(value),
+                    ..
+                } => Ok(ExprType::Value(value.clone()).loc(loc)),
                 ExprStorage {
-                    tok: ExprType::UnOp(op, expr),
-                    loc,
-                } => {
-                    expr.resolve().map_err(|e| e.reref(&loc))?;
-                    // An error from the operation, pointed at it and at
-                    // where the value was written
-                    let at_op = |err: Error<F>| {
-                        err.primary(&loc, "")
-                            .label(&expr.origin(), format!("this is {}", expr.describe()))
-                    };
-                    let result = match &expr.inner_ref().tok {
-                        ExprType::Value(value) => match op {
-                            ExprUnOp::Neg => value.op_neg(),
-                            ExprUnOp::Not => value.op_not(),
-                        },
-                        other => Err(Error::new(
-                            ErrorType::Type,
-                            format!("cannot apply `{}` to {}", op, other.describe()),
-                        )),
-                    };
-                    Ok(ExprType::Value(result.map_err(at_op)?).loc(loc))
-                }
+                    tok: ExprType::Bind(inner_vars, inner_expr),
+                    ..
+                } => Ok(inner_expr.bind_fresh(inner_vars).inner_ref().clone()),
                 ExprStorage {
-                    tok: ExprType::BinOp(op, lhs, rhs),
-                    loc,
-                } => Ok(Self::resolve_binop(&lhs, op, &rhs, &loc)?.loc(loc)),
-                ExprStorage {
-                    tok: ExprType::Switch(ref_expr, cases, default_case),
-                    loc,
-                } => {
-                    let outcome = cases
+                    tok: ExprType::Switch(inner_expr, inner_cases, inner_default),
+                    ..
+                } => Ok(ExprType::Switch(
+                    inner_expr.bind(&varspace),
+                    inner_cases
                         .iter()
-                        .map(|(matcher, outcome)| {
-                            let compare =
-                                ExprType::BinOp(ExprBinOp::Eq, matcher.clone(), ref_expr.clone())
-                                    .reref(matcher.get_loc());
-                            if let Some(is_match) = compare
-                                .res_type()
-                                .map_err(|e| e.reref(&loc))?
-                                .tok
-                                .try_as_value_ref()
-                            {
-                                let found = is_match.as_bool().map_err(|e| e.reref(&loc))?;
-                                if found {
-                                    Ok(Some(outcome.clone()))
-                                } else {
-                                    Ok(None)
-                                }
-                            } else {
-                                Ok(None)
-                            }
-                        })
-                        .collect::<Result<Vec<Option<Expr<T, F>>>, F>>()?
-                        .into_iter()
-                        .flatten()
-                        .next();
+                        // The body of the case that matches is taken over
+                        .map(|(m, e)| (m.bind(&varspace), e.bind_fresh(&varspace)))
+                        .collect(),
+                    inner_default.as_ref().map(|e| e.bind_fresh(&varspace)),
+                )
+                .loc(loc)),
+                ExprStorage {
+                    tok: ExprType::Match(inner_expr, inner_cases),
+                    ..
+                } => Ok(ExprType::Match(
+                    inner_expr.bind(&varspace),
+                    inner_cases
+                        .iter()
+                        // Unpacked again for the case that matches
+                        .map(|(m, e)| (m.bind_defaults(&varspace), e.bind_fresh(&varspace)))
+                        .collect(),
+                )
+                .loc(loc)),
+                ExprStorage {
+                    tok: ExprType::Null,
+                    ..
+                } => Ok(ExprType::Null.loc(loc)),
+                ExprStorage {
+                    tok: ExprType::UnderEval,
+                    ..
+                } => unreachable!("ExprType::UnderEval should not be in a Bind expression"),
+            },
+            ExprStorage {
+                tok: ExprType::Concat(parts),
+                loc,
+            } => {
+                let part_values = parts
+                    .iter()
+                    .map(|part| part.value().map_err(|e| e.reref(&loc)))
+                    .collect::<Result<Vec<T>, F>>()?;
+                Ok(
+                    ExprType::Value(T::op_string_concat(part_values).map_err(|e| e.reref(&loc))?)
+                        .loc(loc),
+                )
+            }
+            ExprStorage {
+                tok: ExprType::AttrSel(val, attr),
+                loc,
+            } => {
+                // TODO: Don't need to resolve here...
+                // Need to resolve before clone here, so we guarantee that
+                // an expression in an object is only evaluated at most once.
+                // However, it may violate the laziness directive that if the
+                // variable is not used, it doesn't need to be evaluated.
+                //
+                // To resolve this, a better combined Rc<RefCell<...>> that can
+                // Merge two references is needed, to transfer a var resolution
+                // to the next object.
+                let attr_name = attr
+                    .value()
+                    .map_err(|e| e.reref(&loc))?
+                    .as_string()
+                    .map_err(|e| e.reref(&loc))?;
+                let value = val
+                    .get_item(attr_name.as_str())
+                    .map_err(|e| e.reref(&loc))?;
+                value.resolve().map_err(|e| e.reref(&loc))?;
+                let resolved_loc = value.get_loc();
+                Ok(value
+                    .inner_ref()
+                    .tok
+                    .clone()
+                    .loc(Loc::chain(loc, resolved_loc)))
+            }
+            ExprStorage {
+                tok:
+                    ExprType::FuncCall {
+                        arg: fargs,
+                        func: fexpr,
+                    },
+                loc,
+            } => match &*fexpr.res_type().map_err(|e| e.reref(&loc))? {
+                ExprStorage {
+                    tok: ExprType::FuncDef(matcher, fimpl),
+                    ..
+                } => {
+                    let (mut fbound, fexpr) = match &fimpl.inner_ref().tok {
+                        ExprType::Bind(fbound, fexpr) => (fbound.clone(), fexpr.clone()),
+                        _ => (ExprSet::new(), fimpl.clone()),
+                    };
 
-                    if let Some(outcome_expr) = outcome {
-                        Ok(outcome_expr.inner_ref().tok.clone().loc(loc))
-                    } else {
-                        if let Some(default_expr) = default_case {
-                            Ok(default_expr.inner_ref().tok.clone().loc(loc))
+                    let mut vars = matcher.run(fargs).map_err(|e| e.reref(&loc))?;
+
+                    fbound.append(&mut vars);
+                    if let Some(call_site) = &loc {
+                        fbound.insert(call_key(), Self::call_marker(call_site));
+                    }
+
+                    Ok(fexpr.bind_fresh(&fbound).inner_ref().clone())
+                }
+                ExprStorage {
+                    tok: ExprType::FuncDefBuiltin(ExprBuiltinWrapper(_, funcrc)),
+                    ..
+                } => {
+                    // Resolve the returned cell in place and share its
+                    // children, rather than copying it: a builtin may
+                    // return a cell that is referenced from elsewhere
+                    // (ops.recurse ties its output to the argument), and
+                    // a copy would be evaluated again for every reference.
+                    let result = funcrc.as_ref().call(fargs).map_err(|e| e.reref(&loc))?;
+                    result.resolve().map_err(|e| e.reref(&loc))?;
+                    let resolved_loc = result.get_loc();
+                    Ok(result
+                        .inner_ref()
+                        .tok
+                        .clone()
+                        .loc(Loc::chain(loc, resolved_loc)))
+                }
+                ExprStorage { tok, .. } => Err(Error::new(
+                    ErrorType::Type,
+                    format!("cannot call {}, it is not a function", tok.describe()),
+                )
+                .primary(&loc, "")
+                .label(&fexpr.origin(), format!("this is {}", tok.describe()))),
+            },
+            ExprStorage {
+                tok: ExprType::Fold { func, init, input },
+                loc,
+            } => {
+                let mut output = init;
+                match &*input.res_type().map_err(|e| e.reref(&loc))? {
+                    ExprStorage {
+                        tok: ExprType::List(input_items),
+                        loc: input_loc,
+                    } => {
+                        for item in input_items.iter() {
+                            item.resolve().map_err(|e| e.reref(&item.get_loc()))?;
+                            output = match output {
+                                Some(prev) => Some(
+                                    ExprType::FuncCall {
+                                        arg: item.clone(),
+                                        func: ExprType::FuncCall {
+                                            arg: prev,
+                                            func: func.clone(),
+                                        }
+                                        .reref(input_loc.clone()),
+                                    }
+                                    .reref(item.get_loc()),
+                                ),
+                                None => Some(item.clone()),
+                            };
+                        }
+                        if let Some(output) = output {
+                            Ok(output.inner_ref().clone())
                         } else {
                             Err(Error::new(
                                 ErrorType::Eval,
-                                format!("no case matches the value {}", ref_expr.diag()),
+                                "cannot fold an empty list without a start value",
                             )
                             .primary(&loc, "")
-                            .label(
-                                &ref_expr.origin(),
-                                format!("this is {}", ref_expr.describe()),
-                            ))
+                            .label(&input.origin(), "the list is empty"))
                         }
                     }
+                    other => Err(Error::new(
+                        ErrorType::Type,
+                        format!(
+                            "cannot fold over {}, it is not a list",
+                            other.tok.describe()
+                        ),
+                    )
+                    .primary(&loc, "")
+                    .label(&input.origin(), format!("this is {}", other.tok.describe()))),
                 }
-                ExprStorage {
-                    tok: ExprType::Match(ref_expr, cases),
-                    loc,
-                } => {
-                    let mut outcome = None;
-                    for (matcher, case_expr) in cases.iter() {
-                        if let Some(vars) = matcher
-                            .try_run(ref_expr.clone())
-                            .map_err(|e| e.reref(&loc))?
-                        {
-                            outcome = Some((vars, case_expr));
-                            break;
+            }
+            ExprStorage {
+                tok: ExprType::Map(typ, func, input, filter),
+                loc,
+            } => {
+                input.resolve().map_err(|e| e.reref(&loc))?;
+                let input_items: Vec<Expr<T, F>> = match &*input.inner_ref() {
+                    ExprStorage {
+                        tok: ExprType::List(input_vec),
+                        ..
+                    } => Ok(input_vec.to_vec()),
+                    ExprStorage {
+                        tok: ExprType::Object(args),
+                        ..
+                    } => {
+                        let args = args
+                            .iter()
+                            .map(|(k, v)| {
+                                ExprType::Tuple(vec![
+                                    ExprType::Value(T::new_from_string(k.as_string()))
+                                        .reref(v.get_loc()),
+                                    v.clone(),
+                                ])
+                                .reref(v.get_loc())
+                            })
+                            .collect::<Vec<_>>();
+                        Ok(args)
+                    }
+                    other => Err(Error::new(
+                        ErrorType::Type,
+                        format!(
+                            "cannot iterate over {}, it is not a list or an object",
+                            other.tok.describe()
+                        ),
+                    )
+                    .primary(&loc, "")
+                    .label(&input.origin(), format!("this is {}", other.tok.describe()))),
+                }?;
+
+                let mut filtered_items: Vec<Expr<T, F>>;
+                if let Some(filter_expr) = filter {
+                    filtered_items = Vec::new();
+                    for item in input_items.iter() {
+                        let filter_result = ExprType::FuncCall {
+                            arg: item.clone(),
+                            func: filter_expr.clone(),
+                        }
+                        .reref(item.get_loc())
+                        .value()
+                        .map_err(|e| e.reref(&item.get_loc()))?
+                        .as_bool()
+                        .map_err(|e| e.reref(&item.get_loc()))?;
+                        if filter_result {
+                            filtered_items.push(item.clone());
                         }
                     }
+                } else {
+                    filtered_items = input_items;
+                };
 
-                    if let Some((mut vars, case_expr)) = outcome {
-                        // Same as a FuncCall: the names bound by the matcher
-                        // take priority over the scope the case was bound in
-                        let (mut bound, body) = match &case_expr.inner_ref().tok {
-                            ExprType::Bind(bound, body) => (bound.clone(), body.clone()),
-                            _ => (ExprSet::new(), case_expr.clone()),
-                        };
-                        bound.append(&mut vars);
-                        Ok(body.bind_fresh(&bound).inner_ref().clone())
+                let output_items = filtered_items
+                    .into_iter()
+                    .map(|iel| {
+                        let loc = iel.get_loc();
+                        ExprType::FuncCall {
+                            arg: iel,
+                            func: func.clone(),
+                        }
+                        .reref(loc)
+                    })
+                    .collect::<Vec<_>>();
+
+                let output = match typ {
+                    ExprMapType::List => ExprType::List(output_items),
+                    ExprMapType::Object => ExprType::Object(
+                        output_items
+                            .into_iter()
+                            .map(|el| match &*el.res_type().map_err(|e| e.reref(&loc))? {
+                                ExprStorage {
+                                    tok: ExprType::Tuple(els),
+                                    ..
+                                } if els.len() == 2 => Ok((
+                                    StrKey::from(
+                                        &els[0]
+                                            .value()
+                                            .map_err(|e| e.reref(&el.get_loc()))?
+                                            .as_string()
+                                            .map_err(|e| e.reref(&el.get_loc()))?,
+                                    ),
+                                    els[1].clone(),
+                                )),
+                                other => Err(Error::new(
+                                    ErrorType::Type,
+                                    format!(
+                                        "an object is built from tuples of a name and a \
+                                         value, got {}",
+                                        other.tok.describe()
+                                    ),
+                                )
+                                .reref(&el.get_loc())),
+                            })
+                            .collect::<Result<ExprSet<T, F>, F>>()?,
+                    ),
+                };
+                Ok(output.loc(loc))
+            }
+            ExprStorage {
+                tok: ExprType::UnOp(op, expr),
+                loc,
+            } => {
+                expr.resolve().map_err(|e| e.reref(&loc))?;
+                // An error from the operation, pointed at it and at
+                // where the value was written
+                let at_op = |err: Error<F>| {
+                    err.primary(&loc, "")
+                        .label(&expr.origin(), format!("this is {}", expr.describe()))
+                };
+                let result = match &expr.inner_ref().tok {
+                    ExprType::Value(value) => match op {
+                        ExprUnOp::Neg => value.op_neg(),
+                        ExprUnOp::Not => value.op_not(),
+                    },
+                    other => Err(Error::new(
+                        ErrorType::Type,
+                        format!("cannot apply `{}` to {}", op, other.describe()),
+                    )),
+                };
+                Ok(ExprType::Value(result.map_err(at_op)?).loc(loc))
+            }
+            ExprStorage {
+                tok: ExprType::BinOp(op, lhs, rhs),
+                loc,
+            } => Ok(Self::resolve_binop(&lhs, op, &rhs, &loc)?.loc(loc)),
+            ExprStorage {
+                tok: ExprType::Switch(ref_expr, cases, default_case),
+                loc,
+            } => {
+                let outcome = cases
+                    .iter()
+                    .map(|(matcher, outcome)| {
+                        let compare =
+                            ExprType::BinOp(ExprBinOp::Eq, matcher.clone(), ref_expr.clone())
+                                .reref(matcher.get_loc());
+                        if let Some(is_match) = compare
+                            .res_type()
+                            .map_err(|e| e.reref(&loc))?
+                            .tok
+                            .try_as_value_ref()
+                        {
+                            let found = is_match.as_bool().map_err(|e| e.reref(&loc))?;
+                            if found {
+                                Ok(Some(outcome.clone()))
+                            } else {
+                                Ok(None)
+                            }
+                        } else {
+                            Ok(None)
+                        }
+                    })
+                    .collect::<Result<Vec<Option<Expr<T, F>>>, F>>()?
+                    .into_iter()
+                    .flatten()
+                    .next();
+
+                if let Some(outcome_expr) = outcome {
+                    Ok(outcome_expr.inner_ref().tok.clone().loc(loc))
+                } else {
+                    if let Some(default_expr) = default_case {
+                        Ok(default_expr.inner_ref().tok.clone().loc(loc))
                     } else {
                         Err(Error::new(
                             ErrorType::Eval,
@@ -1450,22 +1630,56 @@ where
                         ))
                     }
                 }
-                ExprStorage {
-                    tok: ExprType::Var(name),
-                    loc,
-                } => Err(
-                    Error::new(ErrorType::Scope, format!("unknown variable `{}`", name))
-                        .reref(&loc),
-                ),
-                ExprStorage {
-                    tok: ExprType::UnderEval,
-                    loc: _,
-                } => unreachable!("UnderEval is only stored in a cell, never resolved as a step"),
-                ExprStorage { tok, loc: _ } => unreachable!("Resolving {}", tok),
-            }?;
-        }
+            }
+            ExprStorage {
+                tok: ExprType::Match(ref_expr, cases),
+                loc,
+            } => {
+                let mut outcome = None;
+                for (matcher, case_expr) in cases.iter() {
+                    if let Some(vars) = matcher
+                        .try_run(ref_expr.clone())
+                        .map_err(|e| e.reref(&loc))?
+                    {
+                        outcome = Some((vars, case_expr));
+                        break;
+                    }
+                }
 
-        Ok(storref)
+                if let Some((mut vars, case_expr)) = outcome {
+                    // Same as a FuncCall: the names bound by the matcher
+                    // take priority over the scope the case was bound in
+                    let (mut bound, body) = match &case_expr.inner_ref().tok {
+                        ExprType::Bind(bound, body) => (bound.clone(), body.clone()),
+                        _ => (ExprSet::new(), case_expr.clone()),
+                    };
+                    bound.append(&mut vars);
+                    Ok(body.bind_fresh(&bound).inner_ref().clone())
+                } else {
+                    Err(Error::new(
+                        ErrorType::Eval,
+                        format!("no case matches the value {}", ref_expr.diag()),
+                    )
+                    .primary(&loc, "")
+                    .label(
+                        &ref_expr.origin(),
+                        format!("this is {}", ref_expr.describe()),
+                    ))
+                }
+            }
+            ExprStorage {
+                tok: ExprType::Var(name),
+                loc,
+            } => Err(
+                Error::new(ErrorType::Scope, format!("unknown variable `{}`", name))
+                    .reref(&loc),
+            ),
+            ExprStorage {
+                tok: ExprType::UnderEval,
+                loc: _,
+            } => unreachable!("UnderEval is only stored in a cell, never resolved as a step"),
+            ExprStorage { tok, loc: _ } => unreachable!("Resolving {}", tok),
+        }
     }
 
     pub fn replace_storage(&self, storref: ExprStorage<T, F>) {

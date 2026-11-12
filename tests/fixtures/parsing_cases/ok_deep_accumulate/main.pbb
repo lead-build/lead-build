@@ -1,0 +1,14 @@
+|{ ops, ... }|
+let
+    # A tail call whose argument accumulates: `sum + i` is not evaluated
+    # when the call is made, so each round wraps the previous sum in one
+    # more addition. Forcing the result at the end nests once per round.
+    mod = |self| {
+        f = |(i, sum)| switch i {
+            0 => sum;
+            _ => self.f (i - 1, sum + i);
+        };
+    };
+    evaled = ops.recurse mod;
+in
+evaled.f (20000, 0)
