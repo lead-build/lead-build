@@ -1,0 +1,10 @@
+|{ ... }|
+let
+    # As for a function parameter: a name bound by the pattern must not
+    # reach into the definition of the variable the case returns.
+    n = 1;
+    x = n + 1;
+in
+match (5,) {
+    (n,) => x;
+}

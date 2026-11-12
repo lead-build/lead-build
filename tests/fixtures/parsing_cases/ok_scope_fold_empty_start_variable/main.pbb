@@ -1,0 +1,6 @@
+|{ ... }|
+let
+    # With nothing to fold, the result is the start value, here a variable.
+    start = 3 + 4;
+in
+(|a b| a + b for start : [])

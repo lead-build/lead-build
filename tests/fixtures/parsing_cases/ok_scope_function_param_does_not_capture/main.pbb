@@ -1,0 +1,10 @@
+|{ ... }|
+let
+    # `x` is defined with the outer `self`. Returning it from a function
+    # whose parameter has the same name must not evaluate it with the
+    # parameter in scope.
+    self = 1;
+    x = self + 1;
+    f = |self| x;
+in
+f 5

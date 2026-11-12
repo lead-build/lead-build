@@ -504,8 +504,15 @@ where
     /// of one unresolved cell per step, forced recursively only when the
     /// value is finally used (see the `ok_recurse_tail_call_passthrough`
     /// fixture). The cell may therefore be shared with others, so the caller
-    /// must only resolve it in place. A caller that takes over the cell's
-    /// storage uses [`Expr::bind_fresh`].
+    /// must only ever resolve it in place.
+    ///
+    /// A caller that takes the cell apart uses [`Expr::bind_fresh`]: one that
+    /// takes over its storage as its own next step, and one that unpacks it
+    /// into scope and body to add variables, as a call does with a function
+    /// body and `match` with a case. Unpacking a shared cell would evaluate
+    /// its expression with those added variables in scope, and they would
+    /// capture any variable of the same name it refers to (the
+    /// `ok_scope_*` fixtures).
     pub fn bind(&self, varspace: &ExprSet<T, F>) -> Expr<T, F> {
         if let ExprType::Var(name) = &self.inner_ref().tok
             && let Some(target) = varspace.get(name)
@@ -516,13 +523,15 @@ where
     }
 
     /// A new cell that evaluates `self` in `varspace`, private to the
-    /// caller, which may take over its storage as the next step of the cell
-    /// it is resolving (a function body on a call, a let or case body).
+    /// caller, which may take it apart: take over its storage as the next
+    /// step of the cell it is resolving, or unpack it into scope and body
+    /// (a function body on a call, a let body, a case of `switch` or
+    /// `match`, the start value of a fold).
     ///
     /// This is a bind step even when `self` is a plain variable: the shared
-    /// cell behind it must be resolved in place, not copied, as a copy would
-    /// be evaluated once more, or be the `UnderEval` marker of a cell that is
-    /// being resolved further up.
+    /// cell behind it must be resolved in place, not copied or unpacked. A
+    /// copy would be evaluated once more, or be the `UnderEval` marker of a
+    /// cell that is being resolved further up.
     ///
     /// The whole varspace is cloned (cheap: keys are copied, values are
     /// reference counted). Narrowing it to the variables the expression
@@ -916,7 +925,8 @@ where
                         // into the contained Bind
                         Ok(ExprType::FuncDef(
                             matcher.bind_defaults(&varspace),
-                            func_expr.bind(&varspace),
+                            // Unpacked again when the function is called
+                            func_expr.bind_fresh(&varspace),
                         )
                         .loc(loc))
                     }
@@ -929,7 +939,8 @@ where
                         ..
                     } => Ok(ExprType::Fold {
                         func: func.bind(&varspace),
-                        init: init.as_ref().map(|e| e.bind(&varspace)),
+                        // Taken over as the result when the list is empty
+                        init: init.as_ref().map(|e| e.bind_fresh(&varspace)),
                         input: input.bind(&varspace),
                     }
                     .loc(loc)),
@@ -1008,9 +1019,10 @@ where
                         inner_expr.bind(&varspace),
                         inner_cases
                             .iter()
-                            .map(|(m, e)| (m.bind(&varspace), e.bind(&varspace)))
+                            // The body of the case that matches is taken over
+                            .map(|(m, e)| (m.bind(&varspace), e.bind_fresh(&varspace)))
                             .collect(),
-                        inner_default.as_ref().map(|e| e.bind(&varspace)),
+                        inner_default.as_ref().map(|e| e.bind_fresh(&varspace)),
                     )
                     .loc(loc)),
                     ExprStorage {
@@ -1020,7 +1032,8 @@ where
                         inner_expr.bind(&varspace),
                         inner_cases
                             .iter()
-                            .map(|(m, e)| (m.bind_defaults(&varspace), e.bind(&varspace)))
+                            // Unpacked again for the case that matches
+                            .map(|(m, e)| (m.bind_defaults(&varspace), e.bind_fresh(&varspace)))
                             .collect(),
                     )
                     .loc(loc)),

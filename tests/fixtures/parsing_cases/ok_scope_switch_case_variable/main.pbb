@@ -1,0 +1,14 @@
+|{ ... }|
+let
+    # The case returns a variable that is also used elsewhere.
+    x = 3 + 4;
+    y = switch 1 {
+        1 => x;
+        _ => 0;
+    };
+    z = switch 2 {
+        1 => 0;
+        _ => x;
+    };
+in
+(y + z)
