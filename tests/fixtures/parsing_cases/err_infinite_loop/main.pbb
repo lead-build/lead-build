@@ -1,0 +1,13 @@
+|{ ops, ... }|
+let
+    mod = |self| {
+        a = {
+            x = self.b.x;
+        };
+        b = {
+            x = self.a.x;
+        };
+    };
+    evaled = ops.recurse mod;
+in
+evaled.b.x

@@ -3,6 +3,11 @@ use lead_build::{LangContext, pbbuild::VirtPath};
 use serde::Deserialize;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::mpsc::{self, RecvTimeoutError};
+use std::thread;
+use std::time::Duration;
+
+const CASE_TIMEOUT: Duration = Duration::from_secs(60);
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -56,6 +61,44 @@ fn matches_kind(actual: &ErrorType, expected: ExpectKind) -> bool {
     )
 }
 
+/// The outcome of a case, rendered on the case thread since neither values
+/// nor errors can be sent between threads.
+type CaseResult = Result<String, (ErrorType, String)>;
+
+/// Evaluate one case on its own thread. A case that does not finish within
+/// `CASE_TIMEOUT` fails the test instead of hanging the whole suite; the
+/// thread itself is left behind and dies with the test process.
+fn run_case_with_timeout(case_name: &str, main_file: &Path) -> CaseResult {
+    let main_file = main_file.to_path_buf();
+    let thread_name = format!("case-{case_name}");
+    let (tx, rx) = mpsc::channel();
+    thread::Builder::new()
+        .name(thread_name.clone())
+        .spawn(move || {
+            let main_vpath = VirtPath::from_file(&main_file, thread_name);
+            let ctx = LangContext::new();
+            let result = (|| {
+                let expr = ctx.include(main_vpath, None)?;
+                expr.eval()?;
+                expr.value()
+            })();
+            // The receiver is gone if the case timed out; nothing to report then
+            let _ = tx.send(
+                result
+                    .map(|value| format!("{value}"))
+                    .map_err(|err| (err.typ, format!("{err}"))),
+            );
+        })
+        .expect("failed to spawn case thread");
+    match rx.recv_timeout(CASE_TIMEOUT) {
+        Ok(result) => result,
+        Err(RecvTimeoutError::Timeout) => {
+            panic!("case '{case_name}' did not terminate within {CASE_TIMEOUT:?}")
+        }
+        Err(RecvTimeoutError::Disconnected) => panic!("case '{case_name}' panicked"),
+    }
+}
+
 #[test]
 fn run_parsing_fixture_cases() {
     let fixture_root =
@@ -65,22 +108,14 @@ fn run_parsing_fixture_cases() {
         let expect = parse_expect(&case_dir.join("expect.toml"));
         let main_file = case_dir.join("main.pbb");
 
-        let main_vpath = VirtPath::from_file(&main_file, format!("case-{case_name}"));
-        let ctx = LangContext::new();
-
-        let result = (|| {
-            let expr = ctx.include(main_vpath, None)?;
-            expr.eval()?;
-            expr.value()
-        })();
+        let result = run_case_with_timeout(&case_name, &main_file);
 
         match expect.kind {
             ExpectKind::Ok => {
-                let value = result.unwrap_or_else(|e| {
+                let rendered = result.unwrap_or_else(|(_, e)| {
                     panic!("case '{}' expected success, got error:\n{}", case_name, e)
                 });
                 if let Some(expected) = expect.expect_value.as_ref() {
-                    let rendered = format!("{}", value);
                     assert_eq!(
                         rendered, *expected,
                         "case '{}' expected value '{}', got '{}'",
@@ -89,21 +124,20 @@ fn run_parsing_fixture_cases() {
                 }
             }
             expected_kind => {
-                let err =
+                let (err_typ, rendered) =
                     result.expect_err(&format!("case '{}' expected error, got success", case_name));
                 assert!(
-                    matches_kind(&err.typ, expected_kind),
+                    matches_kind(&err_typ, expected_kind),
                     "case '{}' expected error kind {:?}, got {:?} ({})",
                     case_name,
                     expected_kind,
-                    err.typ,
-                    err
+                    err_typ,
+                    rendered
                 );
                 if let Some(needle) = expect.error_contains.as_ref() {
                     // Checked against the full rendered error, not just
                     // `err.msg`, so `error_contains` can also assert on the
                     // backtrace (e.g. a `file:line:col` location).
-                    let rendered = format!("{}", err);
                     assert!(
                         rendered.contains(needle),
                         "case '{}' expected error output to contain '{}', got '{}'",

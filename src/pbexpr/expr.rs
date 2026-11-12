@@ -60,6 +60,10 @@ where
 // TODO: Better implementation of ExprSet... This probably takes time to clone.
 pub type ExprSet<T, F> = BTreeMap<StrKey, Expr<T, F>>;
 
+/// The most rewrite steps one expression may take to resolve before it is
+/// reported as an infinite recursion, see [`Expr::resolve`].
+const MAX_RESOLVE_STEPS: usize = 250_000;
+
 #[derive(Debug, PartialEq, Copy, Clone)]
 pub enum ExprBinOp {
     HasAttr,
@@ -164,6 +168,104 @@ where
     #[default]
     #[strum(message = "under evaluation")]
     UnderEval,
+}
+
+/* *****************************************************************************
+ * Drop
+ */
+
+impl<T, F> ExprType<T, F>
+where
+    T: Clone + PartialEq + Display + ExprOps<F>,
+    F: Clone,
+{
+    /// Move the directly contained expressions out, for dropping them.
+    /// Expressions inside matchers are left to the matcher's own drop, as
+    /// they only nest as deep as the source.
+    fn take_children(self, out: &mut Vec<Expr<T, F>>) {
+        match self {
+            ExprType::Object(fields) => out.extend(fields.into_values()),
+            ExprType::List(items) | ExprType::Tuple(items) | ExprType::Concat(items) => {
+                out.extend(items)
+            }
+            ExprType::AttrSel(a, b) | ExprType::BinOp(_, a, b) => out.extend([a, b]),
+            ExprType::UnOp(_, e) | ExprType::FuncDef(_, e) => out.push(e),
+            ExprType::Let(bindings, body) => {
+                out.extend(bindings.into_iter().map(|(_, e)| e));
+                out.push(body);
+            }
+            ExprType::Fold { func, init, input } => {
+                out.extend([func, input]);
+                out.extend(init);
+            }
+            ExprType::Map(_, func, input, filter) => {
+                out.extend([func, input]);
+                out.extend(filter);
+            }
+            ExprType::FuncCall { arg, func } => out.extend([arg, func]),
+            ExprType::Bind(vars, e) => {
+                out.extend(vars.into_values());
+                out.push(e);
+            }
+            ExprType::Switch(e, cases, default) => {
+                out.push(e);
+                for (m, c) in cases {
+                    out.extend([m, c]);
+                }
+                out.extend(default);
+            }
+            ExprType::Match(e, cases) => {
+                out.push(e);
+                out.extend(cases.into_iter().map(|(_, c)| c));
+            }
+            ExprType::Value(_)
+            | ExprType::Var(_)
+            | ExprType::FuncDefBuiltin(_)
+            | ExprType::Null
+            | ExprType::UnderEval => {}
+        }
+    }
+}
+
+impl<T, F> Drop for Expr<T, F>
+where
+    T: Clone + PartialEq + Display + ExprOps<F>,
+    F: Clone,
+{
+    /// Drop the expression tree iteratively. Lazy evaluation builds long
+    /// chains of cells, such as the unused argument of each step of a
+    /// tail-recursive call, and the default recursive drop would overflow
+    /// the stack on them. Each cell is emptied here before it is dropped, so
+    /// the nested drop never has children to recurse into.
+    fn drop(&mut self) {
+        /// Take the storage out of a cell about to be freed, leaving an
+        /// empty one behind for the actual drop.
+        fn take_last<T, F>(expr: &Expr<T, F>) -> Option<ExprStorage<T, F>>
+        where
+            T: Clone + PartialEq + Display + ExprOps<F>,
+            F: Clone,
+        {
+            if Rc::strong_count(&expr.0) != 1 {
+                return None;
+            }
+            expr.0
+                .try_borrow_mut()
+                .ok()
+                .map(|mut storage| std::mem::take(&mut *storage))
+        }
+
+        let Some(storage) = take_last(self) else {
+            return;
+        };
+        let mut pending: Vec<Expr<T, F>> = Vec::new();
+        storage.tok.take_children(&mut pending);
+        while let Some(child) = pending.pop() {
+            if let Some(storage) = take_last(&child) {
+                storage.tok.take_children(&mut pending);
+            }
+            // `child` is dropped here, either empty or still shared
+        }
+    }
 }
 
 /* *****************************************************************************
@@ -361,14 +463,39 @@ where
     T: Clone + PartialEq + Display + ExprOps<F> + Debug + Exportable,
     F: Clone + Debug + Referrable,
 {
+    /// A cell that evaluates `self` in `varspace`.
+    ///
+    /// A plain variable reference is the cell it refers to, not a new cell
+    /// wrapping the reference: a variable passed on unchanged through a
+    /// recursion, as in `self.f (i - 1, sum)`, would otherwise leave a chain
+    /// of one unresolved cell per step, forced recursively only when the
+    /// value is finally used (see the `ok_recurse_tail_call_passthrough`
+    /// fixture). The cell may therefore be shared with others, so the caller
+    /// must only resolve it in place. A caller that takes over the cell's
+    /// storage uses [`Expr::bind_fresh`].
     pub fn bind(&self, varspace: &ExprSet<T, F>) -> Expr<T, F> {
-        // TODO: Handle referenced vars correctly
-        let filtered_varspace = varspace
-            .iter()
-            //.filter(|(key, _)| referenced.contains(*key))
-            .map(|(key, expr)| (*key, expr.clone()))
-            .collect();
-        ExprType::Bind(filtered_varspace, self.clone()).reref(self.get_loc())
+        if let ExprType::Var(name) = &self.inner_ref().tok
+            && let Some(target) = varspace.get(name)
+        {
+            return target.clone();
+        }
+        self.bind_fresh(varspace)
+    }
+
+    /// A new cell that evaluates `self` in `varspace`, private to the
+    /// caller, which may take over its storage as the next step of the cell
+    /// it is resolving (a function body on a call, a let or case body).
+    ///
+    /// This is a bind step even when `self` is a plain variable: the shared
+    /// cell behind it must be resolved in place, not copied, as a copy would
+    /// be evaluated once more, or be the `UnderEval` marker of a cell that is
+    /// being resolved further up.
+    ///
+    /// The whole varspace is cloned (cheap: keys are copied, values are
+    /// reference counted). Narrowing it to the variables the expression
+    /// refers to was tried and cost more than it saved.
+    pub fn bind_fresh(&self, varspace: &ExprSet<T, F>) -> Expr<T, F> {
+        ExprType::Bind(varspace.clone(), self.clone()).reref(self.get_loc())
     }
 
     pub fn inner_ref(&self) -> Ref<'_, ExprStorage<T, F>> {
@@ -555,12 +682,10 @@ where
         }
     }
 
-    pub fn resolve(&self) -> Result<(), F> {
-        let mut storref: ExprStorage<T, F> = self.inner_ref().clone();
-
-        let mut first_match = true;
-
-        while match &storref.tok {
+    /// Whether an expression of this type still needs to be resolved, or is
+    /// already in a resolved form.
+    fn needs_resolve(tok: &ExprType<T, F>) -> bool {
+        match tok {
             ExprType::Object(..) => false,
             ExprType::List(..) => false,
             ExprType::Tuple(..) => false,
@@ -580,8 +705,75 @@ where
             ExprType::Switch(..) => true,
             ExprType::Match(..) => true,
             ExprType::Null => false,
-            ExprType::UnderEval => true, // To catch an error later...
-        } {
+            ExprType::UnderEval => true, // Never resolved, caught in resolve()
+        }
+    }
+
+    pub fn resolve(&self) -> Result<(), F> {
+        let storref: ExprStorage<T, F> = {
+            let inner = self.inner_ref();
+            match &inner.tok {
+                // The cell is already being resolved further up the stack, so
+                // its value depends on itself.
+                ExprType::UnderEval => {
+                    return Err(Error::new(
+                        ErrorType::Eval,
+                        "infinite recursion: the value depends on itself",
+                    )
+                    .reref(&inner.loc));
+                }
+                tok if !Self::needs_resolve(tok) => return Ok(()),
+                _ => inner.clone(),
+            }
+        };
+
+        // Blackholing: mark the cell as under evaluation while it is being
+        // resolved, so that a cycle back into it is reported as an error
+        // instead of recursing until the stack overflows. The original
+        // expression is put back on error, so that a later evaluation (eval()
+        // collecting all errors, or partial evaluation in the language server)
+        // sees the unresolved expression again, as before.
+        let original = storref.clone();
+        self.0.as_ref().replace(ExprStorage {
+            tok: ExprType::UnderEval,
+            loc: storref.loc.clone(),
+        });
+
+        match Self::resolve_steps(storref) {
+            Ok(resolved) => {
+                self.0.as_ref().replace(resolved);
+                Ok(())
+            }
+            Err(err) => {
+                self.0.as_ref().replace(original);
+                Err(err)
+            }
+        }
+    }
+
+    /// Rewrite an expression step by step until it is in a resolved form.
+    ///
+    /// A self-call in tail position is rewritten in place here, step after
+    /// step, instead of nesting resolves, so an infinite one never reaches
+    /// the blackholing check in [`Expr::resolve`]. It is caught by a budget
+    /// on the number of steps for one cell instead: no real description
+    /// rewrites a single expression anywhere near that many times.
+    fn resolve_steps(mut storref: ExprStorage<T, F>) -> Result<ExprStorage<T, F>, F> {
+        let mut first_match = true;
+        let mut steps: usize = 0;
+
+        while Self::needs_resolve(&storref.tok) {
+            steps += 1;
+            if steps > MAX_RESOLVE_STEPS {
+                return Err(Error::new(
+                    ErrorType::Eval,
+                    format!(
+                        "infinite recursion: the expression is still not resolved after {} steps",
+                        MAX_RESOLVE_STEPS
+                    ),
+                )
+                .reref(&storref.loc));
+            }
             trace!(
                 "{} {} at {}",
                 if first_match {
@@ -657,7 +849,7 @@ where
                                 )?;
                             }
                         }
-                        Ok(target_expr.bind(&vars).inner_ref().clone())
+                        Ok(target_expr.bind_fresh(&vars).inner_ref().clone())
                     }
                     ExprStorage {
                         tok: ExprType::FuncDef(matcher, func_expr),
@@ -745,7 +937,7 @@ where
                     ExprStorage {
                         tok: ExprType::Bind(inner_vars, inner_expr),
                         ..
-                    } => Ok(inner_expr.bind(inner_vars).inner_ref().clone()),
+                    } => Ok(inner_expr.bind_fresh(inner_vars).inner_ref().clone()),
                     ExprStorage {
                         tok: ExprType::Switch(inner_expr, inner_cases, inner_default),
                         ..
@@ -841,20 +1033,25 @@ where
 
                         fbound.append(&mut vars);
 
-                        Ok(fexpr.bind(&fbound).inner_ref().clone())
+                        Ok(fexpr.bind_fresh(&fbound).inner_ref().clone())
                     }
                     ExprStorage {
                         tok: ExprType::FuncDefBuiltin(ExprBuiltinWrapper(_, funcrc)),
                         ..
                     } => {
-                        let empty_vars = ExprSet::new();
-                        Ok(funcrc
-                            .as_ref()
-                            .call(fargs)
-                            .map_err(|e| e.reref(&loc))?
-                            .bind(&empty_vars)
+                        // Resolve the returned cell in place and share its
+                        // children, rather than copying it: a builtin may
+                        // return a cell that is referenced from elsewhere
+                        // (ops.recurse ties its output to the argument), and
+                        // a copy would be evaluated again for every reference.
+                        let result = funcrc.as_ref().call(fargs).map_err(|e| e.reref(&loc))?;
+                        result.resolve().map_err(|e| e.reref(&loc))?;
+                        let resolved_loc = result.get_loc();
+                        Ok(result
                             .inner_ref()
-                            .clone())
+                            .tok
+                            .clone()
+                            .loc(Loc::chain(loc, resolved_loc)))
                     }
                     ExprStorage { tok: _, loc: floc } => Err(Error::new(
                         ErrorType::Scope,
@@ -1107,7 +1304,7 @@ where
                             _ => (ExprSet::new(), case_expr.clone()),
                         };
                         bound.append(&mut vars);
-                        Ok(body.bind(&bound).inner_ref().clone())
+                        Ok(body.bind_fresh(&bound).inner_ref().clone())
                     } else {
                         Err(Error::new(
                             ErrorType::Eval,
@@ -1125,13 +1322,12 @@ where
                 ExprStorage {
                     tok: ExprType::UnderEval,
                     loc: _,
-                } => panic!("Resolving expression that already is under evaluation"),
+                } => unreachable!("UnderEval is only stored in a cell, never resolved as a step"),
                 ExprStorage { tok, loc: _ } => unreachable!("Resolving {}", tok),
             }?;
         }
 
-        self.0.as_ref().replace(storref);
-        Ok(())
+        Ok(storref)
     }
 
     pub fn replace_storage(&self, storref: ExprStorage<T, F>) {

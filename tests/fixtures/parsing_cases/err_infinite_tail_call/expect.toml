@@ -1,0 +1,2 @@
+kind = "err_eval"
+error_contains = "infinite recursion"

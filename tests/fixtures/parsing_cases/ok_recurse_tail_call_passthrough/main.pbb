@@ -1,0 +1,16 @@
+|{ ops, ... }|
+let
+    # A deep but finite self-call in tail position. The call itself is
+    # rewritten in place by the evaluator, so it does not nest. The argument
+    # `sum` is passed on unchanged and only used at the very end, so it must
+    # not leave one unresolved cell per step behind either: forcing such a
+    # chain would nest once per step and overflow the stack.
+    mod = |self| {
+        f = |(i, sum)| switch i {
+            0 => sum;
+            _ => self.f (i-1, sum);
+        };
+    };
+    evaled = ops.recurse mod;
+in
+evaled.f (1000, 42)

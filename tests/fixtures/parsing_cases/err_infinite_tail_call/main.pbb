@@ -1,0 +1,11 @@
+|{ ops, ... }|
+let
+    # A self-call in tail position: the call is rewritten in place by the
+    # evaluator instead of nesting, so it must be caught as an infinite
+    # recursion rather than running forever.
+    mod = |self| {
+        f = |x| self.f x;
+    };
+    evaled = ops.recurse mod;
+in
+evaled.f 1
