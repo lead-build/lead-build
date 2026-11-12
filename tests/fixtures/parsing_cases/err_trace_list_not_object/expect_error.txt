@@ -18,5 +18,5 @@ Called from:
       lib.build [
 
 Needed by:
-  $DIR/_lib/lib.pbb:37:66
+  field `defines`  $DIR/_lib/lib.pbb:37:66
       define_args = [ |(name, value)| "-D${name}=${value}" for self.defines ];

@@ -83,7 +83,7 @@ where
             &mut out,
             "Called from:",
             site,
-            site.loc.calls(),
+            site.loc.calls().map(|call| (call, None)),
             &mut sources,
             options,
         );
@@ -91,7 +91,7 @@ where
             &mut out,
             "Needed by:",
             site,
-            trace.iter(),
+            trace.iter().map(|frame| (&frame.loc, frame.what.as_deref())),
             &mut sources,
             options,
         );
@@ -197,8 +197,9 @@ where
     renderer.render(&[group])
 }
 
-/// A list of locations, each printed as the location and its source line:
-/// the calls the site was evaluated in, or the expressions that needed it.
+/// A list of locations, each printed as what it is (if known), the location
+/// and its source line: the calls the site was evaluated in, or the
+/// expressions that needed it.
 /// Evaluation passes through the same line several times in a row (an
 /// expression and its parts, or every round of a recursion), so only the
 /// first of those is shown, and nothing for the line of the site itself.
@@ -206,7 +207,7 @@ fn render_frames<'a, F>(
     out: &mut String,
     title: &str,
     site: &Label<F>,
-    locations: impl Iterator<Item = &'a Loc<F>>,
+    locations: impl Iterator<Item = (&'a Loc<F>, Option<&'a str>)>,
     sources: &mut Sources,
     options: &RenderOptions,
 ) where
@@ -215,11 +216,13 @@ fn render_frames<'a, F>(
     /// A frame ready to print: where it is, and its source line with the
     /// range of the expression within that line
     struct Frame {
+        what: Option<String>,
         location: String,
         line: Option<(String, std::ops::Range<usize>)>,
     }
 
-    let mut describe = |loc: &Loc<F>| -> ((String, usize), Frame) {
+    let mut describe = |loc: &Loc<F>, what: Option<&str>| -> ((String, usize), Frame) {
+        let what = what.map(str::to_string);
         let (path, text) = sources.get(&loc.file);
         match text {
             Some(text) => {
@@ -231,6 +234,7 @@ fn render_frames<'a, F>(
                 (
                     (path.clone(), line),
                     Frame {
+                        what,
                         location: format!("{path}:{line}:{column}"),
                         line: Some((trimmed.to_string(), start..end)),
                     },
@@ -239,6 +243,7 @@ fn render_frames<'a, F>(
             None => (
                 (path, loc.span.start),
                 Frame {
+                    what,
                     location: loc.to_string(),
                     line: None,
                 },
@@ -246,10 +251,10 @@ fn render_frames<'a, F>(
         }
     };
 
-    let mut previous = Some(describe(&site.loc).0);
+    let mut previous = Some(describe(&site.loc, None).0);
     let mut frames = Vec::new();
-    for loc in locations {
-        let (key, frame) = describe(loc);
+    for (loc, what) in locations {
+        let (key, frame) = describe(loc, what);
         if previous.as_ref() != Some(&key) {
             frames.push(frame);
         }
@@ -264,9 +269,23 @@ fn render_frames<'a, F>(
     } else {
         frames.len().min(TRACE_FRAMES)
     };
+    // What each frame is, as a column in front of the locations
+    let width = frames[..shown]
+        .iter()
+        .filter_map(|frame| frame.what.as_ref())
+        .map(|what| what.chars().count())
+        .max();
     let _ = writeln!(out, "\n{title}");
     for frame in &frames[..shown] {
-        let _ = writeln!(out, "  {}", frame.location);
+        match width {
+            Some(width) => {
+                let what = frame.what.as_deref().unwrap_or("");
+                let _ = writeln!(out, "  {what:<width$}  {}", frame.location);
+            }
+            None => {
+                let _ = writeln!(out, "  {}", frame.location);
+            }
+        }
         if let Some((line, span)) = &frame.line {
             if options.color && !span.is_empty() {
                 let _ = writeln!(

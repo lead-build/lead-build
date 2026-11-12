@@ -14,7 +14,7 @@ No value: the object has no field `modd`
 In the result at .objs
 
 Needed by:
-  $DIR/_lib/lib.pbb:33:28
+  function of a call     $DIR/_lib/lib.pbb:33:28
       self = ops.recurse (|a b| merge a b for defaults : mods);
-  $DIR/_lib/lib.pbb:36:41
+  object of field `src`  $DIR/_lib/lib.pbb:36:41
       objs = [ |file| "${file}.o" for self.src ];

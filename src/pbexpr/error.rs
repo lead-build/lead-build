@@ -207,13 +207,22 @@ pub struct Error<F> {
     details: Box<Details<F>>,
 }
 
+/// An expression in the trace of an [`Error`]: it needed the failing value,
+/// for what `what` says, if that is known.
+#[derive(Debug)]
+struct TraceFrame<F> {
+    loc: Loc<F>,
+    /// Such as "left side of `++`"
+    what: Option<String>,
+}
+
 /// Where an [`Error`] is and what it involves, see there.
 #[derive(Debug)]
 struct Details<F> {
     primary: Option<Label<F>>,
     labels: Vec<Label<F>>,
     help: Vec<String>,
-    trace: Vec<Loc<F>>,
+    trace: Vec<TraceFrame<F>>,
     /// Innermost first
     context: Vec<String>,
     /// Innermost part first
@@ -237,7 +246,7 @@ impl<F> Error<F> {
 
     /// The failing expression and the expressions that needed it. Without an
     /// explicit site, the first location of the trace is the site.
-    fn site_and_trace(&self) -> (Option<Label<F>>, &[Loc<F>])
+    fn site_and_trace(&self) -> (Option<Label<F>>, &[TraceFrame<F>])
     where
         F: Clone,
     {
@@ -245,7 +254,7 @@ impl<F> Error<F> {
             (Some(primary), _) => (Some(primary.clone()), &self.details.trace),
             (None, Some((first, rest))) => (
                 Some(Label {
-                    loc: first.clone(),
+                    loc: first.loc.clone(),
                     text: String::new(),
                 }),
                 rest,
@@ -328,9 +337,15 @@ where
         if site.is_some() {
             writeln!(f)?;
             writeln!(f, "Backtrace:")?;
-            let frames = site.iter().map(|site| &site.loc).chain(trace.iter());
-            for (idx, loc) in frames.enumerate() {
-                writeln!(f, "  {:3} - {}", idx + 1, loc)?;
+            let frames = site
+                .iter()
+                .map(|site| (&site.loc, None))
+                .chain(trace.iter().map(|frame| (&frame.loc, frame.what.as_deref())));
+            for (idx, (loc, what)) in frames.enumerate() {
+                match what {
+                    Some(what) => writeln!(f, "  {:3} - {} ({})", idx + 1, loc, what)?,
+                    None => writeln!(f, "  {:3} - {}", idx + 1, loc)?,
+                }
             }
         }
         Ok(())
@@ -394,7 +409,22 @@ where
     /// Add an expression that needed the failing one, to the trace.
     pub fn reref(mut self, loc: &Option<Loc<F>>) -> Self {
         if let Some(loc) = loc {
-            self.details.trace.push(loc.clone());
+            self.details.trace.push(TraceFrame {
+                loc: loc.clone(),
+                what: None,
+            });
+        }
+        self
+    }
+
+    /// Like [`Error::reref`], saying what the expression needed the failing
+    /// value for, such as "left side of `++`".
+    pub fn reref_as(mut self, loc: &Option<Loc<F>>, what: impl ToString) -> Self {
+        if let Some(loc) = loc {
+            self.details.trace.push(TraceFrame {
+                loc: loc.clone(),
+                what: Some(what.to_string()),
+            });
         }
         self
     }
@@ -585,6 +615,28 @@ mod tests {
         let full = err.render(&plain(true));
         assert_eq!(full.matches("\n  mem:").count(), 29, "{full}");
         assert!(!full.contains("more"), "{full}");
+    }
+
+    #[test]
+    fn trace_frames_say_what_they_needed_the_value_for() {
+        let err: Error<MemFile> = Error::new(ErrorType::Eval, "boom")
+            .reref(&loc(0))
+            .reref_as(&loc(5), "left side of `++`")
+            .reref(&loc(10))
+            .reref_as(&loc(15), "field `src`");
+        let out = err.render(&plain(false));
+        // Aligned in a column in front of the locations, also for a frame
+        // that has no description
+        assert!(
+            out.contains(
+                "Needed by:\n  left side of `++`  mem:2:1\n      bbbb\n                     \
+                 mem:3:1\n      cccc\n  field `src`        mem:4:1\n      dddd\n"
+            ),
+            "{out}"
+        );
+        let plain = format!("{err}");
+        assert!(plain.contains("    2 - mem:5 (left side of `++`)\n"), "{plain}");
+        assert!(plain.contains("    3 - mem:10\n"), "{plain}");
     }
 
     #[test]
