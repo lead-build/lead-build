@@ -6,12 +6,11 @@ Scope error: unknown variable `nam`
   |
   = help: a variable with a similar name exists: `name`
 
-In the result at .objs[0]
-
 Called from:
   $DIR/err_trace_typo_in_function/main.pbb:9:5
       mymod "main",
 
 Needed by:
-  part of a string  $DIR/_lib/lib.pbb:36:25
+  $DIR/_lib/lib.pbb:36:25 (part of a string)
       objs = [ |file| "${file}.o" for self.src ];
+  result `.objs[0]`

@@ -1,0 +1,14 @@
+Type error: incompatible type in build arg 'input', got 12
+  --> $DIR/err_trace_build_argument/main.pbb:21:9
+   |
+21 |         12,
+   |         ^^
+
+Needed by:
+  $DIR/err_trace_build_argument/main.pbb:15:34 (build argument `input`)
+      compile = |src| compile_rule {
+  $DIR/err_trace_build_argument/main.pbb:21:9
+      12,
+  $DIR/err_trace_build_argument/main.pbb:25:21 (build argument `input`)
+      app = link_rule {
+  result `.app`

@@ -193,8 +193,8 @@ pub struct Label<F> {
 /// - the *calls* the site was evaluated in, taken from its location,
 /// - the *trace*: evaluation is lazy, so this is not a call stack but the
 ///   chain of expressions that needed the failing one, innermost first,
-/// - the *context*: what a builtin was evaluating the value for,
-/// - the *result path*, where in the evaluated result the value belongs.
+/// - the *result path*, where in the evaluated result the value belongs,
+///   which is where the trace ends.
 ///
 /// An error built with only [`Error::reref`], as most are, has no explicit
 /// site; the first location added is then the site and the rest the trace.
@@ -223,8 +223,6 @@ struct Details<F> {
     labels: Vec<Label<F>>,
     help: Vec<String>,
     trace: Vec<TraceFrame<F>>,
-    /// Innermost first
-    context: Vec<String>,
     /// Innermost part first
     result_path: Vec<String>,
 }
@@ -279,22 +277,6 @@ impl<F> Error<F> {
         }
     }
 
-    /// What the value was evaluated for and where in the result it belongs,
-    /// one line each, innermost first.
-    fn fmt_context(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
-        if self.details.context.is_empty() && self.details.result_path.is_empty() {
-            return Ok(());
-        }
-        writeln!(f)?;
-        for context in &self.details.context {
-            writeln!(f, "While evaluating {context}")?;
-        }
-        if let Some(path) = self.result_path_string() {
-            writeln!(f, "In the result at {path}")?;
-        }
-        Ok(())
-    }
-
     pub fn labels(&self) -> &[Label<F>] {
         &self.details.labels
     }
@@ -324,7 +306,6 @@ where
         for help in &self.details.help {
             writeln!(f, "  help: {help}")?;
         }
-        self.fmt_context(f)?;
         if let Some(site) = &site
             && site.loc.ctx.is_some()
         {
@@ -341,12 +322,20 @@ where
                 .iter()
                 .map(|site| (&site.loc, None))
                 .chain(trace.iter().map(|frame| (&frame.loc, frame.what.as_deref())));
+            let mut count = 0;
             for (idx, (loc, what)) in frames.enumerate() {
                 match what {
                     Some(what) => writeln!(f, "  {:3} - {} ({})", idx + 1, loc, what)?,
                     None => writeln!(f, "  {:3} - {}", idx + 1, loc)?,
                 }
+                count = idx + 1;
             }
+            if let Some(path) = self.result_path_string() {
+                writeln!(f, "  {:3} - result `{path}`", count + 1)?;
+            }
+        } else if let Some(path) = self.result_path_string() {
+            writeln!(f)?;
+            writeln!(f, "In the result at `{path}`")?;
         }
         Ok(())
     }
@@ -365,7 +354,6 @@ where
                 labels: Vec::new(),
                 help: Vec::new(),
                 trace: Vec::new(),
-                context: Vec::new(),
                 result_path: Vec::new(),
             }),
         }
@@ -426,13 +414,6 @@ where
                 what: Some(what.to_string()),
             });
         }
-        self
-    }
-
-    /// Say what the failing value was being evaluated for, as the rest of
-    /// the sentence "While evaluating ...".
-    pub fn context(mut self, text: impl ToString) -> Self {
-        self.details.context.push(text.to_string());
         self
     }
 
@@ -625,12 +606,11 @@ mod tests {
             .reref(&loc(10))
             .reref_as(&loc(15), "field `src`");
         let out = err.render(&plain(false));
-        // Aligned in a column in front of the locations, also for a frame
-        // that has no description
+        // After the location, and nothing for a frame without one
         assert!(
             out.contains(
-                "Needed by:\n  left side of `++`  mem:2:1\n      bbbb\n                     \
-                 mem:3:1\n      cccc\n  field `src`        mem:4:1\n      dddd\n"
+                "Needed by:\n  mem:2:1 (left side of `++`)\n      bbbb\n  mem:3:1\n      \
+                 cccc\n  mem:4:1 (field `src`)\n      dddd\n"
             ),
             "{out}"
         );
@@ -656,16 +636,14 @@ mod tests {
             .primary(&loc(0), "fails here")
             .label(&loc(5), "this value")
             .help("try something else")
-            .reref(&loc(10))
-            .context("the build argument `input`")
+            .reref_as(&loc(10), "build argument `input`")
             .in_result("[2]")
             .in_result(".out");
         assert_eq!(
             format!("{err}"),
             "Eval error:\n\nboom\n\n  fails here: mem:0\n  this value: mem:5\n  \
-             help: try something else\n\nWhile evaluating the build argument `input`\n\
-             In the result at .out[2]\n\nBacktrace:\n    \
-             1 - mem:0\n    2 - mem:10\n"
+             help: try something else\n\nBacktrace:\n    1 - mem:0\n    \
+             2 - mem:10 (build argument `input`)\n    3 - result `.out[2]`\n"
         );
     }
 }

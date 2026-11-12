@@ -76,14 +76,13 @@ where
         out.push('\n');
     }
 
-    let _ = err.fmt_context(&mut out);
-
     if let Some(site) = &site {
         render_frames(
             &mut out,
             "Called from:",
             site,
             site.loc.calls().map(|call| (call, None)),
+            None,
             &mut sources,
             options,
         );
@@ -92,9 +91,15 @@ where
             "Needed by:",
             site,
             trace.iter().map(|frame| (&frame.loc, frame.what.as_deref())),
+            // Where the demand started: the part of the result that needed
+            // the value
+            err.result_path_string()
+                .map(|path| format!("result `{path}`")),
             &mut sources,
             options,
         );
+    } else if let Some(path) = err.result_path_string() {
+        let _ = writeln!(out, "\nIn the result at `{path}`");
     }
     out
 }
@@ -197,9 +202,9 @@ where
     renderer.render(&[group])
 }
 
-/// A list of locations, each printed as what it is (if known), the location
+/// A list of locations, each printed as the location, what it is (if known)
 /// and its source line: the calls the site was evaluated in, or the
-/// expressions that needed it.
+/// expressions that needed it. `last` is a final line without a location.
 /// Evaluation passes through the same line several times in a row (an
 /// expression and its parts, or every round of a recursion), so only the
 /// first of those is shown, and nothing for the line of the site itself.
@@ -208,6 +213,7 @@ fn render_frames<'a, F>(
     title: &str,
     site: &Label<F>,
     locations: impl Iterator<Item = (&'a Loc<F>, Option<&'a str>)>,
+    last: Option<String>,
     sources: &mut Sources,
     options: &RenderOptions,
 ) where
@@ -260,7 +266,7 @@ fn render_frames<'a, F>(
         }
         previous = Some(key);
     }
-    if frames.is_empty() {
+    if frames.is_empty() && last.is_none() {
         return;
     }
 
@@ -269,18 +275,11 @@ fn render_frames<'a, F>(
     } else {
         frames.len().min(TRACE_FRAMES)
     };
-    // What each frame is, as a column in front of the locations
-    let width = frames[..shown]
-        .iter()
-        .filter_map(|frame| frame.what.as_ref())
-        .map(|what| what.chars().count())
-        .max();
     let _ = writeln!(out, "\n{title}");
     for frame in &frames[..shown] {
-        match width {
-            Some(width) => {
-                let what = frame.what.as_deref().unwrap_or("");
-                let _ = writeln!(out, "  {what:<width$}  {}", frame.location);
+        match &frame.what {
+            Some(what) => {
+                let _ = writeln!(out, "  {} ({what})", frame.location);
             }
             None => {
                 let _ = writeln!(out, "  {}", frame.location);
@@ -306,5 +305,8 @@ fn render_frames<'a, F>(
             "  ({} more, --trace shows the whole trace)",
             frames.len() - shown
         );
+    }
+    if let Some(last) = last {
+        let _ = writeln!(out, "  {last}");
     }
 }

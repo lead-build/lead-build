@@ -1,0 +1,29 @@
+|{ cwd, pb, ... }|
+let
+    # A source list with a number in it reaches a build through another
+    # build: the trace shows both build arguments, each where it is given.
+    compile_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "cc", "-c", "-o", output, input ];
+        }
+    );
+    link_rule = pb.rule (
+        |{ input, output }| {
+            command = [ "ld", "-o", output, input ];
+        }
+    );
+    compile = |src| compile_rule {
+        input = src;
+        output = src + ".o";
+    };
+    srcs = [
+        cwd / "main.c",
+        12,
+    ];
+in
+{
+    app = link_rule {
+        input = [ |src| compile src for srcs ];
+        output = cwd / "app";
+    };
+}

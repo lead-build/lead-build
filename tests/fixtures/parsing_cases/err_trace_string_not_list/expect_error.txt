@@ -9,8 +9,6 @@ Type error: cannot apply `++` to a list and a path
  8 |         src = "${cwd}/main.c";
    |               --------------- the right side is a path
 
-In the result at .objs
-
 Called from:
   $DIR/_lib/lib.pbb:33:28
       self = ops.recurse (|a b| merge a b for defaults : mods);
@@ -18,5 +16,6 @@ Called from:
       lib.build [
 
 Needed by:
-  field `src`  $DIR/_lib/lib.pbb:36:41
+  $DIR/_lib/lib.pbb:36:41 (field `src`)
       objs = [ |file| "${file}.o" for self.src ];
+  result `.objs`

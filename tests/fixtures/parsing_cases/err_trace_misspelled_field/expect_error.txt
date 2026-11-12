@@ -11,10 +11,9 @@ No value: the object has no field `modd`
    |
    = help: a field with a similar name exists: `mod`
 
-In the result at .objs
-
 Needed by:
-  function of a call     $DIR/_lib/lib.pbb:33:28
+  $DIR/_lib/lib.pbb:33:28 (function of a call)
       self = ops.recurse (|a b| merge a b for defaults : mods);
-  object of field `src`  $DIR/_lib/lib.pbb:36:41
+  $DIR/_lib/lib.pbb:36:41 (object of field `src`)
       objs = [ |file| "${file}.o" for self.src ];
+  result `.objs`

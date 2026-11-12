@@ -9,8 +9,9 @@ Type error: cannot apply `/` to null and a string
 39 |         out = self.outdir / self.name;
    |               ^^^^^^^^^^^^^^^^^^^^^^^
 
-In the result at .out
-
 Called from:
   $DIR/err_trace_null_default/main.pbb:5:1
       lib.build [
+
+Needed by:
+  result `.out`

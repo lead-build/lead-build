@@ -9,8 +9,6 @@ Type error: cannot apply `//` to an object and a list
  9 |         defines = [ ("VERSION", 1) ];
    |                   ------------------ the right side is a list
 
-In the result at .define_args
-
 Called from:
   $DIR/_lib/lib.pbb:33:28
       self = ops.recurse (|a b| merge a b for defaults : mods);
@@ -18,5 +16,6 @@ Called from:
       lib.build [
 
 Needed by:
-  field `defines`  $DIR/_lib/lib.pbb:37:66
+  $DIR/_lib/lib.pbb:37:66 (field `defines`)
       define_args = [ |(name, value)| "-D${name}=${value}" for self.defines ];
+  result `.define_args`

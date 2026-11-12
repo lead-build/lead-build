@@ -184,7 +184,7 @@ where
         /* Convert all variables to ninja rule */
         let mut vars: Vec<(StrKey, Vec<NinjaArg>)> = Vec::new();
         for (name, expr) in objargs.into_iter() {
-            let in_variable = |e: Error<F>| e.context(format!("the rule variable `{name}`"));
+            let in_variable = |e: Error<F>| e.reref_as(&loc, format!("rule variable `{name}`"));
             expr.resolve().map_err(in_variable)?;
             let attrs = match &expr.inner_ref().tok {
                 ExprType::List(exprs) => exprs.clone(),
@@ -266,7 +266,7 @@ where
             && let Some(build_arg) = arg_obj.remove(&StrKey::from("deps"))
         {
             let tree = PathTree::from_expr(&build_arg, "deps")
-                .map_err(|e| e.context("the build argument `deps`"))?;
+                .map_err(|e| e.reref_as(&loc, "build argument `deps`"))?;
             deps = tree.paths();
             dep_builds.extend(tree.depends());
         }
@@ -277,20 +277,20 @@ where
             match arg_name.as_string().as_str() {
                 "input" => {
                     let tree = PathTree::from_expr(&build_arg, "input")
-                        .map_err(|e| e.context("the build argument `input`"))?;
+                        .map_err(|e| e.reref_as(&loc, "build argument `input`"))?;
                     input = tree.paths();
                     dep_builds.extend(tree.depends());
                 }
                 "output" => {
                     output = Some(
                         PathTree::from_expr(&build_arg, "output")
-                            .map_err(|e| e.context("the build argument `output`"))?,
+                            .map_err(|e| e.reref_as(&loc, "build argument `output`"))?,
                     );
                 }
                 name => {
                     let value =
                         resolve_build_arg_to_ninja_values(&build_arg, name, &mut dep_builds)
-                            .map_err(|e| e.context(format!("the build argument `{name}`")))?;
+                            .map_err(|e| e.reref_as(&loc, format!("build argument `{name}`")))?;
                     args.insert(*arg_name, value);
                 }
             }
