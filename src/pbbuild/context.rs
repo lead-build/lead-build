@@ -21,9 +21,10 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinInclude {
 
     fn call(&self, arg: Expr<Value, VirtPath>) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let file_value = arg.value()?;
-        let file_path = file_value
-            .try_as_path()
-            .ok_or(Error::new(ErrorType::Type, "Include of non-path argument"))?;
+        let file_path = file_value.try_as_path().ok_or(Error::new(
+            ErrorType::Type,
+            "Expected path as argument of `include`",
+        ))?;
         // The argument is where the file is included from
         let result = self.0.include_at(file_path, None, arg.get_loc())?;
         Ok(result)
@@ -41,7 +42,7 @@ pub struct LangContext(Rc<LangContextStorage>);
 impl Default for LangContext {
     fn default() -> Self {
         let builtins = get_builtins().unwrap_or_else(|e| {
-            panic!("Failed to initialize builtins: {}", e);
+            panic!("[internal error]: Failed to initialize the builtins: {}", e);
         });
         LangContext(Rc::new(LangContextStorage { builtins }))
     }
@@ -82,10 +83,10 @@ impl LangContext {
 
     pub fn read_file(&self, filename: &VirtPath) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let fs_path = filename.to_path_buf();
-        let code = fs::read_to_string(fs_path.clone()).map_err(|_| {
+        let code = fs::read_to_string(fs_path.clone()).map_err(|e| {
             Error::new(
-                ErrorType::Custom,
-                format!("File not found: {}", fs_path.display()),
+                ErrorType::Io,
+                format!("Failed to read `{}`: {}", fs_path.display(), e),
             )
         })?;
         let expr: Expr<Value, VirtPath> = parse_str(&code, filename)?;

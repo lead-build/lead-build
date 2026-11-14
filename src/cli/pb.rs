@@ -48,7 +48,9 @@ pub struct Args {
 }
 
 fn parse_virt_path_mapping(s: &str) -> std::result::Result<(String, VirtPath), String> {
-    let (name, path) = s.split_once('=').ok_or("expected NAME=PATH".to_string())?;
+    let (name, path) = s
+        .split_once('=')
+        .ok_or("Expected form `NAME=PATH`".to_string())?;
 
     Ok((
         name.to_owned(),

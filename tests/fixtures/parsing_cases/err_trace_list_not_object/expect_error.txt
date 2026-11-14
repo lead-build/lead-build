@@ -1,4 +1,4 @@
-Type error: cannot apply `//` to an object and a list
+[type error]: Cannot apply `//` to an object and a list
   --> $DIR/_lib/lib.pbb:20:19
    |
 20 |         defines = ma.defines // mb.defines;
@@ -7,7 +7,7 @@ Type error: cannot apply `//` to an object and a list
   ::: $DIR/err_trace_list_not_object/main.pbb:9:19
    |
  9 |         defines = [ ("VERSION", 1) ];
-   |                   ------------------ the right side is a list
+   |                   ------------------ right operand: a list
 
 Called from:
   $DIR/_lib/lib.pbb:33:28

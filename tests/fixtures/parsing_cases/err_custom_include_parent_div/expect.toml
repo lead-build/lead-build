@@ -1,2 +1,2 @@
-kind = "err_custom"
-error_contains = "would leave the locked directory"
+kind = "err_path"
+error_contains = "leaves locked directory"

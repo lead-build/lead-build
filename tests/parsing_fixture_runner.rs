@@ -19,7 +19,10 @@ enum ExpectKind {
     ErrScope,
     ErrNoValue,
     ErrType,
-    ErrCustom,
+    ErrPath,
+    ErrIo,
+    ErrBuild,
+    ErrPattern,
     ErrDebug,
 }
 
@@ -80,7 +83,10 @@ fn matches_kind(actual: &ErrorType, expected: ExpectKind) -> bool {
             | (ErrorType::Scope, ExpectKind::ErrScope)
             | (ErrorType::NoValue, ExpectKind::ErrNoValue)
             | (ErrorType::Type, ExpectKind::ErrType)
-            | (ErrorType::Custom, ExpectKind::ErrCustom)
+            | (ErrorType::Path, ExpectKind::ErrPath)
+            | (ErrorType::Io, ExpectKind::ErrIo)
+            | (ErrorType::Build, ExpectKind::ErrBuild)
+            | (ErrorType::Pattern, ExpectKind::ErrPattern)
             | (ErrorType::Debug, ExpectKind::ErrDebug)
     )
 }

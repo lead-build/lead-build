@@ -150,32 +150,38 @@ pub enum ErrorType {
     Type,
     DupKey,
     NoValue,
-    Custom,
+    /// An invalid operation on a path
+    Path,
+    /// A failure to read or write a file or directory
+    Io,
+    /// An invalid build description, or builds that cannot be combined
+    Build,
+    /// An invalid glob pattern
+    Pattern,
 }
 
 impl ErrorType {
-    /// The name shown in front of the message. A custom error has none, its
-    /// message stands on its own.
-    pub fn name(&self) -> Option<&'static str> {
+    /// The error code shown in front of the message, as `[code]: message`.
+    pub fn code(&self) -> &'static str {
         match self {
-            ErrorType::Parse => Some("Parse error"),
-            ErrorType::Scope => Some("Scope error"),
-            ErrorType::Eval => Some("Eval error"),
-            ErrorType::Debug => Some("Debug"),
-            ErrorType::Type => Some("Type error"),
-            ErrorType::DupKey => Some("Duplicate key"),
-            ErrorType::NoValue => Some("No value"),
-            ErrorType::Custom => None,
+            ErrorType::Parse => "parse error",
+            ErrorType::Scope => "scope error",
+            ErrorType::Eval => "eval error",
+            ErrorType::Debug => "debug break",
+            ErrorType::Type => "type error",
+            ErrorType::DupKey => "duplicate key",
+            ErrorType::NoValue => "field mismatch",
+            ErrorType::Path => "path error",
+            ErrorType::Io => "io error",
+            ErrorType::Build => "build error",
+            ErrorType::Pattern => "pattern error",
         }
     }
 }
 
 impl Display for ErrorType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self.name() {
-            Some(name) => write!(f, "{name}:"),
-            None => Ok(()),
-        }
+        write!(f, "[{}]", self.code())
     }
 }
 
@@ -235,16 +241,9 @@ struct Details<F> {
 impl<F> std::error::Error for Error<F> where F: Debug + Referrable + Clone {}
 
 impl<F> Error<F> {
-    /// The header as it has always been printed: the type on a line of its
-    /// own, then the message.
+    /// The header: the error code, then the message, as `[code]: message`.
     fn fmt_header(&self, f: &mut impl std::fmt::Write) -> std::fmt::Result {
-        if matches!(self.typ, ErrorType::Custom) {
-            writeln!(f, "{}", self.msg)
-        } else {
-            writeln!(f, "{}", self.typ)?;
-            writeln!(f)?;
-            writeln!(f, "{}", self.msg)
-        }
+        writeln!(f, "{}: {}", self.typ, self.msg)
     }
 
     /// The failing expression and the expressions that needed it. Without an
@@ -546,10 +545,10 @@ where
         }
         if self.is_full() {
             out.push_str(&format!(
-                "\nStopped after {MAX_ERRORS} errors, there may be more.\n"
+                "\nError reporting stopped after {MAX_ERRORS} errors; further errors may exist.\n"
             ));
         } else if self.len() > 1 {
-            out.push_str(&format!("\n{} errors.\n", self.len()));
+            out.push_str(&format!("\n{} errors were reported.\n", self.len()));
         }
         out
     }
@@ -666,7 +665,7 @@ mod tests {
             .reref(&loc(0))
             .reref(&loc(5));
         let out = err.render(&plain(false));
-        assert!(out.contains("Eval error: boom"), "{out}");
+        assert!(out.contains("[eval error]: boom"), "{out}");
         // The site is a snippet with the span marked...
         assert!(out.contains("--> mem:1:1"), "{out}");
         assert!(out.contains("1 | aaaa"), "{out}");
@@ -682,7 +681,7 @@ mod tests {
             .label(&loc(15), "this value")
             .help("try something else");
         let out = err.render(&plain(false));
-        assert!(out.contains("Type error: boom"), "{out}");
+        assert!(out.contains("[type error]: boom"), "{out}");
         assert!(out.contains("fails here"), "{out}");
         assert!(out.contains("this value"), "{out}");
         assert!(out.contains("help: try something else"), "{out}");
@@ -754,10 +753,10 @@ mod tests {
         let err: Error<MemFile> = Error::new(ErrorType::Parse, "mem:3\nUnrecognized token");
         assert_eq!(
             err.render(&plain(false)),
-            "Parse error:\n\nmem:3\nUnrecognized token\n"
+            "[parse error]: mem:3\nUnrecognized token\n"
         );
-        let custom: Error<MemFile> = Error::new(ErrorType::Custom, "File not found: x");
-        assert_eq!(custom.render(&plain(false)), "File not found: x\n");
+        let io: Error<MemFile> = Error::new(ErrorType::Io, "File not found: x");
+        assert_eq!(io.render(&plain(false)), "[io error]: File not found: x\n");
     }
 
     #[test]
@@ -771,7 +770,7 @@ mod tests {
             .in_result(".out");
         assert_eq!(
             format!("{err}"),
-            "Eval error:\n\nboom\n\n  fails here: mem:0\n  this value: mem:5\n  \
+            "[eval error]: boom\n\n  fails here: mem:0\n  this value: mem:5\n  \
              help: try something else\n\nBacktrace:\n    1 - mem:0\n    \
              2 - mem:10 (build argument `input`)\n    3 - result `.out[2]`\n"
         );

@@ -37,7 +37,7 @@ impl PathTree {
             ExprType::Value(_) => Err(Error::new(
                 ErrorType::Type,
                 format!(
-                    "incompatible type in build arg '{}', got {}",
+                    "Expected path as build argument `{}`, found {}",
                     field_name,
                     expr.diag()
                 ),
@@ -58,7 +58,7 @@ impl PathTree {
             _ => Err(Error::new(
                 ErrorType::Type,
                 format!(
-                    "build arg '{}' must be a path, or lists and objects of paths, got {}",
+                    "Expected path, or lists and objects of paths, as build argument `{}`, found {}",
                     field_name,
                     expr.diag()
                 ),
@@ -72,7 +72,7 @@ impl PathTree {
     fn for_each_leaf<'a>(&'a self, f: &mut impl FnMut(&'a VirtPath, &'a Vec<Rc<PbBuild>>)) {
         match self {
             PathTree::Leaf(Value::Path { path, depends }) => f(path, depends),
-            PathTree::Leaf(_) => unreachable!("PathTree leaf is always a path"),
+            PathTree::Leaf(_) => unreachable!("[internal error]: Leaf of `PathTree` is not a path"),
             PathTree::List(items) => items.iter().for_each(|item| item.for_each_leaf(f)),
             PathTree::Object(fields) => fields.values().for_each(|item| item.for_each_leaf(f)),
         }
@@ -118,7 +118,7 @@ impl PathTree {
                 path: path.clone(),
                 depends: vec![build.clone()],
             }),
-            PathTree::Leaf(_) => unreachable!("PathTree leaf is always a path"),
+            PathTree::Leaf(_) => unreachable!("[internal error]: Leaf of `PathTree` is not a path"),
             PathTree::List(items) => {
                 ExprType::List(items.iter().map(|item| item.to_expr(build, loc)).collect())
             }

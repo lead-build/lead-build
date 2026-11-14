@@ -127,7 +127,7 @@ where
             _ => Err(Error::new(
                 ErrorType::Type,
                 format!(
-                    "cannot apply `-` to {} and {}",
+                    "Cannot apply `-` to {} and {}",
                     lhs.type_name(),
                     rhs.type_name()
                 ),
@@ -141,7 +141,7 @@ where
             _ => Err(Error::new(
                 ErrorType::Type,
                 format!(
-                    "cannot apply `*` to {} and {}",
+                    "Cannot apply `*` to {} and {}",
                     lhs.type_name(),
                     rhs.type_name()
                 ),
@@ -159,7 +159,7 @@ where
             _ => Err(Error::new(
                 ErrorType::Type,
                 format!(
-                    "cannot apply `/` to {} and {}",
+                    "Cannot apply `/` to {} and {}",
                     lhs.type_name(),
                     rhs.type_name()
                 ),
@@ -221,7 +221,11 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs < rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
+                format!(
+                    "Cannot compare {} and {}",
+                    lhs.type_name(),
+                    rhs.type_name()
+                ),
             )),
         }
     }
@@ -232,7 +236,11 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs <= rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
+                format!(
+                    "Cannot compare {} and {}",
+                    lhs.type_name(),
+                    rhs.type_name()
+                ),
             )),
         }
     }
@@ -243,7 +251,11 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs > rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
+                format!(
+                    "Cannot compare {} and {}",
+                    lhs.type_name(),
+                    rhs.type_name()
+                ),
             )),
         }
     }
@@ -254,7 +266,11 @@ where
             (Value::String(lhs), Value::String(rhs)) => Ok(Value::Bool(lhs >= rhs)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("cannot compare {} and {}", lhs.type_name(), rhs.type_name()),
+                format!(
+                    "Cannot compare {} and {}",
+                    lhs.type_name(),
+                    rhs.type_name()
+                ),
             )),
         }
     }
@@ -272,7 +288,10 @@ where
             Value::Int(val) => Ok(Value::Int(-val)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("cannot apply `-` to {}", self.type_name()),
+                format!(
+                    "Cannot apply `-` to {}",
+                    self.type_name()
+                ),
             )),
         }
     }
@@ -282,7 +301,10 @@ where
             Value::Bool(val) => Ok(Value::Bool(!val)),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("cannot apply `!` to {}", self.type_name()),
+                format!(
+                    "Cannot apply `!` to {}",
+                    self.type_name()
+                ),
             )),
         }
     }
@@ -292,7 +314,7 @@ where
             Value::Bool(val) => Ok(*val),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("expected a boolean, got {}", self.type_name()),
+                format!("Expected boolean, found {}", self.type_name()),
             )),
         }
     }
@@ -302,7 +324,7 @@ where
             Value::String(val) => Ok(val.clone()),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("expected a string, got {}", self.type_name()),
+                format!("Expected string, found {}", self.type_name()),
             )),
         }
     }

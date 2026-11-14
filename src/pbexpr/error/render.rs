@@ -150,9 +150,9 @@ where
         let (path, text) = sources.get(&*label.loc.file);
         let Some(text) = text else {
             notes.push(if label.text.is_empty() {
-                format!("at {path}")
+                format!("at `{path}`")
             } else {
-                format!("{}, at {path}", label.text)
+                format!("{}, at `{path}`", label.text)
             });
             continue;
         };
@@ -175,10 +175,8 @@ where
         }
     }
 
-    let level = match err.typ.name() {
-        Some(name) => Level::ERROR.with_name(Some(name)),
-        None => Level::ERROR.no_name(),
-    };
+    let code = err.typ.to_string();
+    let level = Level::ERROR.with_name(Some(code.as_str()));
     let mut group = Group::with_title(level.primary_title(err.msg.as_str()));
     for (path, text, annotations) in files {
         group = group.element(
@@ -302,7 +300,7 @@ fn render_frames<'a, F>(
     if shown < frames.len() {
         let _ = writeln!(
             out,
-            "  ({} more, --trace shows the whole trace)",
+            "  ({} more; `--trace` shows the whole trace)",
             frames.len() - shown
         );
     }

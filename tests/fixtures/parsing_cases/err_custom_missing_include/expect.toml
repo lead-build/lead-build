@@ -1,2 +1,2 @@
-kind = "err_custom"
-error_contains = "File not found"
+kind = "err_io"
+error_contains = "Failed to read"

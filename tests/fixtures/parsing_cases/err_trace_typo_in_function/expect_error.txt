@@ -1,10 +1,10 @@
-Scope error: unknown variable `nam`
+[scope error]: Undefined variable `nam`
  --> $DIR/err_trace_typo_in_function/mymod.pbb:3:23
   |
 3 |     src = [ "${cwd}/${nam}.c" ];
   |                       ^^^
   |
-  = help: a variable with a similar name exists: `name`
+  = help: similar name: `name`
 
 Called from:
   $DIR/err_trace_typo_in_function/main.pbb:9:5

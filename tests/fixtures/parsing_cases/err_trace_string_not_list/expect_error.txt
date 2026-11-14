@@ -1,4 +1,4 @@
-Type error: cannot apply `++` to a list and a path
+[type error]: Cannot apply `++` to a list and a path
   --> $DIR/_lib/lib.pbb:19:15
    |
 19 |         src = ma.src ++ mb.src;
@@ -7,7 +7,7 @@ Type error: cannot apply `++` to a list and a path
   ::: $DIR/err_trace_string_not_list/main.pbb:8:15
    |
  8 |         src = "${cwd}/main.c";
-   |               --------------- the right side is a path
+   |               --------------- right operand: a path
 
 Called from:
   $DIR/_lib/lib.pbb:33:28

@@ -1,5 +1,5 @@
-Type error: expected a tuple of 2 items, got one of 3
+[type error]: Expected tuple of 2 items, found 3 items
  --> $DIR/err_site_tuple_length/main.pbb:5:3
   |
 5 | f (1, 2, 3)
-  |   ^^^^^^^^^ this is a tuple
+  |   ^^^^^^^^^ a tuple

@@ -35,8 +35,12 @@ fn run(args: Args) -> std::result::Result<(), ErrorList<VirtPath>> {
     if let Some(dir) = args.cd {
         set_current_dir(&dir).map_err(|e| {
             Error::new(
-                ErrorType::Custom,
-                format!("Error changing directory: {}\n\n{}", dir.display(), e),
+                ErrorType::Io,
+                format!(
+                    "Failed to change directory to `{}`: {}",
+                    dir.display(),
+                    e
+                ),
             )
         })?;
     }
@@ -65,9 +69,9 @@ fn run(args: Args) -> std::result::Result<(), ErrorList<VirtPath>> {
         let errors = ninja_file.validate();
         if !errors.is_empty() {
             return Err(Error::new(
-                ErrorType::Custom,
+                ErrorType::Build,
                 format!(
-                    "Error generating {}:\n  {}",
+                    "Failed to generate `{}`:\n  {}",
                     output.display(),
                     errors.join("\n  ")
                 ),
@@ -75,11 +79,19 @@ fn run(args: Args) -> std::result::Result<(), ErrorList<VirtPath>> {
             .into());
         }
 
-        let output_file =
-            File::create(output).map_err(|e| Error::new(ErrorType::Custom, e.to_string()))?;
+        let output_file = File::create(&output).map_err(|e| {
+            Error::new(
+                ErrorType::Io,
+                format!("Failed to create `{}`: {}", output.display(), e),
+            )
+        })?;
         let mut writer = BufWriter::new(&output_file);
-        write!(writer, "{}", ninja_file)
-            .or_else(|e| Err(Error::new(ErrorType::Custom, e.to_string())))?;
+        write!(writer, "{}", ninja_file).map_err(|e| {
+            Error::new(
+                ErrorType::Io,
+                format!("Failed to write `{}`: {}", output.display(), e),
+            )
+        })?;
         ninja_file.log_summary();
 
         Ok(())

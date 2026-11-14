@@ -185,7 +185,7 @@ impl<T: Resolved> LangVisitor for SemanticVisitor<T> {
         let mut scope = down.clone();
         for (_, key, value) in items {
             let AssignValue::Expr(value) = value else {
-                unreachable!("BIND_EXPR's ASSIGNMENT always has a value")
+                unreachable!("[internal error]: Missing value of ASSIGNMENT in BIND_EXPR")
             };
             // Unlike `let`, bind items don't see each other — visited
             // against the unmodified incoming scope, not the growing one.
@@ -366,7 +366,7 @@ impl<T: Resolved> LangVisitor for SemanticVisitor<T> {
                     // reference, not a property, so it navigates/renames
                     // exactly like the `foo` in `x = foo;`.
                     let AssignKey::Ident(token) = key else {
-                        unreachable!("shorthand ASSIGNMENT always has an Ident key")
+                        unreachable!("[internal error]: Shorthand ASSIGNMENT has non-identifier key")
                     };
                     out.extend(self.visit_var(token.text_range(), down, token)?);
                 }

@@ -28,14 +28,20 @@ where
 /// Splits a `ParseError` into its byte span, a short category label, and a
 /// detail message — kept apart (rather than one combined string) so each
 /// can land on its own line in the rendered error block.
-fn parse_error_parts(err: &pblang::ParseError) -> (std::ops::Range<usize>, &'static str, String) {
+fn parse_error_parts(
+    err: &pblang::ParseError,
+) -> (std::ops::Range<usize>, &'static str, &'static str, String) {
     match err {
-        lalrpop_util::ParseError::InvalidToken { location } => {
-            (*location..*location, "Invalid token", String::new())
-        }
+        lalrpop_util::ParseError::InvalidToken { location } => (
+            *location..*location,
+            "Invalid token",
+            "invalid token",
+            String::new(),
+        ),
         lalrpop_util::ParseError::UnrecognizedEof { location, expected } => (
             *location..*location,
             "Unexpected end of file",
+            "unexpected end of file",
             format!("expected one of: {}", expected.join(", ")),
         ),
         lalrpop_util::ParseError::UnrecognizedToken {
@@ -44,14 +50,23 @@ fn parse_error_parts(err: &pblang::ParseError) -> (std::ops::Range<usize>, &'sta
         } => (
             *start..*end,
             "Unrecognized token",
+            "unrecognized token",
             format!("found `{token}`, expected one of: {}", expected.join(", ")),
         ),
         lalrpop_util::ParseError::ExtraToken {
             token: (start, token, end),
-        } => (*start..*end, "Extra token", format!("found `{token}`")),
-        lalrpop_util::ParseError::User { error } => {
-            (error.span.clone(), "Lexer error", error.message.clone())
-        }
+        } => (
+            *start..*end,
+            "Extra token",
+            "extra token",
+            format!("found `{token}`"),
+        ),
+        lalrpop_util::ParseError::User { error } => (
+            error.span.clone(),
+            "Lexical error",
+            "lexical error",
+            error.message.clone(),
+        ),
     }
 }
 
@@ -75,12 +90,15 @@ where
         .collect();
     let loc = |span: &std::ops::Range<usize>| Some(Loc::new(file.clone(), span.clone()));
 
-    if let [(span, kind, detail)] = parts.as_slice() {
+    if let [(span, message, _, detail)] = parts.as_slice() {
         // A single error: its category is the message, the detail the note
-        return Error::new(ErrorType::Parse, kind).primary(&loc(span), detail);
+        return Error::new(ErrorType::Parse, *message).primary(&loc(span), detail);
     }
-    let mut err = Error::new(ErrorType::Parse, format!("{} syntax errors", parts.len()));
-    for (idx, (span, kind, detail)) in parts.iter().enumerate() {
+    let mut err = Error::new(
+        ErrorType::Parse,
+        format!("{} syntax errors", parts.len()),
+    );
+    for (idx, (span, _, kind, detail)) in parts.iter().enumerate() {
         let text = if detail.is_empty() {
             kind.to_string()
         } else {
@@ -140,11 +158,15 @@ fn unescape_chunk(input: &str) -> String {
                 Some(c)
             }
             Some(c) => Some(c),
-            None => panic!("Unmatched escape seq"),
+            None => {
+                panic!("[internal error]: Unmatched escape sequence at end of string chunk")
+            }
         },
         Some('$') => match chars.next() {
             Some('$') => Some('$'),
-            _ => unreachable!("lexer only allows '$' as part of a '$$' escape"),
+            _ => unreachable!(
+                "[internal error]: Lexer produced `$` outside `$$` escape sequence"
+            ),
         },
         Some(c) => Some(c),
         None => None,
@@ -177,7 +199,9 @@ fn binary_op_from_kind(kind: SyntaxKind) -> ExprBinOp {
         SyntaxKind::AMP_AMP => ExprBinOp::LogAnd,
         SyntaxKind::PIPE_PIPE => ExprBinOp::LogOr,
         SyntaxKind::THIN_ARROW => ExprBinOp::LogImpl,
-        other => unreachable!("BINARY_EXPR has unexpected operator token {other:?}"),
+        other => unreachable!(
+            "[internal error]: Unexpected operator token {other:?} in BINARY_EXPR"
+        ),
     }
 }
 
@@ -202,7 +226,7 @@ where
                 let (start, end) = range_usize(node.text_range());
                 return Err(Error::new(
                     ErrorType::Parse,
-                    "object keys cannot contain string interpolation",
+                    "Cannot interpolate in object key",
                 )
                 .loc(start, end, file));
             }
@@ -279,7 +303,7 @@ where
             .into_iter()
             .map(|(_, key, value)| {
                 let AssignValue::Expr(value) = value else {
-                    unreachable!("BIND_EXPR's ASSIGNMENT always has a value")
+                    unreachable!("[internal error]: Missing value of ASSIGNMENT in BIND_EXPR")
                 };
                 Ok((self.resolve_assign_key(key)?, value.visit(self, down)?))
             })
@@ -327,7 +351,9 @@ where
         let op = match op.kind() {
             SyntaxKind::MINUS => ExprUnOp::Neg,
             SyntaxKind::BANG => ExprUnOp::Not,
-            other => unreachable!("UNARY_EXPR has unexpected operator {other:?}"),
+            other => {
+                unreachable!("[internal error]: Unexpected operator {other:?} in UNARY_EXPR")
+            }
         };
         let operand = operand.visit(self, down)?;
         Ok(self.expr(ExprType::UnOp(op, operand), range))
@@ -441,7 +467,7 @@ where
                     AssignValue::Expr(expr) => expr.visit(self, down)?,
                     AssignValue::Shorthand => {
                         let AssignKey::Ident(ident) = &key else {
-                            unreachable!("shorthand ASSIGNMENT always has an Ident key")
+                            unreachable!("[internal error]: Non-identifier key in shorthand ASSIGNMENT")
                         };
                         self.expr(
                             ExprType::Var(StrKey::from(ident.text())),
@@ -485,11 +511,16 @@ where
             SyntaxKind::TRUE_KW => self.expr(ExprType::Value(T::from_bool(true)), range),
             SyntaxKind::FALSE_KW => self.expr(ExprType::Value(T::from_bool(false)), range),
             SyntaxKind::NUMBER => self.expr(
-                ExprType::Value(T::parse_int(token.text()).expect("Error parsing int")),
+                ExprType::Value(
+                    T::parse_int(token.text())
+                        .expect("[internal error]: Invalid integer literal"),
+                ),
                 range,
             ),
             SyntaxKind::NULL_KW => self.expr(ExprType::Null, range),
-            other => unreachable!("LITERAL_EXPR wraps unexpected token {other:?}"),
+            other => {
+                unreachable!("[internal error]: Unexpected token {other:?} in LITERAL_EXPR")
+            }
         })
     }
 
@@ -506,7 +537,7 @@ where
                 StringPart::Chunk(token) => T::parse_string(unescape_chunk(token.text()))
                     .map(|value| self.expr(ExprType::Value(value), range))
                     .ok_or_else(|| {
-                        Error::new(ErrorType::Parse, "Error parsing string")
+                        Error::new(ErrorType::Parse, "Invalid string literal")
                             .loc(start, end, self.file)
                     }),
                 StringPart::Embed(expr) => expr.visit(self, down),

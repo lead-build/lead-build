@@ -110,10 +110,10 @@ fn add_expr_to_ninjafile_inner(
             if let Value::Path { path, depends, .. } = value {
                 if depends.is_empty() {
                     let message = alias.map_or_else(
-                        || "Top-level value has no build dependencies".to_string(),
-                        |alias| format!("Top-level field '{}' has no build dependencies", alias),
+                        || "No build dependencies in top-level value".to_string(),
+                        |alias| format!("No build dependencies in top-level field `{}`", alias),
                     );
-                    return Err(Error::new(ErrorType::Custom, message).reref(&expr.get_loc()));
+                    return Err(Error::new(ErrorType::Build, message).reref(&expr.get_loc()));
                 }
                 for build in depends.iter() {
                     build.populate_ninja_file(ninja_file, populated, true)?;
@@ -124,10 +124,10 @@ fn add_expr_to_ninjafile_inner(
                 }
             } else {
                 let message = alias.map_or_else(
-                    || "Top-level value is not a path".to_string(),
-                    |alias| format!("Top-level field '{}' is not a path", alias),
+                    || "Expected path as top-level value".to_string(),
+                    |alias| format!("Expected path as top-level field `{}`", alias),
                 );
-                return Err(Error::new(ErrorType::Custom, message).reref(&expr.get_loc()));
+                return Err(Error::new(ErrorType::Build, message).reref(&expr.get_loc()));
             }
             Ok(())
         }
@@ -153,7 +153,7 @@ fn add_expr_to_ninjafile_inner(
             Ok(())
         }
         ExprStorage { tok: _, loc } => {
-            Err(Error::new(ErrorType::Custom, "Not a valid build definition").reref(loc))
+            Err(Error::new(ErrorType::Build, "Invalid build definition as top-level value").reref(loc))
         }
     }
 }

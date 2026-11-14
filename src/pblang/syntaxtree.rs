@@ -212,7 +212,11 @@ impl rowan::Language for Lang {
     type Kind = SyntaxKind;
 
     fn kind_from_raw(raw: rowan::SyntaxKind) -> SyntaxKind {
-        assert!(raw.0 <= SyntaxKind::OUTPUT_CYCLE as u16);
+        assert!(
+            raw.0 <= SyntaxKind::OUTPUT_CYCLE as u16,
+            "[internal error]: Raw syntax kind {} out of range of `SyntaxKind`",
+            raw.0
+        );
         // SAFETY: `SyntaxKind` is `#[repr(u16)]` and the assert above checks
         // `raw.0` is in range, so this is a valid bit pattern for the enum.
         unsafe { std::mem::transmute::<u16, SyntaxKind>(raw.0) }

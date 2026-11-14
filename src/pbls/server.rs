@@ -79,7 +79,7 @@ impl LanguageServer for Backend {
 
     async fn initialized(&self, _: InitializedParams) {
         self.client
-            .log_message(MessageType::INFO, "pbls initialized")
+            .log_message(MessageType::INFO, "The pbls language server was initialized.")
             .await;
     }
 
@@ -202,7 +202,7 @@ impl LanguageServer for Backend {
     async fn rename(&self, params: RenameParams) -> RpcResult<Option<WorkspaceEdit>> {
         if !rename::is_valid_new_name(&params.new_name) {
             return Err(JsonRpcError::invalid_params(format!(
-                "\"{}\" is not a valid identifier",
+                "[invalid identifier]: Invalid identifier `{}`",
                 params.new_name
             )));
         }

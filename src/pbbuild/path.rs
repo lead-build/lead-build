@@ -82,8 +82,11 @@ impl VirtPath {
         match res {
             Some(_) => Ok(out),
             None => Err(Error::new(
-                ErrorType::Custom,
-                format!("\"..\" would leave the locked directory {}", out),
+                ErrorType::Path,
+                format!(
+                    "Element `..` leaves locked directory `{}`",
+                    out
+                ),
             )),
         }
     }
@@ -105,11 +108,11 @@ impl VirtPath {
 
     /// Check that editing the last element left a real name, not something
     /// that would be resolved as a directory reference.
-    fn check_last<F: Clone>(self, edit: &str) -> Result<VirtPath, F> {
+    fn check_last<F: Clone>(self, action: &str, suffix: &str) -> Result<VirtPath, F> {
         match self.parts.last().map(String::as_str) {
             Some("") | Some(".") | Some("..") => Err(Error::new(
-                ErrorType::Custom,
-                format!("{} makes an invalid path element: {}", edit, self),
+                ErrorType::Path,
+                format!("Invalid path element `{}` after {} suffix `{}`", self, action, suffix),
             )),
             _ => Ok(self),
         }
@@ -118,9 +121,9 @@ impl VirtPath {
     fn check_suffix<F: Clone>(&self, suffix: &str) -> Result<(), F> {
         if suffix.contains('/') {
             Err(Error::new(
-                ErrorType::Custom,
+                ErrorType::Path,
                 format!(
-                    "suffix \"{}\" of {} contains \"/\"; use / or \"${{path}}/...\" to add elements",
+                    "Invalid suffix `{}` of `{}`, contains `/`; use `/` or `${{path}}/...` to add elements",
                     suffix, self
                 ),
             ))
@@ -135,8 +138,8 @@ impl VirtPath {
         let elem = elem.to_string();
         if elem.starts_with('/') {
             return Err(Error::new(
-                ErrorType::Custom,
-                format!("can't add absolute path \"{}\" to {}", elem, self),
+                ErrorType::Path,
+                format!("Cannot add absolute path `{}` to `{}`", elem, self),
             ));
         }
         elem.split('/').try_fold(self, |out, part| out.push_elem(part))
@@ -161,15 +164,15 @@ impl VirtPath {
         let mut out = self.clone();
         let last = out.parts.last_mut().ok_or_else(|| {
             Error::new(
-                ErrorType::Custom,
+                ErrorType::Path,
                 format!(
-                    "can't add suffix to path without unlocked elements: {}",
+                    "Cannot add suffix to `{}`, no unlocked elements",
                     self
                 ),
             )
         })?;
         last.push_str(suffix);
-        out.check_last(&format!("suffix \"{}\"", suffix))
+        out.check_last("adding", suffix)
     }
 
     pub fn remove_suffix<F: Clone>(&self, suffix: &str) -> Result<VirtPath, F> {
@@ -177,21 +180,24 @@ impl VirtPath {
         let mut out = self.clone();
         let last = out.parts.pop().ok_or_else(|| {
             Error::new(
-                ErrorType::Custom,
+                ErrorType::Path,
                 format!(
-                    "can't remove suffix from path without unlocked elements: {}",
-                    out
+                    "Cannot remove suffix from `{}`, no unlocked elements",
+                    self
                 ),
             )
         })?;
         let last_prefix = last.strip_suffix(suffix).ok_or_else(|| {
             Error::new(
-                ErrorType::Custom,
-                format!("Invalid suffix {} for path {}", suffix, self),
+                ErrorType::Path,
+                format!(
+                    "Suffix `{}` does not match end of `{}`",
+                    suffix, self
+                ),
             )
         })?;
         out.parts.push(last_prefix.to_string());
-        out.check_last(&format!("removing suffix \"{}\"", suffix))
+        out.check_last("removing", suffix)
     }
 
     /// The joined path, which is empty for the directory of a relative root
@@ -229,8 +235,8 @@ impl VirtPath {
             Ok(non_empty_path(relative_path))
         } else {
             Err(Error::new(
-                ErrorType::Custom,
-                format!("Failed to compute relative path from {} to {}", self, base),
+                ErrorType::Path,
+                format!("Cannot compute relative path from `{self}` to `{base}`"),
             ))
         }
     }

@@ -1,4 +1,4 @@
-Parse error: Unrecognized token
+[parse error]: Unrecognized token
  --> $DIR/err_parse_included/bad.pbb:1:19
   |
 1 | |{ ... }| let x = ; in x

@@ -1,4 +1,4 @@
-No value: the fields `extra` and `other` are not expected
+[field mismatch]: Unexpected fields `extra` and `other`
  --> $DIR/err_site_extra_argument_field/main.pbb:4:11
   |
 4 |       arg = {
@@ -7,9 +7,9 @@ No value: the fields `extra` and `other` are not expected
 6 | |         extra = 1;
 7 | |         other = 2;
 8 | |     };
-  | |_____^ this is an object
+  | |_____^ an object
   |
-  = help: the expected fields are `name`
+  = help: expected fields: `name`
 
 Needed by:
   $DIR/err_site_extra_argument_field/main.pbb:10:1

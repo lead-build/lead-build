@@ -146,7 +146,7 @@ impl PbBuild {
 
         let build_ref = nf
             .add_build(build)
-            .map_err(|message| Error::new(ErrorType::Custom, message))?;
+            .map_err(|message| Error::new(ErrorType::Build, message))?;
 
         if is_default {
             nf.set_build_default(&build_ref);
@@ -163,7 +163,7 @@ impl PbBuild {
             return Ok(self.output[0].clone());
         }
         Err(Error::new(
-            ErrorType::Custom,
+            ErrorType::Build,
             "Expected exactly one output path",
         ))
     }

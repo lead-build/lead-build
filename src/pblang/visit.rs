@@ -325,7 +325,7 @@ fn non_trivia_tokens(node: &SyntaxNode) -> impl Iterator<Item = SyntaxToken> + '
 fn first_non_trivia_token(node: &SyntaxNode) -> SyntaxToken {
     non_trivia_tokens(node)
         .next()
-        .unwrap_or_else(|| panic!("{:?} has at least one real token", node.kind()))
+        .unwrap_or_else(|| panic!("[internal error]: Missing non-trivia token in {:?}", node.kind()))
 }
 
 fn find_token(node: &SyntaxNode, kind: SyntaxKind) -> Option<SyntaxToken> {
@@ -341,7 +341,7 @@ fn has_token(node: &SyntaxNode, kind: SyntaxKind) -> bool {
 fn operator_token(node: &SyntaxNode) -> SyntaxToken {
     non_trivia_tokens(node)
         .next()
-        .unwrap_or_else(|| panic!("{:?} has an operator token", node.kind()))
+        .unwrap_or_else(|| panic!("[internal error]: Missing operator token in {:?}", node.kind()))
 }
 
 fn extract_assignment(assignment: &SyntaxNode) -> (TextRange, AssignKey, AssignValue) {
@@ -357,8 +357,8 @@ fn extract_assignment(assignment: &SyntaxNode) -> (TextRange, AssignKey, AssignV
         return (range, AssignKey::Ident(ident), value);
     }
     let mut children = assignment.children();
-    let key_node = children.next().expect("ASSIGNMENT key is a STRING_LIT");
-    let value_node = children.next().expect("ASSIGNMENT always has a value");
+    let key_node = children.next().expect("[internal error]: Missing key of ASSIGNMENT");
+    let value_node = children.next().expect("[internal error]: Missing value of ASSIGNMENT");
     (
         range,
         AssignKey::StringLit(key_node),
@@ -405,7 +405,7 @@ pub fn walk_expr<V: LangVisitor>(
         SyntaxKind::ROOT | SyntaxKind::GROUP_EXPR => walk_expr(&children[0], v, down),
 
         SyntaxKind::LET_EXPR => {
-            let body_node = children.last().expect("LET_EXPR has a body").clone();
+            let body_node = children.last().expect("[internal error]: Missing body of LET_EXPR").clone();
             let binding_nodes = &children[..children.len() - 1];
             let mut bindings = Vec::with_capacity(binding_nodes.len());
             for binding in binding_nodes {
@@ -420,14 +420,14 @@ pub fn walk_expr<V: LangVisitor>(
         }
 
         SyntaxKind::BIND_EXPR => {
-            let body_node = children.last().expect("BIND_EXPR has a body").clone();
+            let body_node = children.last().expect("[internal error]: Missing body of BIND_EXPR").clone();
             let assign_nodes = &children[..children.len() - 1];
             let items = assign_nodes.iter().map(extract_assignment).collect();
             v.visit_bind(range, down, items, UnvisitedExpr(body_node))
         }
 
         SyntaxKind::FUNC_DEF => {
-            let body_node = children.last().expect("FUNC_DEF has a body").clone();
+            let body_node = children.last().expect("[internal error]: Missing body of FUNC_DEF").clone();
             let matcher_nodes = &children[..children.len() - 1];
             let params = matcher_nodes
                 .iter()
@@ -466,11 +466,11 @@ pub fn walk_expr<V: LangVisitor>(
                 let inner = children[1]
                     .children()
                     .next()
-                    .expect("DYNAMIC_ATTR wraps an expr");
+                    .expect("[internal error]: Missing expression of DYNAMIC_ATTR");
                 AttrSelector::Dynamic(UnvisitedExpr(inner))
             } else {
                 let name = find_token(node, SyntaxKind::IDENT)
-                    .expect("static ATTR_SEL has an IDENT token");
+                    .expect("[internal error]: Missing IDENT token in static ATTR_SEL");
                 AttrSelector::Static(name)
             };
             v.visit_attr_sel(range, down, base, attr)
@@ -493,7 +493,7 @@ pub fn walk_expr<V: LangVisitor>(
             let kind = match first_non_trivia_token(node).kind() {
                 SyntaxKind::L_BRACKET => MapKind::List,
                 SyntaxKind::L_BRACE => MapKind::Object,
-                other => unreachable!("MAP_EXPR starts with unexpected token {other:?}"),
+                other => unreachable!("[internal error]: Unexpected start token {other:?} of MAP_EXPR"),
             };
             let has_filter = has_token(node, SyntaxKind::IF_KW);
             let (func_node, input_node, filter_node) = if has_filter {
@@ -509,7 +509,7 @@ pub fn walk_expr<V: LangVisitor>(
 
         SyntaxKind::SWITCH_EXPR => {
             let mut iter = children.iter();
-            let input_node = iter.next().expect("SWITCH_EXPR has an input").clone();
+            let input_node = iter.next().expect("[internal error]: Missing input of SWITCH_EXPR").clone();
             let mut cases = Vec::new();
             let mut default = None;
             for child in iter {
@@ -525,7 +525,7 @@ pub fn walk_expr<V: LangVisitor>(
 
         SyntaxKind::MATCH_EXPR => {
             let mut iter = children.iter();
-            let input_node = iter.next().expect("MATCH_EXPR has an input").clone();
+            let input_node = iter.next().expect("[internal error]: Missing input of MATCH_EXPR").clone();
             let cases = iter
                 .map(|case| {
                     let cc: Vec<SyntaxNode> = case.children().collect();
@@ -566,7 +566,7 @@ pub fn walk_expr<V: LangVisitor>(
                         parts.push(StringPart::Chunk(t));
                     }
                     NodeOrToken::Node(n) if n.kind() == SyntaxKind::STRING_EMBED => {
-                        let inner = n.children().next().expect("STRING_EMBED wraps an expr");
+                        let inner = n.children().next().expect("[internal error]: Missing expression of STRING_EMBED");
                         parts.push(StringPart::Embed(UnvisitedExpr(inner)));
                     }
                     _ => {}
@@ -580,7 +580,7 @@ pub fn walk_expr<V: LangVisitor>(
             v.visit_var(range, down, name)
         }
 
-        other => unreachable!("unexpected expression node kind {other:?}"),
+        other => unreachable!("[internal error]: Unexpected expression node kind {other:?}"),
     }
 }
 
@@ -604,7 +604,7 @@ pub fn walk_matcher<V: LangVisitor>(
 
         SyntaxKind::MATCHER_ALIAS => {
             let inner = UnvisitedMatcher(children[0].clone());
-            let name = find_token(node, SyntaxKind::IDENT).expect("MATCHER_ALIAS has a name");
+            let name = find_token(node, SyntaxKind::IDENT).expect("[internal error]: Missing name of MATCHER_ALIAS");
             v.visit_matcher_alias(range, down, inner, name)
         }
 
@@ -625,6 +625,6 @@ pub fn walk_matcher<V: LangVisitor>(
             v.visit_matcher_object(range, down, exhaustive, fields)
         }
 
-        other => unreachable!("unexpected matcher node kind {other:?}"),
+        other => unreachable!("[internal error]: Unexpected matcher node kind {other:?}"),
     }
 }

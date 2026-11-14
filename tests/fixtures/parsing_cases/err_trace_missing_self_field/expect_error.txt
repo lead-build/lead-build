@@ -1,4 +1,4 @@
-No value: the object has no field `optlevel`
+[field mismatch]: No field `optlevel` in object
   --> $DIR/err_trace_missing_self_field/main.pbb:8:24
    |
  8 |         flags = [ "-O${self.optlevel}" ];
@@ -7,9 +7,9 @@ No value: the object has no field `optlevel`
   ::: $DIR/_lib/lib.pbb:18:5
    |
 18 |     {
-   |     - this is the object
+   |     - object
    |
-   = help: the object has the fields `name`, `src`, `defines`, `flags` and `outdir`
+   = help: available fields: `name`, `src`, `defines`, `flags` and `outdir`
 
 Called from:
   $DIR/_lib/lib.pbb:28:45

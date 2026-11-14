@@ -56,8 +56,8 @@ pub fn format_tree(tree: &SyntaxNode) -> SyntaxNode {
     let rendered = piece.doc.pretty(WIDTH).to_string();
     super::parse(&rendered).tree.unwrap_or_else(|error| {
         panic!(
-            "pblang::fmt produced text that failed to re-parse (this is a formatter bug, \
-             not a problem with the input): {error}\n\n--- formatted output ---\n{rendered}"
+            "[internal error]: Formatter output failed to parse (formatter bug, not an input problem): {error}\n\n\
+             --- formatted output ---\n{rendered}"
         )
     })
 }
@@ -299,7 +299,7 @@ fn format_node(node: SyntaxNode) -> Piece {
                 // rest from there and break once more before the body.
                 let first = match &head[0] {
                     Trivia::Comment(text) => RcDoc::text(text.clone()),
-                    Trivia::BlankLine => unreachable!("trimmed above"),
+                    Trivia::BlankLine => unreachable!("[internal error]: Blank line remains at start of trimmed leading trivia"),
                 };
                 doc = first
                     .append(trivia_doc(&head[1..]))
@@ -443,7 +443,7 @@ fn format_node(node: SyntaxNode) -> Piece {
             let in_idx = kinds
                 .iter()
                 .position(|k| *k == SyntaxKind::IN_KW)
-                .expect("LET_EXPR/BIND_EXPR always has an `in`");
+                .expect("[internal error]: Missing `in` keyword in LET_EXPR or BIND_EXPR");
             let mut bindings = RcDoc::nil();
             for i in 1..in_idx {
                 bindings = bindings
@@ -472,7 +472,7 @@ fn format_node(node: SyntaxNode) -> Piece {
             let lbrace_idx = kinds
                 .iter()
                 .position(|k| *k == SyntaxKind::L_BRACE)
-                .expect("SWITCH_EXPR/MATCH_EXPR always has a `{`");
+                .expect("[internal error]: Missing `{` token in SWITCH_EXPR or MATCH_EXPR");
             let mut head = RcDoc::nil();
             for i in 1..=lbrace_idx {
                 head = head

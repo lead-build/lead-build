@@ -1,2 +1,2 @@
 kind = "err_type"
-error_contains = "pb.matches expects a string pattern"
+error_contains = "Expected string as pattern of `pb.matches`"

@@ -13,7 +13,7 @@ async fn main() -> ExitCode {
         Args::command()
             .error(
                 ErrorKind::MissingRequiredArgument,
-                "--bind-host can only be used together with --socket",
+                "`--bind-host` requires `--socket`",
             )
             .exit();
     }
@@ -30,14 +30,14 @@ async fn main() -> ExitCode {
         let listener = match TcpListener::bind((bind_host, port)).await {
             Ok(listener) => listener,
             Err(err) => {
-                eprintln!("pbls: failed to bind to {bind_host}:{port}: {err}");
+                eprintln!("[network error]: Failed to bind to `{bind_host}:{port}`: {err}");
                 return ExitCode::FAILURE;
             }
         };
         let (stream, _) = match listener.accept().await {
             Ok(conn) => conn,
             Err(err) => {
-                eprintln!("pbls: failed to accept connection: {err}");
+                eprintln!("[network error]: Failed to accept connection: {err}");
                 return ExitCode::FAILURE;
             }
         };
@@ -52,8 +52,8 @@ async fn main() -> ExitCode {
         Server::new(read, write, socket).serve(service).await;
         ExitCode::SUCCESS
     } else {
-        eprintln!("pbls is the lead-build language server. It is not meant to be run directly.");
-        eprintln!("Use --help for more information.");
+        eprintln!("[usage error]: `pbls` is a language server, not for direct use");
+        eprintln!("Use `--help` for more information.");
         ExitCode::FAILURE
     }
 }

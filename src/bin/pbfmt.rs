@@ -15,12 +15,14 @@ fn run_file(file: Option<&PathBuf>, args: &Args) -> Result<(), String> {
         let mut source = String::new();
         io::stdin()
             .read_to_string(&mut source)
-            .map_err(|e| format!("Error reading stdin: {e}"))?;
+            .map_err(|e| format!("[io error]: Failed to read standard input: {e}"))?;
         (source, "<stdin>".to_string())
     } else {
-        let file = file.expect("clap requires `file` unless --stdin is set");
+        let file = file.expect(
+            "[internal error]: Missing `file` argument without `--stdin`",
+        );
         let source = fs::read_to_string(file)
-            .map_err(|e| format!("Error reading {}: {}", file.display(), e))?;
+            .map_err(|e| format!("[io error]: Failed to read `{}`: {}", file.display(), e))?;
         (source, file.display().to_string())
     };
 
@@ -36,18 +38,24 @@ fn run_file(file: Option<&PathBuf>, args: &Args) -> Result<(), String> {
             .map(|(i, l)| format!("  {}. {}", i + 1, l))
             .collect::<Vec<_>>()
             .join("\n");
-        return Err(format!("Error parsing {name}:\n{numbered}"));
+        return Err(format!(
+            "[parse error]: Failed to parse `{name}`:\n{numbered}"
+        ));
     }
-    let tree = parsed.tree.expect("checked above");
+    let tree = parsed.tree.expect(
+        "[internal error]: Missing parse tree without parse error",
+    );
 
     if args.lint {
         print!("{}", tree.text());
     } else {
         let formatted = format_tree(&tree).text().to_string();
         if args.in_place {
-            let file = file.expect("clap requires `file` unless --stdin is set");
+            let file = file.expect(
+                "[internal error]: Missing `file` argument without `--stdin`",
+            );
             fs::write(file, &formatted)
-                .map_err(|e| format!("Error writing {}: {}", file.display(), e))?;
+                .map_err(|e| format!("[io error]: Failed to write `{}`: {}", file.display(), e))?;
         } else {
             println!("{}", formatted);
         }
@@ -60,7 +68,7 @@ fn main() {
     let args = Args::parse();
 
     if !args.in_place && args.file.len() > 1 {
-        eprintln!("Multiple files are only allowed together with --in-place");
+        eprintln!("[usage error]: Multiple files only allowed with `--in-place`");
         exit(1);
     }
 

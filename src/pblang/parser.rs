@@ -39,7 +39,7 @@ pub fn parse(code: &str) -> Parsed {
             // that keeps the comments/whitespace around it in the tree, and
             // with them every node's offset relative to the file's start.
             let root = green_node(code, SyntaxKind::ROOT, 0, code.len(), vec![expr]);
-            SyntaxNode::new_root(root.green.into_node().expect("green_node builds a node"))
+            SyntaxNode::new_root(root.green.into_node().expect("[internal error]: `green_node` built no node"))
         });
     Parsed { tree, errors }
 }

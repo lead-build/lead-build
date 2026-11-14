@@ -34,7 +34,10 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinDbgBreak {
     fn call(&self, arg: Expr<Value, VirtPath>) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let _ = arg.eval();
         println!("{}", arg);
-        Err(Error::new(ErrorType::Debug, "break").reref(&arg.get_loc()))
+        Err(
+            Error::new(ErrorType::Debug, "Stopped at `dbg.break`")
+                .reref(&arg.get_loc()),
+        )
     }
 }
 

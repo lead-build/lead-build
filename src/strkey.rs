@@ -51,7 +51,10 @@ impl StrKey {
         if self.0 < pool.idx_to_str.len() {
             pool.idx_to_str[self.0].clone()
         } else {
-            panic!("Resolving invalid StrKey index: {}", self.0);
+            panic!(
+                "[internal error]: Invalid `StrKey` index {}",
+                self.0
+            );
         }
     }
 

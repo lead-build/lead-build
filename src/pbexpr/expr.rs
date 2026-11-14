@@ -156,8 +156,8 @@ where
             Role::FieldName => "name of a field".to_string(),
             Role::Function => "function of a call".to_string(),
             Role::Operand(op) => format!("operand of `{op}`"),
-            Role::LeftSide(op) => format!("left side of `{op}`"),
-            Role::RightSide(op) => format!("right side of `{op}`"),
+            Role::LeftSide(op) => format!("left operand of `{op}`"),
+            Role::RightSide(op) => format!("right operand of `{op}`"),
             Role::StringPart => "part of a string".to_string(),
             Role::ForInput => "input of a `for`".to_string(),
             Role::FoldInput => "input of a fold".to_string(),
@@ -607,7 +607,9 @@ where
         #[cfg(not(test))]
         {
             let _ = other;
-            unreachable!("== of builtin expressions should not be used")
+            unreachable!(
+                "[internal error]: Equality comparison of builtin expressions"
+            )
         }
     }
 }
@@ -713,8 +715,8 @@ where
                 .filter(|origin| site.as_ref().is_none_or(|site| site.span != origin.span))
         };
         err.primary(site, "")
-            .label(&side(lhs), format!("the left side is {}", lhs.describe()))
-            .label(&side(rhs), format!("the right side is {}", rhs.describe()))
+            .label(&side(lhs), format!("left operand: {}", lhs.describe()))
+            .label(&side(rhs), format!("right operand: {}", rhs.describe()))
     }
 
     /// The error for an operator that does not apply to these two values.
@@ -728,7 +730,7 @@ where
             Error::new(
                 ErrorType::Type,
                 format!(
-                    "cannot apply `{}` to {} and {}",
+                    "Cannot apply `{}` to {} and {}",
                     op,
                     lhs.describe(),
                     rhs.describe()
@@ -752,10 +754,8 @@ where
         // The same for an operator that decides on its left side alone; the
         // right side may not even be evaluated
         let at_left = |err: Error<F>| {
-            err.primary(site, "").label(
-                &lhs.origin(),
-                format!("the left side is {}", lhs.describe()),
-            )
+            err.primary(site, "")
+                .label(&lhs.origin(), format!("left operand: {}", lhs.describe()))
         };
         let unsupported = || Self::binop_error(op, site, lhs, rhs);
         match op {
@@ -776,7 +776,9 @@ where
                         true => ExprType::Value(rhs_val()?),
                         false => ExprType::Value(T::new_from_bool(true)),
                     }),
-                    _ => unreachable!(),
+                    _ => unreachable!(
+                        "[internal error]: Non-logical operator handled as logical operator"
+                    ),
                 }
             }
             _ => {
@@ -942,7 +944,9 @@ where
         while let Some(top) = frames.last_mut() {
             if !Self::needs_resolve(&top.storage.tok) {
                 let Some(done) = frames.pop() else {
-                    unreachable!("the loop runs while there is a frame")
+                    unreachable!(
+                        "[internal error]: Empty frame stack while completing frame"
+                    )
                 };
                 done.cell.0.as_ref().replace(done.storage);
                 continue;
@@ -954,7 +958,7 @@ where
                 let err = Error::new(
                     ErrorType::Eval,
                     format!(
-                        "infinite recursion: the expression is still not resolved after {} steps",
+                        "Infinite recursion: expression not resolved after {} steps",
                         MAX_RESOLVE_STEPS
                     ),
                 )
@@ -984,7 +988,9 @@ where
                     top.storage = unchanged;
                     match Self::enter(&child, trace, Some(role)) {
                         Ok(Some(frame)) => frames.push(frame),
-                        Ok(None) => unreachable!("`force!` only asks for an unresolved child"),
+                        Ok(None) => unreachable!(
+                            "[internal error]: Resolution requested for resolved child"
+                        ),
                         Err(err) => return Err(Self::unwind(frames, err)),
                     }
                 }
@@ -1014,7 +1020,7 @@ where
                 ExprType::UnderEval => {
                     let err = Error::new(
                         ErrorType::Eval,
-                        "infinite recursion: the value depends on itself",
+                        "Infinite recursion: value depends on itself",
                     )
                     .reref(&inner.loc);
                     return Err(Self::add_trace(err, &trace, &role));
@@ -1212,8 +1218,14 @@ where
                                 vars.insert(name, value).map_or_else(
                                     || Ok(()),
                                     |_| {
-                                        Err(Error::new(ErrorType::DupKey, name.as_string())
-                                            .reref(&loc))
+                                        Err(Error::new(
+                                            ErrorType::DupKey,
+                                            format!(
+                                                "Duplicate variable `{}` in scope",
+                                                name.as_string()
+                                            ),
+                                        )
+                                        .reref(&loc))
                                     },
                                 )?;
                             }
@@ -1279,7 +1291,7 @@ where
                             // expression as written, shared by all calls
                             let err = Error::new(
                                 ErrorType::Scope,
-                                format!("unknown variable `{}`", name),
+                                format!("Undefined variable `{}`", name),
                             )
                             .reref(if loc.is_some() { &loc } else { vloc });
                             let known = varspace
@@ -1288,7 +1300,7 @@ where
                                 .map(|key| key.as_string());
                             Err(match closest(&name.as_string(), known) {
                                 Some(similar) => err.help(format!(
-                                    "a variable with a similar name exists: `{similar}`"
+                                    "similar name: `{similar}`"
                                 )),
                                 None => err,
                             })
@@ -1356,7 +1368,9 @@ where
                     ExprStorage {
                         tok: ExprType::UnderEval,
                         ..
-                    } => unreachable!("ExprType::UnderEval should not be in a Bind expression"),
+                    } => unreachable!(
+                        "[internal error]: Expression under evaluation in bind expression"
+                    ),
                 }
             }
             ExprStorage {
@@ -1487,10 +1501,13 @@ where
                     }
                     ExprStorage { tok, .. } => Err(Error::new(
                         ErrorType::Type,
-                        format!("cannot call {}, it is not a function", tok.describe()),
+                        format!(
+                            "Cannot call {}, not a function",
+                            tok.describe()
+                        ),
                     )
                     .primary(&loc, "")
-                    .label(&fexpr.origin(), format!("this is {}", tok.describe()))),
+                    .label(&fexpr.origin(), tok.describe())),
                 }
             }
             ExprStorage {
@@ -1537,21 +1554,24 @@ where
                         } else {
                             Err(Error::new(
                                 ErrorType::Eval,
-                                "cannot fold an empty list without a start value",
+                                "Cannot fold empty list without start value",
                             )
                             .primary(&loc, "")
-                            .label(&input.origin(), "the list is empty"))
+                            .label(&input.origin(), "empty list"))
                         }
                     }
                     other => Err(Error::new(
                         ErrorType::Type,
                         format!(
-                            "cannot fold over {}, it is not a list",
+                            "Cannot fold over {}, not a list",
                             other.tok.describe()
                         ),
                     )
                     .primary(&loc, "")
-                    .label(&input.origin(), format!("this is {}", other.tok.describe()))),
+                    .label(
+                        &input.origin(),
+                        other.tok.describe(),
+                    )),
                 }
             }
             ExprStorage {
@@ -1594,12 +1614,15 @@ where
                     other => Err(Error::new(
                         ErrorType::Type,
                         format!(
-                            "cannot iterate over {}, it is not a list or an object",
+                            "Cannot iterate over {}, not a list or an object",
                             other.tok.describe()
                         ),
                     )
                     .primary(&loc, "")
-                    .label(&input.origin(), format!("this is {}", other.tok.describe()))),
+                    .label(
+                        &input.origin(),
+                        other.tok.describe(),
+                    )),
                 }?;
 
                 let mut filtered_items: Vec<Expr<T, F>>;
@@ -1657,8 +1680,7 @@ where
                                 other => Err(Error::new(
                                     ErrorType::Type,
                                     format!(
-                                        "an object is built from tuples of a name and a \
-                                         value, got {}",
+                                        "Expected tuple of name and value in object, found {}",
                                         other.tok.describe()
                                     ),
                                 )
@@ -1687,7 +1709,7 @@ where
                 // where the value was written
                 let at_op = |err: Error<F>| {
                     err.primary(&loc, "")
-                        .label(&expr.origin(), format!("this is {}", expr.describe()))
+                        .label(&expr.origin(), expr.describe())
                 };
                 let result = match &expr.inner_ref().tok {
                     ExprType::Value(value) => match op {
@@ -1696,7 +1718,7 @@ where
                     },
                     other => Err(Error::new(
                         ErrorType::Type,
-                        format!("cannot apply `{}` to {}", op, other.describe()),
+                        format!("Cannot apply `{}` to {}", op, other.describe()),
                     )),
                 };
                 Ok(ExprType::Value(result.map_err(at_op)?).loc(loc))
@@ -1781,12 +1803,12 @@ where
                     } else {
                         Err(Error::new(
                             ErrorType::Eval,
-                            format!("no case matches the value {}", ref_expr.diag()),
+                            format!("No case matches value {}", ref_expr.diag()),
                         )
                         .primary(&loc, "")
                         .label(
                             &ref_expr.origin(),
-                            format!("this is {}", ref_expr.describe()),
+                            ref_expr.describe(),
                         ))
                     }
                 }
@@ -1833,12 +1855,12 @@ where
                 } else {
                     Err(Error::new(
                         ErrorType::Eval,
-                        format!("no case matches the value {}", ref_expr.diag()),
+                        format!("No case matches value {}", ref_expr.diag()),
                     )
                     .primary(&loc, "")
                     .label(
                         &ref_expr.origin(),
-                        format!("this is {}", ref_expr.describe()),
+                        ref_expr.describe(),
                     ))
                 }
             }
@@ -1846,14 +1868,17 @@ where
                 tok: ExprType::Var(name),
                 loc,
             } => Err(
-                Error::new(ErrorType::Scope, format!("unknown variable `{}`", name))
-                    .reref(&loc),
+                Error::new(
+                    ErrorType::Scope,
+                    format!("Undefined variable `{}`", name),
+                )
+                .reref(&loc),
             ),
             ExprStorage {
                 tok: ExprType::UnderEval,
                 loc: _,
-            } => unreachable!("UnderEval is only stored in a cell, never resolved as a step"),
-            ExprStorage { tok, loc: _ } => unreachable!("Resolving {}", tok),
+            } => unreachable!("[internal error]: Expression under evaluation resolved as step"),
+            ExprStorage { tok, loc: _ } => unreachable!("[internal error]: Cannot resolve expression `{}` as step", tok),
         };
         Ok(Step::Next(next?))
     }
@@ -1948,7 +1973,7 @@ where
             ExprType::Value(val) => Ok(val.clone()),
             other => Err(Error::new(
                 ErrorType::NoValue,
-                format!("expected a plain value, got {}", other.describe()),
+                format!("Expected plain value, found {}", other.describe()),
             )),
         }
     }
@@ -1960,7 +1985,7 @@ where
             ExprType::Value(val) => Ok(val.as_string()?),
             other => Err(Error::new(
                 ErrorType::NoValue,
-                format!("expected a string, got {}", other.describe()),
+                format!("Expected string, found {}", other.describe()),
             )),
         }
     }
@@ -1974,16 +1999,16 @@ where
                 None => {
                     let err = Error::new(
                         ErrorType::NoValue,
-                        format!("the object has no field `{name}`"),
+                        format!("No field `{name}` in object"),
                     )
-                    .label(&self.origin(), "this is the object");
+                    .label(&self.origin(), "object");
                     let fields = || vars.keys().map(|key| key.as_string());
                     Err(if let Some(similar) = closest(name, fields()) {
-                        err.help(format!("a field with a similar name exists: `{similar}`"))
+                        err.help(format!("similar field: `{similar}`"))
                     } else if vars.is_empty() {
-                        err.help("the object has no fields at all")
+                        err.help("object has no fields")
                     } else if vars.len() <= MAX_LISTED_FIELDS {
-                        err.help(format!("the object has the fields {}", name_list(fields())))
+                        err.help(format!("available fields: {}", name_list(fields())))
                     } else {
                         err
                     })
@@ -1992,11 +2017,11 @@ where
             other => Err(Error::new(
                 ErrorType::Type,
                 format!(
-                    "cannot select the field `{name}` of {}, it is not an object",
+                    "Cannot select field `{name}` of {}, not an object",
                     other.describe()
                 ),
             )
-            .label(&self.origin(), format!("this is {}", other.describe()))),
+            .label(&self.origin(), other.describe())),
         }
     }
 

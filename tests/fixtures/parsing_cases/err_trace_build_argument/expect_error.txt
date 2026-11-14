@@ -1,4 +1,4 @@
-Type error: incompatible type in build arg 'input', got 12
+[type error]: Expected path as build argument `input`, found 12
   --> $DIR/err_trace_build_argument/main.pbb:21:9
    |
 21 |         12,

@@ -37,7 +37,7 @@ impl NinjaFileStats {
             .collect::<Vec<_>>();
         outputs.sort_by(|start, end| end.1.cmp(&start.1).then_with(|| start.0.cmp(&end.0)));
 
-        info!("stats rules added:");
+        info!("Rules added:");
         if rules.is_empty() {
             info!("  <none>");
         } else {
@@ -48,7 +48,7 @@ impl NinjaFileStats {
             }
         }
 
-        info!("stats outputs added:");
+        info!("Outputs added:");
         if outputs.is_empty() {
             info!("  <none>");
         } else {

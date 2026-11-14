@@ -1,8 +1,8 @@
-Type error: cannot call an integer, it is not a function
+[type error]: Cannot call an integer, not a function
  --> $DIR/err_site_call_non_function/main.pbb:5:1
   |
 3 |     f = 5;
-  |         - this is an integer
+  |         - an integer
 4 | in
 5 | f 1
   | ^^^

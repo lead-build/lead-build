@@ -50,7 +50,10 @@ impl CompoundType {
             )),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("expected tuple, list, or object, got {}", arg.diag()),
+                format!(
+                    "Expected tuple, list or object, found {}",
+                    arg.diag()
+                ),
             )
             .reref(&arg.get_loc())),
         }
@@ -132,7 +135,7 @@ where
                 Some(_) => {
                     return Err(Error::new(
                         ErrorType::Type,
-                        "zip elements must all be of the same compound type",
+                        "Expected elements of same compound type in `ops.transpose`",
                     )
                     .reref(&elem_loc));
                 }
@@ -141,7 +144,11 @@ where
         }
 
         let inner_type = inner_type.ok_or_else(|| {
-            Error::new(ErrorType::Type, "zip requires at least one element").reref(&loc)
+            Error::new(
+                ErrorType::Type,
+                "Expected at least one element in argument of `ops.transpose`",
+            )
+            .reref(&loc)
         })?;
 
         let transposed = btree_transpose(elems);
@@ -179,7 +186,10 @@ where
             ExprType::List(items) => Ok(items),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("expected list, got {}", arg.diag()),
+                format!(
+                    "Expected list as argument of `ops.transposeObjs`, found {}",
+                    arg.diag()
+                ),
             )
             .reref(&arg.get_loc())),
         }?;
@@ -192,7 +202,7 @@ where
                 ExprType::Object(items) => Ok(items),
                 _ => Err(Error::new(
                     ErrorType::Type,
-                    format!("expected objects, got {}", inner_expr.diag()),
+                    format!("Expected objects in list of `ops.transposeObjs`, found {}", inner_expr.diag()),
                 )
                 .reref(&inner_expr.get_loc())),
             }?;

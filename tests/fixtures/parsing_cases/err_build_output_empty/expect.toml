@@ -1,2 +1,2 @@
 kind = "err_type"
-error_contains = "build arg 'output' must contain at least one path"
+error_contains = "Expected at least one path in build argument `output`"

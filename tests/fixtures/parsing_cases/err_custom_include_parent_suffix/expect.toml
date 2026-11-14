@@ -1,2 +1,2 @@
-kind = "err_custom"
-error_contains = "contains \"/\""
+kind = "err_path"
+error_contains = "contains `/`"

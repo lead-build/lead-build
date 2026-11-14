@@ -172,7 +172,7 @@ impl<'input> Iterator for Lexer<'input> {
     type Item = Result<(usize, Tok, usize), LexError>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.mode.take().expect("lexer mode always restored") {
+        match self.mode.take().expect("[internal error]: Lexer mode not restored after previous token") {
             Mode::Code(mut lex) => {
                 let tok = lex.next();
                 let span = lex.span();
@@ -182,7 +182,7 @@ impl<'input> Iterator for Lexer<'input> {
                         None
                     }
                     Some(Err(())) => {
-                        let message = format!("unrecognized token {:?}", lex.slice());
+                        let message = format!("unrecognized token `{}`", lex.slice());
                         self.mode = Some(Mode::Code(lex));
                         Some(Err(LexError { message, span }))
                     }
@@ -225,7 +225,7 @@ impl<'input> Iterator for Lexer<'input> {
                         }))
                     }
                     Some(Err(())) => {
-                        let message = format!("unrecognized token {:?} in string", lex.slice());
+                        let message = format!("unrecognized token `{}` in string", lex.slice());
                         self.mode = Some(Mode::Str(lex));
                         Some(Err(LexError { message, span }))
                     }

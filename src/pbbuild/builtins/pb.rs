@@ -25,15 +25,15 @@ macro_rules! expr_get_arg (
     ($obj:expr, $name:expr, $unpack:ident) => {
         $obj
             .remove($name)
-            .ok_or_else(|| Error::new(ErrorType::Type, format!("Can't unpack {}", stringify!($name))))?
+            .ok_or_else(|| Error::new(ErrorType::Type, format!("Missing build argument `{}`", $name)))?
             .value()?
             .$unpack()
-            .ok_or_else(|| Error::new(ErrorType::Type, format!("Can't unpack {}", stringify!($name))))?
+            .ok_or_else(|| Error::new(ErrorType::Type, format!("Invalid type of build argument `{}`", $name)))?
     };
     ($obj:expr, $name:expr) => {
         $obj
             .remove($name)
-            .ok_or_else(|| Error::new(ErrorType::Type, format!("Can't unpack {}", stringify!($name))))?
+            .ok_or_else(|| Error::new(ErrorType::Type, format!("Missing build argument `{}`", $name)))?
     };
 );
 
@@ -54,7 +54,10 @@ fn value_to_ninja_arg(attr: &Value) -> NinjaArg {
                 })
                 .collect(),
         ),
-        _ => panic!("Rule attr is of invalid type: {}", attr),
+        _ => panic!(
+            "[internal error]: Invalid type of rule attribute: {}",
+            attr
+        ),
     }
 }
 
@@ -73,7 +76,10 @@ fn resolve_build_arg_to_ninja_values<F: Clone + Debug + Referrable>(
         ExprType::Value(value) => Ok(vec![ExprType::from(value.clone()).reref(loc.clone())]),
         _ => Err(Error::new(
             ErrorType::Type,
-            format!("field {} is not a list or value", field_name),
+            format!(
+                "Expected list or value as build argument `{}`",
+                field_name
+            ),
         )
         .reref(&loc)),
     }?;
@@ -93,7 +99,11 @@ fn resolve_build_arg_to_ninja_values<F: Clone + Debug + Referrable>(
                 }
                 _ => Err(Error::new(
                     ErrorType::Type,
-                    format!("incompatible type in build arg '{}', got {}", field_name, elem.diag()),
+                    format!(
+                        "Invalid element type of build argument `{}`, found {}",
+                        field_name,
+                        elem.diag()
+                    ),
                 )
                 .reref(&elem.get_loc())),
             }
@@ -127,7 +137,7 @@ where
             Some((Matcher::Object(items, _), _expr)) => Ok(items.clone()),
             _ => Err(Error::new(
                 ErrorType::Type,
-                "pb.rule needs to take a pattern function as argument",
+                "Expected function with object pattern as argument of `pb.rule`",
             )),
         }?;
 
@@ -139,7 +149,7 @@ where
                     if default.is_some() {
                         return Err(Error::new(
                             ErrorType::Type,
-                            format!("pb.rule does not support default values for {}", name),
+                            format!("Default value for `{}` not supported by `pb.rule`", name),
                         ));
                     }
 
@@ -175,7 +185,7 @@ where
             None => Err(Error::new(
                 ErrorType::Type,
                 format!(
-                    "pb.rule function needs to return an object, got {}",
+                    "Expected object as result of function in `pb.rule`, found {}",
                     rule_func.diag()
                 ),
             )),
@@ -189,7 +199,9 @@ where
             let attrs = match &expr.inner_ref().tok {
                 ExprType::List(exprs) => exprs.clone(),
                 ExprType::Value(value) => vec![ExprType::from(value.clone()).reref(loc.clone())],
-                _ => panic!("pb.rule function needs to return an object"),
+                _ => panic!(
+                    "[internal error]: Invalid result of `pb.rule` function, neither list nor value"
+                ),
             };
             let ninja_attrs: Vec<NinjaArg> = attrs
                 .into_iter()
@@ -197,7 +209,10 @@ where
                     e.resolve()?;
                     match &e.inner_ref().tok {
                         ExprType::Value(attr) => Ok(value_to_ninja_arg(attr)),
-                        _ => Err(Error::new(ErrorType::Type, "Rule attr is not a value")),
+                        _ => Err(Error::new(
+                            ErrorType::Type,
+                            "Expected value as rule attribute",
+                        )),
                     }
                 })
                 .collect::<Result<Vec<NinjaArg>, _>>()
@@ -240,7 +255,10 @@ where
         let opt_err = || {
             Error::new(
                 ErrorType::Type,
-                format!("unknown arg for pb.build, got {}", arg.diag()),
+                format!(
+                    "Expected object as argument of `pb.build`, found {}",
+                    arg.diag()
+                ),
             )
         };
 
@@ -297,13 +315,14 @@ where
         }
 
         let output = output.ok_or_else(|| {
-            Error::new(ErrorType::Type, "missing required output field").reref(&arg.get_loc())
+            Error::new(ErrorType::Type, "Missing build argument `output`")
+                .reref(&arg.get_loc())
         })?;
         let output_paths = output.unique_paths();
         if output_paths.is_empty() {
             return Err(Error::new(
                 ErrorType::Type,
-                "build arg 'output' must contain at least one path",
+                "Expected at least one path in build argument `output`",
             )
             .reref(&loc));
         }
@@ -332,8 +351,14 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbLock {
     fn call(&self, arg: Expr<Value, VirtPath>) -> Result<Expr<Value, VirtPath>, VirtPath> {
         let val = arg.value()?;
         let path = val.try_as_path().ok_or(
-            Error::new(ErrorType::Type, format!("expected path, got {}", arg.diag()))
-                .reref(&arg.get_loc()),
+            Error::new(
+                ErrorType::Type,
+                format!(
+                    "Expected path as argument of `pb.lock`, found {}",
+                    arg.diag()
+                ),
+            )
+            .reref(&arg.get_loc()),
         )?;
         Ok(ExprType::Value(Value::path(path.lock())).reref(arg.get_loc()))
     }
@@ -360,12 +385,24 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbTranslate {
             .value()
             .map_err(|e| e.reref(&input.get_loc()))?
             .try_as_path()
-            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&input.get_loc()))?;
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorType::Type,
+                    "Expected path as `input` of `pb.translate`",
+                )
+                .reref(&input.get_loc())
+            })?;
         let to = to
             .value()
             .map_err(|e| e.reref(&to.get_loc()))?
             .try_as_path()
-            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&to.get_loc()))?;
+            .ok_or_else(|| {
+                Error::new(
+                    ErrorType::Type,
+                    "Expected path as `to` of `pb.translate`",
+                )
+                .reref(&to.get_loc())
+            })?;
 
         from.resolve()?;
         let from = match &*from.inner_ref() {
@@ -373,7 +410,11 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbTranslate {
                 tok: ExprType::Value(val),
                 ..
             } => vec![val.clone().try_as_path().ok_or_else(|| {
-                Error::new(ErrorType::Type, "expected path").reref(&from.get_loc())
+                Error::new(
+                    ErrorType::Type,
+                    "Expected only paths in `from` of `pb.translate`",
+                )
+                .reref(&from.get_loc())
             })?],
             ExprStorage {
                 tok: ExprType::List(vals),
@@ -385,15 +426,20 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbTranslate {
                         .map_err(|e| e.reref(&val.get_loc()))?
                         .try_as_path()
                         .ok_or_else(|| {
-                            Error::new(ErrorType::Type, "expected path").reref(&from.get_loc())
+                            Error::new(
+                                ErrorType::Type,
+                                "Expected only paths in `from` of `pb.translate`",
+                            )
+                            .reref(&from.get_loc())
                         })
                 })
                 .collect::<Result<Vec<_>, _>>()?,
             _ => {
-                return Err(
-                    Error::new(ErrorType::Type, "expected path or list of paths")
-                        .reref(&from.get_loc()),
-                );
+                return Err(Error::new(
+                    ErrorType::Type,
+                    "Expected path or list of paths as `from` of `pb.translate`",
+                )
+                .reref(&from.get_loc()));
             }
         };
 
@@ -404,7 +450,14 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbTranslate {
             .find_map(|from_path| input.clone().translate(&from_path, &to));
 
         let output = output_path.ok_or_else(|| {
-            Error::new(ErrorType::Type, format!("Can't translate {}", input)).reref(&loc)
+            Error::new(
+                ErrorType::Path,
+                format!(
+                    "Cannot translate `{}`, matches no path in `from`",
+                    input
+                ),
+            )
+            .reref(&loc)
         })?;
 
         Ok(ExprType::Value(Value::path(output)).reref(loc))
@@ -427,14 +480,20 @@ impl ExprBuiltin<Value, VirtPath> for BuiltinPbRebase {
         let base = arg.get_item("base")?;
         // TODO: Verify no more args are available
 
-        let path = path
-            .value()?
-            .try_as_path()
-            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&path.get_loc()))?;
-        let base = base
-            .value()?
-            .try_as_path()
-            .ok_or_else(|| Error::new(ErrorType::Type, "expected path").reref(&base.get_loc()))?;
+        let path = path.value()?.try_as_path().ok_or_else(|| {
+            Error::new(
+                ErrorType::Type,
+                "Expected path as `path` of `pb.rebase`",
+            )
+            .reref(&path.get_loc())
+        })?;
+        let base = base.value()?.try_as_path().ok_or_else(|| {
+            Error::new(
+                ErrorType::Type,
+                "Expected path as `base` of `pb.rebase`",
+            )
+            .reref(&base.get_loc())
+        })?;
 
         // Clone here only to allow error message
         let output = path.to_path_buf_rebase(&base)?;
@@ -460,12 +519,21 @@ where
         let loc = arg.get_loc();
         let pattern = match arg.value().map_err(|e| e.reref(&loc))? {
             Value::String(pattern) => Glob::new(&pattern).map_err(|e| {
-                Error::new(ErrorType::Custom, format!("pb.matches: invalid pattern: {}", e))
-                    .reref(&loc)
+                Error::new(
+                    ErrorType::Pattern,
+                    format!(
+                        "Invalid pattern `{}` of `pb.matches`: {}",
+                        pattern, e
+                    ),
+                )
+                .reref(&loc)
             }),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("pb.matches expects a string pattern, got {}", arg.diag()),
+                format!(
+                    "Expected string as pattern of `pb.matches`, found {}",
+                    arg.diag()
+                ),
             )
             .reref(&loc)),
         }?;
@@ -492,7 +560,10 @@ where
             Value::Path { path, .. } => Ok(path.to_unlocked_string()),
             _ => Err(Error::new(
                 ErrorType::Type,
-                format!("pb.matches expects a path or string, got {}", arg.diag()),
+                format!(
+                    "Expected path or string as subject of `pb.matches`, found {}",
+                    arg.diag()
+                ),
             )
             .reref(&loc)),
         }?;

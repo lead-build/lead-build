@@ -246,7 +246,7 @@ impl UniqueNames {
                 return indexed_name;
             }
         }
-        unreachable!()
+        unreachable!("[internal error]: Unique name search ended without result")
     }
 }
 
@@ -364,13 +364,13 @@ impl NinjaFile {
         let requested_name = rule.name_template();
 
         if let Some(existing) = self.rules.get(&rule) {
-            debug!("DUP rule {}", existing);
+            debug!("The rule `{}` already exists.", existing);
             self.stats.record_rule_addition(existing);
             return NinjaRuleRef(existing.clone());
         }
 
         let rule_name = self.rule_names.get(requested_name);
-        debug!("new rule {}", rule_name);
+        debug!("Added the rule `{}`.", rule_name);
         self.stats.record_rule_addition(&rule_name);
         let ruleref = NinjaRuleRef(rule_name.clone());
         self.rules.insert(rule, rule_name);
@@ -379,7 +379,7 @@ impl NinjaFile {
 
     pub fn add_build(&mut self, build: NinjaBuild) -> Result<NinjaBuildRef, String> {
         debug!(
-            "build {}: {}",
+            "Added the build of `{}` with the rule `{}`.",
             build
                 .outputs
                 .iter()
@@ -454,7 +454,7 @@ impl NinjaFile {
                 .collect();
 
             return Err(format!(
-                "different builds generating same file:\n\noutputs:\n - {}\n\nexisting rules:\n - {}\nnew rule:\n - {}\n\nexisting rule definitions:\n{}new rule definition:\n{}\nexisting:\n - {}\nnew:\n - {}",
+                "Conflicting builds for same file\n\nOutputs:\n - {}\n\nExisting rules:\n - {}\nNew rule:\n - {}\n\nExisting rule definitions:\n{}New rule definition:\n{}\nExisting builds:\n - {}\nNew build:\n - {}",
                 conflicing_formatted.join(" - "),
                 existing_rules.join("\n - "),
                 build.rule,
@@ -476,7 +476,7 @@ impl NinjaFile {
     pub fn add_alias(&mut self, name: impl ToString, inputs: Vec<VirtPath>) -> &mut Self {
         let name = name.to_string();
         debug!(
-            "alias {}: phony {}",
+            "Added the alias `{}` for `{}`.",
             name,
             inputs
                 .iter()
@@ -495,7 +495,7 @@ impl NinjaFile {
 
     pub fn set_build_default(&mut self, build_ref: &NinjaBuildRef) -> &mut Self {
         debug!(
-            "default {}",
+            "Set the default targets to `{}`.",
             build_ref
                 .0
                 .iter()
@@ -519,7 +519,10 @@ impl NinjaFile {
             for output in build.outputs.iter() {
                 let fs_path = output.to_path_buf();
                 if !output_set.insert(fs_path.clone()) {
-                    errors.insert(format!("Multiple builds generating: {}", fs_path.display()));
+                    errors.insert(format!(
+                        "Multiple builds for `{}`",
+                        fs_path.display()
+                    ));
                 }
             }
         }
@@ -834,12 +837,12 @@ mod tests {
         let mut build2 = NinjaBuild::new(&rule2);
         build2.output(test_path("file"));
         let err = file.add_build(build2).unwrap_err();
-        assert!(err.contains("different builds generating same file"));
+        assert!(err.contains("Conflicting builds for same file"));
         assert!(err.contains("./file"));
-        assert!(err.contains("existing rules:\n - kind"));
-        assert!(err.contains("new rule:\n - kind1"));
-        assert!(err.contains("existing rule definitions:\nrule kind\n  kind = one\n\n"));
-        assert!(err.contains("new rule definition:\nrule kind1\n  kind = two\n\n"));
+        assert!(err.contains("Existing rules:\n - kind"));
+        assert!(err.contains("New rule:\n - kind1"));
+        assert!(err.contains("Existing rule definitions:\nrule kind\n  kind = one\n\n"));
+        assert!(err.contains("New rule definition:\nrule kind1\n  kind = two\n\n"));
         assert!(err.contains("build ./file: kind"));
         assert!(err.contains("build ./file: kind1"));
     }

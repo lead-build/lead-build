@@ -1,4 +1,4 @@
-No value: the field `name` is missing
+[field mismatch]: Missing field `name`
  --> $DIR/err_site_missing_argument_field/main.pbb:5:3
   |
 5 |   f {
@@ -6,6 +6,6 @@ No value: the field `name` is missing
 6 | |     nam = "a";
 7 | |     value = 1;
 8 | | }
-  | |_^ this is an object
+  | |_^ an object
   |
-  = help: a field with a similar name is given: `nam`
+  = help: similar field: `nam`

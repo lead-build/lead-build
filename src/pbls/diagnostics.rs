@@ -14,12 +14,12 @@ use super::semantic_visitor::{Scope, SemanticVisitor};
 fn error_span_and_message(source: &str, err: &ParseError) -> (Range<usize>, String) {
     let (span, message) = match err {
         ParseError::InvalidToken { location } => {
-            (*location..*location, "invalid token".to_string())
+            (*location..*location, "[parse error]: Invalid token".to_string())
         }
         ParseError::UnrecognizedEof { location, expected } => (
             *location..*location,
             format!(
-                "unexpected end of file, expected one of: {}",
+                "[parse error]: Unexpected end of file, expected one of: {}",
                 expected.join(", ")
             ),
         ),
@@ -29,19 +29,32 @@ fn error_span_and_message(source: &str, err: &ParseError) -> (Range<usize>, Stri
         } => (
             *start..*end,
             format!(
-                "unexpected token {tok}, expected one of: {}",
+                "[parse error]: Unexpected token `{tok}`, expected one of: {}",
                 expected.join(", ")
             ),
         ),
         ParseError::ExtraToken {
             token: (start, tok, end),
-        } => (*start..*end, format!("unexpected extra token {tok}")),
-        ParseError::User { error } => (error.span.clone(), error.message.clone()),
+        } => (*start..*end, format!("[parse error]: Unexpected extra token `{tok}`")),
+        ParseError::User { error } => (
+            error.span.clone(),
+            format!("[parse error]: {}", capitalize(&error.message)),
+        ),
     };
     // Clamp to the source length: lalrpop can report a location one past the
     // last byte (e.g. at EOF), which is still a valid empty range.
     let len = source.len();
     (span.start.min(len)..span.end.min(len), message)
+}
+
+/// Upper-cases the first character of a lexer message, which is written as
+/// a lowercase phrase so that it can also serve as a label.
+fn capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    match chars.next() {
+        Some(first) => first.to_uppercase().chain(chars).collect(),
+        None => String::new(),
+    }
 }
 
 impl OpenDocument {
@@ -107,7 +120,7 @@ impl OpenDocument {
                     range: self.line_index.range(&self.text, span.clone()),
                     severity: Some(DiagnosticSeverity::ERROR),
                     source: Some("pblang".to_string()),
-                    message: format!("undefined variable `{}`", &self.text[span]),
+                    message: format!("[scope error]: Undefined variable `{}`", &self.text[span]),
                     ..Diagnostic::default()
                 }
             })
@@ -148,7 +161,7 @@ mod tests {
         let doc = OpenDocument::new("x".to_string());
         let diagnostics = doc.diagnostics();
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].message, "undefined variable `x`");
+        assert_eq!(diagnostics[0].message, "[scope error]: Undefined variable `x`");
     }
 
     #[test]
@@ -175,7 +188,7 @@ mod tests {
         let doc = OpenDocument::new("match (1, 2) { (a, _) => a; _ => a; }".to_string());
         let diagnostics = doc.diagnostics();
         assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].message, "undefined variable `a`");
+        assert_eq!(diagnostics[0].message, "[scope error]: Undefined variable `a`");
     }
 
     #[test]

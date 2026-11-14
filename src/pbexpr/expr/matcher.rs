@@ -104,10 +104,9 @@ where
         // The value is pointed out where it is passed and where it was
         // written, which for a variable are two places
         let mismatch = |typ, msg: String| {
-            Ok(Err(Error::new(typ, msg).reref(&expr.get_loc()).label(
-                &expr.origin(),
-                format!("this is {}", expr.describe()),
-            )))
+            Ok(Err(Error::new(typ, msg)
+                .reref(&expr.get_loc())
+                .label(&expr.origin(), expr.describe())))
         };
 
         match self {
@@ -125,7 +124,7 @@ where
                         return mismatch(
                             ErrorType::Type,
                             format!(
-                                "expected a tuple of {} items, got one of {}",
+                                "Expected tuple of {} items, found {} items",
                                 matchers.len(),
                                 exprs.len()
                             ),
@@ -141,7 +140,7 @@ where
                 }
                 other => mismatch(
                     ErrorType::Type,
-                    format!("expected a tuple, got {}", other.describe()),
+                    format!("Expected tuple, found {}", other.describe()),
                 ),
             },
             Matcher::List(matchers, need_all) => match &expr.res_type()?.tok {
@@ -150,7 +149,7 @@ where
                         return mismatch(
                             ErrorType::Type,
                             format!(
-                                "expected a list of {} items, got one of {}",
+                                "Expected list of {} items, found {} items",
                                 matchers.len(),
                                 exprs.len()
                             ),
@@ -160,7 +159,7 @@ where
                         return mismatch(
                             ErrorType::Type,
                             format!(
-                                "expected a list of at least {} items, got one of {}",
+                                "Expected list of at least {} items, found {} items",
                                 matchers.len(),
                                 exprs.len()
                             ),
@@ -178,7 +177,7 @@ where
                 }
                 other => mismatch(
                     ErrorType::Type,
-                    format!("expected a list, got {}", other.describe()),
+                    format!("Expected list, found {}", other.describe()),
                 ),
             },
             Matcher::Object(items, need_all) => match &expr.res_type()?.tok {
@@ -193,12 +192,12 @@ where
                             let given = exprs.keys().map(|key| key.as_string());
                             return Ok(mismatch(
                                 ErrorType::NoValue,
-                                format!("the field `{}` is missing", itname),
+                                format!("Missing field `{}`", itname),
                             )?
                             .map_err(|err| {
                                 match closest(&itname.as_string(), given) {
                                     Some(similar) => err.help(format!(
-                                        "a field with a similar name is given: `{similar}`"
+                                        "similar field: `{similar}`"
                                     )),
                                     None => err,
                                 }
@@ -215,16 +214,16 @@ where
                         return Ok(mismatch(
                             ErrorType::NoValue,
                             if input.len() == 1 {
-                                format!("the field {extra} is not expected")
+                                format!("Unexpected field {extra}")
                             } else {
-                                format!("the fields {extra} are not expected")
+                                format!("Unexpected fields {extra}")
                             },
                         )?
                         .map_err(|err| {
                             if items.is_empty() {
-                                err.help("no fields are expected")
+                                err.help("no fields expected")
                             } else {
-                                err.help(format!("the expected fields are {expected}"))
+                                err.help(format!("expected fields: {expected}"))
                             }
                         }));
                     }
@@ -233,7 +232,7 @@ where
                 }
                 other => mismatch(
                     ErrorType::Type,
-                    format!("expected an object, got {}", other.describe()),
+                    format!("Expected object, found {}", other.describe()),
                 ),
             },
         }

@@ -139,7 +139,7 @@ impl LangVisitor for SymbolVisitor<'_> {
         let mut symbols = Vec::new();
         for (stmt_range, key, value) in items {
             let AssignValue::Expr(value) = value else {
-                unreachable!("BIND_EXPR's ASSIGNMENT always has a value")
+                unreachable!("[internal error]: Missing value of ASSIGNMENT in BIND_EXPR")
             };
             let (name, name_range) = self.assign_key_text_and_range(&key);
             let nested = value.visit(self, down)?;

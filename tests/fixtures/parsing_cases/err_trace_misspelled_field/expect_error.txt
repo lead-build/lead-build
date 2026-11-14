@@ -1,4 +1,4 @@
-No value: the object has no field `modd`
+[field mismatch]: No field `modd` in object
   --> $DIR/err_trace_misspelled_field/main.pbb:7:5
    |
  7 |     lib.modd {
@@ -7,9 +7,9 @@ No value: the object has no field `modd`
   ::: $DIR/_lib/lib.pbb:42:1
    |
 42 | {
-   | - this is the object
+   | - object
    |
-   = help: a field with a similar name exists: `mod`
+   = help: similar field: `mod`
 
 Needed by:
   $DIR/_lib/lib.pbb:33:28 (function of a call)

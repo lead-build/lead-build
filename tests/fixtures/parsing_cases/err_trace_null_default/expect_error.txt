@@ -1,10 +1,10 @@
-Type error: cannot apply `/` to null and a string
+[type error]: Cannot apply `/` to null and a string
   --> $DIR/_lib/lib.pbb:39:15
    |
 10 |         outdir = null;
-   |                  ---- the left side is null
+   |                  ---- left operand: null
 11 |         name = "app";
-   |                ----- the right side is a string
+   |                ----- right operand: a string
 ...
 39 |         out = self.outdir / self.name;
    |               ^^^^^^^^^^^^^^^^^^^^^^^

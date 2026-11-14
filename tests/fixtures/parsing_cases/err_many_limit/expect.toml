@@ -1,3 +1,3 @@
 kind = "err_no_value"
-error_contains = "the object has no field `f1`"
-errors_contain = "Stopped after 20 errors, there may be more."
+error_contains = "No field `f1` in object"
+errors_contain = "Error reporting stopped after 20 errors; further errors may exist."

@@ -1,2 +1,2 @@
 kind = "err_type"
-error_contains = "cannot apply `++` to a list and a function"
+error_contains = "Cannot apply `++` to a list and a function"

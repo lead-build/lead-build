@@ -1,11 +1,11 @@
-Type error: cannot apply `-` to an integer and a string
+[type error]: Cannot apply `-` to an integer and a string
  --> $DIR/err_many_same_cause/main.pbb:5:11
   |
 5 |     bad = 1 - "x";
   |           -^^^---
   |           |   |
-  |           |   the right side is a string
-  |           the left side is an integer
+  |           |   right operand: a string
+  |           left operand: an integer
 
 Needed by:
   $DIR/err_many_same_cause/main.pbb:6:21 (part of a string)
